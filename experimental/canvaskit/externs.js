@@ -81,6 +81,7 @@ var CanvasKit = {
 		clipPath: function() {},
 		clipRect: function() {},
 		concat: function() {},
+		setMatrix: function() {},
 		drawImage: function() {},
 		drawImageRect: function() {},
 		drawPaint: function() {},
