@@ -794,6 +794,8 @@ EMSCRIPTEN_BINDINGS(Skia) {
         .function("_quadTo", &ApplyQuadTo)
         .function("setIsVolatile", &SkPath::setIsVolatile)
         .function("_transform", select_overload<void(SkPath&, SkScalar, SkScalar, SkScalar, SkScalar, SkScalar, SkScalar, SkScalar, SkScalar, SkScalar)>(&ApplyTransform))
+        .function("rewind", &SkPath::rewind)
+        .function("reset", &SkPath::reset)
 
         // PathEffects
         .function("_dash", &ApplyDash)

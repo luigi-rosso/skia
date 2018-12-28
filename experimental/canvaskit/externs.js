@@ -180,6 +180,8 @@ var CanvasKit = {
 		setFillType: function() {},
 		setIsVolatile: function() {},
 		toSVGString: function() {},
+		rewind: function() {},
+		reset: function() {},
 
 		// private API
 		_addArc: function() {},
