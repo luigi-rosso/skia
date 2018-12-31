@@ -644,6 +644,9 @@ EMSCRIPTEN_BINDINGS(Skia) {
         .function("drawPaint", &SkCanvas::drawPaint)
         .function("drawPath", &SkCanvas::drawPath)
         .function("drawRect", &SkCanvas::drawRect)
+        .function("drawLine", select_overload<void (SkScalar, SkScalar, SkScalar, SkScalar, const SkPaint&)>(&SkCanvas::drawLine))
+        .function("drawOval", &SkCanvas::drawOval)
+        .function("drawArc", &SkCanvas::drawArc)
         .function("drawShadow", optional_override([](SkCanvas& self, const SkPath& path,
                                                      const SkPoint3& zPlaneParams,
                                                      const SkPoint3& lightPos, SkScalar lightRadius,
