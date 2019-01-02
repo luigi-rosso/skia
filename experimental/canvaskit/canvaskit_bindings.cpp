@@ -630,9 +630,6 @@ EMSCRIPTEN_BINDINGS(Skia) {
         .function("concat", optional_override([](SkCanvas& self, const SimpleMatrix& m) {
             self.concat(toSkMatrix(m));
         }))
-        .function("setMatrix", optional_override([](SkCanvas& self, const SimpleMatrix& m) {
-            self.setMatrix(toSkMatrix(m));
-        }))
         .function("drawImage", select_overload<void (const sk_sp<SkImage>&, SkScalar, SkScalar, const SkPaint*)>(&SkCanvas::drawImage), allow_raw_pointers())
         .function("drawImageRect", optional_override([](SkCanvas& self, const sk_sp<SkImage>& image,
                                                         SkRect src, SkRect dst,
