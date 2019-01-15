@@ -9,8 +9,12 @@
 #include "SkPDFDocumentPriv.h"
 
 #include "SkMakeUnique.h"
-#include "SkPDFCanon.h"
 #include "SkPDFDevice.h"
+#include "SkPDFDocument.h"
+#include "SkPDFFont.h"
+#include "SkPDFGradientShader.h"
+#include "SkPDFGraphicState.h"
+#include "SkPDFShader.h"
 #include "SkPDFTag.h"
 #include "SkPDFUtils.h"
 #include "SkStream.h"
@@ -28,10 +32,8 @@ const char* SkPDFGetNodeIdKey() {
 
 void SkPDFOffsetMap::markStartOfDocument(const SkWStream* s) { fBaseOffset = s->bytesWritten(); }
 
-int SkPDFOffsetMap::offset(const SkWStream* s) const {
-    size_t currentPos = s->bytesWritten();
-    SkASSERT(currentPos > fBaseOffset);
-    return SkToInt(currentPos - fBaseOffset);
+static size_t difference(size_t minuend, size_t subtrahend) {
+    return SkASSERT(minuend >= subtrahend), minuend - subtrahend;
 }
 
 void SkPDFOffsetMap::markStartOfObject(int referenceNumber, const SkWStream* s) {
@@ -40,7 +42,7 @@ void SkPDFOffsetMap::markStartOfObject(int referenceNumber, const SkWStream* s) 
     if (index >= fOffsets.size()) {
         fOffsets.resize(index + 1);
     }
-    fOffsets[index] = this->offset(s);
+    fOffsets[index] = SkToInt(difference(s->bytesWritten(), fBaseOffset));
 }
 
 int SkPDFOffsetMap::objectCount() const {
@@ -48,7 +50,7 @@ int SkPDFOffsetMap::objectCount() const {
 }
 
 int SkPDFOffsetMap::emitCrossReferenceTable(SkWStream* s) const {
-    int xRefFileOffset = this->offset(s);
+    int xRefFileOffset = SkToInt(difference(s->bytesWritten(), fBaseOffset));
     s->writeText("xref\n0 ");
     s->writeDecAsText(this->objectCount());
     s->writeText("\n0000000000 65535 f \n");
@@ -218,7 +220,6 @@ SkWStream* SkPDFDocument::beginObject(SkPDFIndirectReference ref) {
 void SkPDFDocument::endObject() {
     end_indirect_object(this->getStream());
     fMutex.release();
-    fSemaphore.signal();
 };
 
 static SkSize operator*(SkISize u, SkScalar s) { return SkSize{u.width() * s, u.height() * s}; }
@@ -292,22 +293,7 @@ void SkPDFDocument::onEndPage() {
 }
 
 void SkPDFDocument::onAbort() {
-    this->reset();
-}
-
-void SkPDFDocument::reset() {
-    reset_object(&fOffsetMap);
-    fCanon = SkPDFCanon();
-    reset_object(&fCanvas);
-    fPages = std::vector<std::unique_ptr<SkPDFDict>>();
-    fPageRefs = std::vector<SkPDFIndirectReference>();
-    reset_object(&fDests);
-    fPageDevice = nullptr;
-    fUUID = SkUUID();
-    fXMP = SkPDFIndirectReference();
-    fMetadata = SkPDF::Metadata();
-    fRasterScale = 1;
-    fInverseRasterScale = 1;
+    this->waitForJobs();
 }
 
 static sk_sp<SkData> SkSrgbIcm() {
@@ -454,10 +440,10 @@ int SkPDFDocument::getMarkIdForNodeId(int nodeId) {
     return fTagTree.getMarkIdForNodeId(nodeId, SkToUInt(this->currentPageIndex()));
 }
 
-static std::vector<const SkPDFFont*> get_fonts(const SkPDFCanon& canon) {
+static std::vector<const SkPDFFont*> get_fonts(const SkPDFDocument& canon) {
     std::vector<const SkPDFFont*> fonts;
     fonts.reserve(canon.fFontMap.count());
-    // Sort so the output PDF is reproducable.
+    // Sort so the output PDF is reproducible.
     canon.fFontMap.foreach([&fonts](uint64_t, const SkPDFFont& font) { fonts.push_back(&font); });
     std::sort(fonts.begin(), fonts.end(), [](const SkPDFFont* u, const SkPDFFont* v) {
         return u->indirectReference().fValue < v->indirectReference().fValue;
@@ -468,7 +454,7 @@ static std::vector<const SkPDFFont*> get_fonts(const SkPDFCanon& canon) {
 void SkPDFDocument::onClose(SkWStream* stream) {
     SkASSERT(fCanvas.imageInfo().dimensions().isZero());
     if (fPages.empty()) {
-        this->reset();
+        this->waitForJobs();
         return;
     }
     auto docCatalog = SkPDFMakeDict("Catalog");
@@ -498,24 +484,28 @@ void SkPDFDocument::onClose(SkWStream* stream) {
 
     auto docCatalogRef = this->emit(*docCatalog);
 
-    for (const SkPDFFont* f : get_fonts(fCanon)) {
+    for (const SkPDFFont* f : get_fonts(*this)) {
         f->emitSubset(this);
     }
 
-    int waits = 0;
-    // fNextObjectNumber can increase while we wait.
-    while (waits + 1 < fNextObjectNumber.load()) {
-        fSemaphore.wait();
-        ++waits;
-    }
-    SkASSERT(fNextObjectNumber.load() == fOffsetMap.objectCount());
+    this->waitForJobs();
     {
         SkAutoMutexAcquire autoMutexAcquire(fMutex);
         serialize_footer(fOffsetMap, this->getStream(), fInfoDict, docCatalogRef, fUUID);
     }
-    this->reset();
 }
 
+void SkPDFDocument::incrementJobCount() { fJobCount++; }
+
+void SkPDFDocument::signalJobComplete() { fSemaphore.signal(); }
+
+void SkPDFDocument::waitForJobs() {
+     // fJobCount can increase while we wait.
+     while (fJobCount > 0) {
+         fSemaphore.wait();
+         --fJobCount;
+     }
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 

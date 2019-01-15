@@ -69,6 +69,9 @@ public:
     // findCompatibleRenderPass(GrVkRenderTarget&, CompatibleRPHandle*).
     const GrVkRenderPass* findCompatibleRenderPass(const CompatibleRPHandle& compatibleHandle);
 
+    const GrVkRenderPass* findCompatibleExternalRenderPass(VkRenderPass,
+                                                           uint32_t colorAttachmentIndex);
+
     // Finds or creates a render pass that matches the target and LoadStoreOps, increments the
     // refcount, and returns. The caller can optionally pass in a pointer to a CompatibleRPHandle.
     // If this is non null it will be set to a handle that can be used in the furutre to quickly
@@ -152,6 +155,8 @@ public:
     // Signals that the resource passed to it (which should be a uniform buffer resource)
     // can be reused by the next uniform buffer resource request.
     void recycleStandardUniformBufferResource(const GrVkResource*);
+
+    void storePipelineCacheData();
 
     // Destroy any cached resources. To be called before destroying the VkDevice.
     // The assumption is that all queues are idle and all command buffers are finished.
@@ -242,6 +247,8 @@ private:
         int                           fLastReturnedIndex;
     };
 
+    VkPipelineCache pipelineCache();
+
     GrVkGpu* fGpu;
 
     // Central cache for creating pipelines
@@ -251,6 +258,8 @@ private:
     SkTArray<GrVkCopyPipeline*> fCopyPipelines;
 
     SkSTArray<4, CompatibleRenderPassSet> fRenderPassArray;
+
+    SkTArray<const GrVkRenderPass*> fExternalRenderPasses;
 
     // Array of command pools that we are waiting on
     SkSTArray<4, GrVkCommandPool*, true> fActiveCommandPools;

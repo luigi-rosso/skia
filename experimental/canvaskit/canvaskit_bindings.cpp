@@ -22,8 +22,10 @@
 #include "SkDiscretePathEffect.h"
 #include "SkEncodedImageFormat.h"
 #include "SkFilterQuality.h"
+#include "SkFont.h"
 #include "SkFontMgr.h"
 #include "SkFontMgrPriv.h"
+#include "SkFontTypes.h"
 #include "SkGradientShader.h"
 #include "SkImage.h"
 #include "SkImageInfo.h"
@@ -42,67 +44,37 @@
 #include "SkStrokeRec.h"
 #include "SkSurface.h"
 #include "SkSurfaceProps.h"
+#include "SkTextBlob.h"
+#include "SkTrimPathEffect.h"
 #include "SkTypeface.h"
 #include "SkTypes.h"
-
-#include "SkTrimPathEffect.h"
 #include "SkVertices.h"
-
-#if SK_INCLUDE_SKOTTIE
-#include "Skottie.h"
-#if SK_INCLUDE_MANAGED_SKOTTIE
-#include "SkottieProperty.h"
-#include "SkottieUtils.h"
-#endif // SK_INCLUDE_MANAGED_SKOTTIE
-#endif // SK_INCLUDE_SKOTTIE
 
 #include <iostream>
 #include <string>
 
+#include "WasmAliases.h"
 #include <emscripten.h>
 #include <emscripten/bind.h>
+
 #if SK_SUPPORT_GPU
 #include <GL/gl.h>
 #include <emscripten/html5.h>
 #endif
-
-using namespace emscripten;
-
-// Self-documenting types
-using JSArray = emscripten::val;
-using JSColor = int32_t;
-using JSObject = emscripten::val;
-using JSString = emscripten::val;
-using SkPathOrNull = emscripten::val;
-using Uint8Array = emscripten::val;
 
 // Aliases for less typing
 using BoneIndices = SkVertices::BoneIndices;
 using BoneWeights = SkVertices::BoneWeights;
 using Bone        = SkVertices::Bone;
 
-
 #if SK_SUPPORT_GPU
 // Wraps the WebGL context in an SkSurface and returns it.
 // This function based on the work of
 // https://github.com/Zubnix/skia-wasm-port/, used under the terms of the MIT license.
-sk_sp<SkSurface> getWebGLSurface(std::string id, int width, int height) {
-    // Context configurations
-    EmscriptenWebGLContextAttributes attrs;
-    emscripten_webgl_init_context_attributes(&attrs);
-    attrs.alpha = true;
-    attrs.premultipliedAlpha = true;
-    attrs.majorVersion = 1;
-    attrs.enableExtensionsByDefault = true;
-
-    EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context = emscripten_webgl_create_context(id.c_str(), &attrs);
-    if (context < 0) {
-        printf("failed to create webgl context %d\n", context);
-        return nullptr;
-    }
+sk_sp<SkSurface> getWebGLSurface(EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context, int width, int height) {
     EMSCRIPTEN_RESULT r = emscripten_webgl_make_context_current(context);
     if (r < 0) {
-        printf("failed to make webgl current %d\n", r);
+        printf("failed to make webgl context current %d\n", r);
         return nullptr;
     }
 
@@ -167,91 +139,6 @@ SkImageInfo toSkImageInfo(const SimpleImageInfo& sii) {
     return SkImageInfo::Make(sii.width, sii.height, sii.colorType, sii.alphaType);
 }
 
-#if SK_INCLUDE_SKOTTIE && SK_INCLUDE_MANAGED_SKOTTIE
-namespace {
-
-class ManagedAnimation final : public SkRefCnt {
-public:
-    static sk_sp<ManagedAnimation> Make(const std::string& json) {
-        auto mgr = skstd::make_unique<skottie_utils::CustomPropertyManager>();
-        auto animation = skottie::Animation::Builder()
-                            .setMarkerObserver(mgr->getMarkerObserver())
-                            .setPropertyObserver(mgr->getPropertyObserver())
-                            .make(json.c_str(), json.size());
-
-        return animation
-            ? sk_sp<ManagedAnimation>(new ManagedAnimation(std::move(animation), std::move(mgr)))
-            : nullptr;
-    }
-
-    // skottie::Animation API
-    void render(SkCanvas* canvas) const { fAnimation->render(canvas, nullptr); }
-    void render(SkCanvas* canvas, const SkRect& dst) const { fAnimation->render(canvas, &dst); }
-    void seek(SkScalar t) { fAnimation->seek(t); }
-    SkScalar duration() const { return fAnimation->duration(); }
-    const SkSize&      size() const { return fAnimation->size(); }
-    std::string version() const { return std::string(fAnimation->version().c_str()); }
-
-    // CustomPropertyManager API
-    JSArray getColorProps() const {
-        JSArray props = emscripten::val::array();
-
-        for (const auto& cp : fPropMgr->getColorProps()) {
-            JSObject prop = emscripten::val::object();
-            prop.set("key", cp);
-            prop.set("value", fPropMgr->getColor(cp));
-            props.call<void>("push", prop);
-        }
-
-        return props;
-    }
-
-    JSArray getOpacityProps() const {
-        JSArray props = emscripten::val::array();
-
-        for (const auto& op : fPropMgr->getOpacityProps()) {
-            JSObject prop = emscripten::val::object();
-            prop.set("key", op);
-            prop.set("value", fPropMgr->getOpacity(op));
-            props.call<void>("push", prop);
-        }
-
-        return props;
-    }
-
-    bool setColor(const std::string& key, JSColor c) {
-        return fPropMgr->setColor(key, static_cast<SkColor>(c));
-    }
-
-    bool setOpacity(const std::string& key, float o) {
-        return fPropMgr->setOpacity(key, o);
-    }
-
-    JSArray getMarkers() const {
-        JSArray markers = emscripten::val::array();
-        for (const auto& m : fPropMgr->markers()) {
-            JSObject marker = emscripten::val::object();
-            marker.set("name", m.name);
-            marker.set("t0"  , m.t0);
-            marker.set("t1"  , m.t1);
-            markers.call<void>("push", marker);
-        }
-        return markers;
-    }
-
-private:
-    ManagedAnimation(sk_sp<skottie::Animation> animation,
-                     std::unique_ptr<skottie_utils::CustomPropertyManager> propMgr)
-        : fAnimation(std::move(animation))
-        , fPropMgr(std::move(propMgr)) {}
-
-    sk_sp<skottie::Animation>                             fAnimation;
-    std::unique_ptr<skottie_utils::CustomPropertyManager> fPropMgr;
-};
-
-} // anonymous ns
-#endif // SK_INCLUDE_SKOTTIE
-
 //========================================================================================
 // Path things
 //========================================================================================
@@ -285,6 +172,16 @@ void ApplyAddRect(SkPath& path, SkScalar left, SkScalar top,
                  SkPath::Direction::kCW_Direction);
 }
 
+void ApplyAddRoundRect(SkPath& path, SkScalar left, SkScalar top,
+                  SkScalar right, SkScalar bottom, uintptr_t /* SkScalar*  */ rPtr,
+                  bool ccw) {
+    // See comment below for uintptr_t explanation
+    const SkScalar* radii = reinterpret_cast<const SkScalar*>(rPtr);
+    path.addRoundRect(SkRect::MakeLTRB(left, top, right, bottom), radii,
+                      ccw ? SkPath::Direction::kCCW_Direction : SkPath::Direction::kCW_Direction);
+}
+
+
 void ApplyArcTo(SkPath& p, SkScalar x1, SkScalar y1, SkScalar x2, SkScalar y2,
                 SkScalar radius) {
     p.arcTo(x1, y1, x2, y2, radius);
@@ -314,6 +211,14 @@ void ApplyLineTo(SkPath& p, SkScalar x, SkScalar y) {
 
 void ApplyMoveTo(SkPath& p, SkScalar x, SkScalar y) {
     p.moveTo(x, y);
+}
+
+void ApplyReset(SkPath& p) {
+    p.reset();
+}
+
+void ApplyRewind(SkPath& p) {
+    p.rewind();
 }
 
 void ApplyQuadTo(SkPath& p, SkScalar x1, SkScalar y1, SkScalar x2, SkScalar y2) {
@@ -367,6 +272,133 @@ SkPath EMSCRIPTEN_KEEPALIVE CopyPath(const SkPath& a) {
 
 bool EMSCRIPTEN_KEEPALIVE Equals(const SkPath& a, const SkPath& b) {
     return a == b;
+}
+
+// =================================================================================
+// Creating/Exporting Paths with cmd arrays
+// =================================================================================
+
+static const int MOVE = 0;
+static const int LINE = 1;
+static const int QUAD = 2;
+static const int CONIC = 3;
+static const int CUBIC = 4;
+static const int CLOSE = 5;
+
+template <typename VisitFunc>
+void VisitPath(const SkPath& p, VisitFunc&& f) {
+    SkPath::RawIter iter(p);
+    SkPoint pts[4];
+    SkPath::Verb verb;
+    while ((verb = iter.next(pts)) != SkPath::kDone_Verb) {
+        f(verb, pts, iter);
+    }
+}
+
+JSArray EMSCRIPTEN_KEEPALIVE ToCmds(const SkPath& path) {
+    JSArray cmds = emscripten::val::array();
+
+    VisitPath(path, [&cmds](SkPath::Verb verb, const SkPoint pts[4], SkPath::RawIter iter) {
+        JSArray cmd = emscripten::val::array();
+        switch (verb) {
+        case SkPath::kMove_Verb:
+            cmd.call<void>("push", MOVE, pts[0].x(), pts[0].y());
+            break;
+        case SkPath::kLine_Verb:
+            cmd.call<void>("push", LINE, pts[1].x(), pts[1].y());
+            break;
+        case SkPath::kQuad_Verb:
+            cmd.call<void>("push", QUAD, pts[1].x(), pts[1].y(), pts[2].x(), pts[2].y());
+            break;
+        case SkPath::kConic_Verb:
+            cmd.call<void>("push", CONIC,
+                           pts[1].x(), pts[1].y(),
+                           pts[2].x(), pts[2].y(), iter.conicWeight());
+            break;
+        case SkPath::kCubic_Verb:
+            cmd.call<void>("push", CUBIC,
+                           pts[1].x(), pts[1].y(),
+                           pts[2].x(), pts[2].y(),
+                           pts[3].x(), pts[3].y());
+            break;
+        case SkPath::kClose_Verb:
+            cmd.call<void>("push", CLOSE);
+            break;
+        case SkPath::kDone_Verb:
+            SkASSERT(false);
+            break;
+        }
+        cmds.call<void>("push", cmd);
+    });
+    return cmds;
+}
+
+// This type signature is a mess, but it's necessary. See, we can't use "bind" (EMSCRIPTEN_BINDINGS)
+// and pointers to primitive types (Only bound types like SkPoint). We could if we used
+// cwrap (see https://becominghuman.ai/passing-and-returning-webassembly-array-parameters-a0f572c65d97)
+// but that requires us to stick to C code and, AFAIK, doesn't allow us to return nice things like
+// SkPath or SkOpBuilder.
+//
+// So, basically, if we are using C++ and EMSCRIPTEN_BINDINGS, we can't have primative pointers
+// in our function type signatures. (this gives an error message like "Cannot call foo due to unbound
+// types Pi, Pf").  But, we can just pretend they are numbers and cast them to be pointers and
+// the compiler is happy.
+SkPathOrNull EMSCRIPTEN_KEEPALIVE MakePathFromCmds(uintptr_t /* float* */ cptr, int numCmds) {
+    const auto* cmds = reinterpret_cast<const float*>(cptr);
+    SkPath path;
+    float x1, y1, x2, y2, x3, y3;
+
+    // if there are not enough arguments, bail with the path we've constructed so far.
+    #define CHECK_NUM_ARGS(n) \
+        if ((i + n) > numCmds) { \
+            SkDebugf("Not enough args to match the verbs. Saw %d commands\n", numCmds); \
+            return emscripten::val::null(); \
+        }
+
+    for(int i = 0; i < numCmds;){
+         switch (sk_float_floor2int(cmds[i++])) {
+            case MOVE:
+                CHECK_NUM_ARGS(2);
+                x1 = cmds[i++], y1 = cmds[i++];
+                path.moveTo(x1, y1);
+                break;
+            case LINE:
+                CHECK_NUM_ARGS(2);
+                x1 = cmds[i++], y1 = cmds[i++];
+                path.lineTo(x1, y1);
+                break;
+            case QUAD:
+                CHECK_NUM_ARGS(4);
+                x1 = cmds[i++], y1 = cmds[i++];
+                x2 = cmds[i++], y2 = cmds[i++];
+                path.quadTo(x1, y1, x2, y2);
+                break;
+            case CONIC:
+                CHECK_NUM_ARGS(5);
+                x1 = cmds[i++], y1 = cmds[i++];
+                x2 = cmds[i++], y2 = cmds[i++];
+                x3 = cmds[i++]; // weight
+                path.conicTo(x1, y1, x2, y2, x3);
+                break;
+            case CUBIC:
+                CHECK_NUM_ARGS(6);
+                x1 = cmds[i++], y1 = cmds[i++];
+                x2 = cmds[i++], y2 = cmds[i++];
+                x3 = cmds[i++], y3 = cmds[i++];
+                path.cubicTo(x1, y1, x2, y2, x3, y3);
+                break;
+            case CLOSE:
+                path.close();
+                break;
+            default:
+                SkDebugf("  path: UNKNOWN command %f, aborting dump...\n", cmds[i-1]);
+                return emscripten::val::null();
+        }
+    }
+
+    #undef CHECK_NUM_ARGS
+
+    return emscripten::val(path);
 }
 
 //========================================================================================
@@ -448,6 +480,10 @@ namespace emscripten {
         template<>
         void raw_destructor<SkVertices>(SkVertices *ptr) {
         }
+
+        template<>
+        void raw_destructor<SkTextBlob>(SkTextBlob *ptr) {
+        }
     }
 }
 
@@ -493,6 +529,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
         // Adds a little helper because emscripten doesn't expose default params.
         return SkMaskFilter::MakeBlur(style, sigma, respectCTM);
     }), allow_raw_pointers());
+    function("_MakePathFromCmds", &MakePathFromCmds);
     function("MakePathFromOp", &MakePathFromOp);
     function("MakePathFromSVGString", &MakePathFromSVGString);
 
@@ -630,6 +667,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
         .function("concat", optional_override([](SkCanvas& self, const SimpleMatrix& m) {
             self.concat(toSkMatrix(m));
         }))
+        .function("drawArc", &SkCanvas::drawArc)
         .function("drawImage", select_overload<void (const sk_sp<SkImage>&, SkScalar, SkScalar, const SkPaint*)>(&SkCanvas::drawImage), allow_raw_pointers())
         .function("drawImageRect", optional_override([](SkCanvas& self, const sk_sp<SkImage>& image,
                                                         SkRect src, SkRect dst,
@@ -638,12 +676,12 @@ EMSCRIPTEN_BINDINGS(Skia) {
                                fastSample ? SkCanvas::kFast_SrcRectConstraint :
                                             SkCanvas::kStrict_SrcRectConstraint);
         }), allow_raw_pointers())
+        .function("drawLine", select_overload<void (SkScalar, SkScalar, SkScalar, SkScalar, const SkPaint&)>(&SkCanvas::drawLine))
+        .function("drawOval", &SkCanvas::drawOval)
         .function("drawPaint", &SkCanvas::drawPaint)
         .function("drawPath", &SkCanvas::drawPath)
         .function("drawRect", &SkCanvas::drawRect)
-        .function("drawLine", select_overload<void (SkScalar, SkScalar, SkScalar, SkScalar, const SkPaint&)>(&SkCanvas::drawLine))
-        .function("drawOval", &SkCanvas::drawOval)
-        .function("drawArc", &SkCanvas::drawArc)
+        .function("drawRoundRect", &SkCanvas::drawRoundRect)
         .function("drawShadow", optional_override([](SkCanvas& self, const SkPath& path,
                                                      const SkPoint3& zPlaneParams,
                                                      const SkPoint3& lightPos, SkScalar lightRadius,
@@ -652,13 +690,15 @@ EMSCRIPTEN_BINDINGS(Skia) {
             SkShadowUtils::DrawShadow(&self, path, zPlaneParams, lightPos, lightRadius,
                                       SkColor(ambientColor), SkColor(spotColor), flags);
         }))
-        .function("drawText", optional_override([](SkCanvas& self, std::string text, SkScalar x,
-                                                   SkScalar y, const SkPaint& p) {
-            // TODO(kjlubick): This does not work well for non-ascii
-            // Need to maybe add a helper in interface.js that supports UTF-8
-            // Otherwise, go with std::wstring and set UTF-32 encoding.
-            self.drawText(text.c_str(), text.length(), x, y, p);
+        .function("_drawSimpleText", optional_override([](SkCanvas& self, uintptr_t /* char* */ sptr,
+                                                          size_t len, SkScalar x, SkScalar y, const SkFont& font,
+                                                          const SkPaint& paint) {
+            // See comment above for uintptr_t explanation
+            const char* str = reinterpret_cast<const char*>(sptr);
+
+            self.drawSimpleText(str, len, SkTextEncoding::kUTF8, x, y, font, paint);
         }))
+        .function("drawTextBlob", select_overload<void (const sk_sp<SkTextBlob>&, SkScalar, SkScalar, const SkPaint&)>(&SkCanvas::drawTextBlob))
         .function("drawVertices", select_overload<void (const sk_sp<SkVertices>&, SkBlendMode, const SkPaint&)>(&SkCanvas::drawVertices))
         .function("flush", &SkCanvas::flush)
         .function("getTotalMatrix", optional_override([](const SkCanvas& self)->SimpleMatrix {
@@ -692,6 +732,26 @@ EMSCRIPTEN_BINDINGS(Skia) {
     class_<SkData>("SkData")
         .smart_ptr<sk_sp<SkData>>("sk_sp<SkData>>")
         .function("size", &SkData::size);
+
+    class_<SkFont>("SkFont")
+        .constructor<>()
+        .constructor<sk_sp<SkTypeface>>()
+        .constructor<sk_sp<SkTypeface>, SkScalar>()
+        .constructor<sk_sp<SkTypeface>, SkScalar, SkScalar, SkScalar>()
+        .function("getScaleX", &SkFont::getScaleX)
+        .function("getSize", &SkFont::getSize)
+        .function("getSkewX", &SkFont::getSkewX)
+        .function("getTypeface", &SkFont::getTypeface, allow_raw_pointers())
+        .function("measureText", optional_override([](SkFont& self, std::string text) {
+            // TODO(kjlubick): This does not work well for non-ascii
+            // Need to maybe add a helper in interface.js that supports UTF-8
+            // Otherwise, go with std::wstring and set UTF-32 encoding.
+            return self.measureText(text.c_str(), text.length(), SkTextEncoding::kUTF8);
+        }))
+        .function("setScaleX", &SkFont::setScaleX)
+        .function("setSize", &SkFont::setSize)
+        .function("setSkewX", &SkFont::setSkewX)
+        .function("setTypeface", &SkFont::setTypeface, allow_raw_pointers());
 
     class_<SkFontMgr>("SkFontMgr")
         .smart_ptr<sk_sp<SkFontMgr>>("sk_sp<SkFontMgr>")
@@ -745,13 +805,6 @@ EMSCRIPTEN_BINDINGS(Skia) {
         .function("getStrokeJoin", &SkPaint::getStrokeJoin)
         .function("getStrokeMiter", &SkPaint::getStrokeMiter)
         .function("getStrokeWidth", &SkPaint::getStrokeWidth)
-        .function("getTextSize", &SkPaint::getTextSize)
-        .function("measureText", optional_override([](SkPaint& self, std::string text) {
-            // TODO(kjlubick): This does not work well for non-ascii
-            // Need to maybe add a helper in interface.js that supports UTF-8
-            // Otherwise, go with std::wstring and set UTF-32 encoding.
-            return self.measureText(text.c_str(), text.length());
-        }))
         .function("setAntiAlias", &SkPaint::setAntiAlias)
         .function("setBlendMode", &SkPaint::setBlendMode)
         .function("setColor", optional_override([](SkPaint& self, JSColor color)->void {
@@ -767,9 +820,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
         .function("setStrokeJoin", &SkPaint::setStrokeJoin)
         .function("setStrokeMiter", &SkPaint::setStrokeMiter)
         .function("setStrokeWidth", &SkPaint::setStrokeWidth)
-        .function("setStyle", &SkPaint::setStyle)
-        .function("setTypeface", &SkPaint::setTypeface)
-        .function("setTextSize", &SkPaint::setTextSize);
+        .function("setStyle", &SkPaint::setStyle);
 
     class_<SkPathEffect>("SkPathEffect")
         .smart_ptr<sk_sp<SkPathEffect>>("sk_sp<SkPathEffect>");
@@ -782,6 +833,8 @@ EMSCRIPTEN_BINDINGS(Skia) {
         .function("_addPath", &ApplyAddPath)
         // interface.js has 4 overloads of addRect
         .function("_addRect", &ApplyAddRect)
+        // interface.js has 4 overloads of addRoundRect
+        .function("_addRoundRect", &ApplyAddRoundRect)
         .function("_arcTo", &ApplyArcTo)
         .function("_arcTo", &ApplyArcToAngle)
         .function("_close", &ApplyClose)
@@ -794,11 +847,11 @@ EMSCRIPTEN_BINDINGS(Skia) {
         .function("isVolatile", &SkPath::isVolatile)
         .function("_lineTo", &ApplyLineTo)
         .function("_moveTo", &ApplyMoveTo)
+        .function("reset", &ApplyReset)
+        .function("rewind", &ApplyRewind)
         .function("_quadTo", &ApplyQuadTo)
         .function("setIsVolatile", &SkPath::setIsVolatile)
         .function("_transform", select_overload<void(SkPath&, SkScalar, SkScalar, SkScalar, SkScalar, SkScalar, SkScalar, SkScalar, SkScalar, SkScalar)>(&ApplyTransform))
-        .function("rewind", &SkPath::rewind)
-        .function("reset", &SkPath::reset)
 
         // PathEffects
         .function("_dash", &ApplyDash)
@@ -811,6 +864,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
 
         // Exporting
         .function("toSVGString", &ToSVGString)
+        .function("toCmds", &ToCmds)
 
         .function("setFillType", &SkPath::setFillType)
         .function("getFillType", &SkPath::getFillType)
@@ -835,6 +889,17 @@ EMSCRIPTEN_BINDINGS(Skia) {
         .function("makeImageSnapshot", select_overload<sk_sp<SkImage>()>(&SkSurface::makeImageSnapshot))
         .function("makeImageSnapshot", select_overload<sk_sp<SkImage>(const SkIRect& bounds)>(&SkSurface::makeImageSnapshot))
         .function("getCanvas", &SkSurface::getCanvas, allow_raw_pointers());
+
+    class_<SkTextBlob>("SkTextBlob")
+        .smart_ptr<sk_sp<SkTextBlob>>("sk_sp<SkTextBlob>>")
+        .class_function("_MakeFromText",optional_override([](uintptr_t /* char* */ sptr,
+                                                             size_t len, const SkFont& font,
+                                                             SkTextEncoding encoding)->sk_sp<SkTextBlob> {
+            // See comment above for uintptr_t explanation
+            const char* str = reinterpret_cast<const char*>(sptr);
+            return SkTextBlob::MakeFromText(str, len, font, encoding);
+        }), allow_raw_pointers());
+
 
     class_<SkTypeface>("SkTypeface")
         .smart_ptr<sk_sp<SkTypeface>>("sk_sp<SkTypeface>");
@@ -956,12 +1021,11 @@ EMSCRIPTEN_BINDINGS(Skia) {
         .value("Round", SkPaint::Join::kRound_Join)
         .value("Bevel", SkPaint::Join::kBevel_Join);
 
-    value_object<StrokeOpts>("StrokeOpts")
-        .field("width",       &StrokeOpts::width)
-        .field("miter_limit", &StrokeOpts::miter_limit)
-        .field("join",        &StrokeOpts::join)
-        .field("cap",         &StrokeOpts::cap)
-        .field("precision",   &StrokeOpts::precision);
+    enum_<SkTextEncoding>("TextEncoding")
+        .value("UTF8",    SkTextEncoding::kUTF8)
+        .value("UTF16",   SkTextEncoding::kUTF16)
+        .value("UTF32",   SkTextEncoding::kUTF32)
+        .value("GlyphID", SkTextEncoding::kGlyphID);
 
     enum_<SkShader::TileMode>("TileMode")
         .value("Clamp",    SkShader::TileMode::kClamp_TileMode)
@@ -1017,6 +1081,13 @@ EMSCRIPTEN_BINDINGS(Skia) {
         .field("w",   &SkISize::fWidth)
         .field("h",   &SkISize::fHeight);
 
+    value_object<StrokeOpts>("StrokeOpts")
+        .field("width",       &StrokeOpts::width)
+        .field("miter_limit", &StrokeOpts::miter_limit)
+        .field("join",        &StrokeOpts::join)
+        .field("cap",         &StrokeOpts::cap)
+        .field("precision",   &StrokeOpts::precision);
+
     // Allows clients to supply a 1D array of 9 elements and the bindings
     // will automatically turn it into a 3x3 2D matrix.
     // e.g. path.transform([0,1,2,3,4,5,6,7,8])
@@ -1044,49 +1115,10 @@ EMSCRIPTEN_BINDINGS(Skia) {
     constant("WHITE",       (JSColor) SK_ColorWHITE);
     // TODO(?)
 
-#if SK_INCLUDE_SKOTTIE
-    // Animation things (may eventually go in own library)
-    class_<skottie::Animation>("Animation")
-        .smart_ptr<sk_sp<skottie::Animation>>("sk_sp<Animation>")
-        .function("version", optional_override([](skottie::Animation& self)->std::string {
-            return std::string(self.version().c_str());
-        }))
-        .function("size", &skottie::Animation::size)
-        .function("duration", &skottie::Animation::duration)
-        .function("seek", &skottie::Animation::seek)
-        .function("render", optional_override([](skottie::Animation& self, SkCanvas* canvas)->void {
-            self.render(canvas, nullptr);
-        }), allow_raw_pointers())
-        .function("render", optional_override([](skottie::Animation& self, SkCanvas* canvas,
-                                                 const SkRect r)->void {
-            self.render(canvas, &r);
-        }), allow_raw_pointers());
-
-    function("MakeAnimation", optional_override([](std::string json)->sk_sp<skottie::Animation> {
-        return skottie::Animation::Make(json.c_str(), json.length());
-    }));
-    constant("skottie", true);
-
-#if SK_INCLUDE_MANAGED_SKOTTIE
-    class_<ManagedAnimation>("ManagedAnimation")
-        .smart_ptr<sk_sp<ManagedAnimation>>("sk_sp<ManagedAnimation>")
-        .function("version"   , &ManagedAnimation::version)
-        .function("size"      , &ManagedAnimation::size)
-        .function("duration"  , &ManagedAnimation::duration)
-        .function("seek"      , &ManagedAnimation::seek)
-        .function("render"    , select_overload<void(SkCanvas*) const>
-                                    (&ManagedAnimation::render), allow_raw_pointers())
-        .function("render"    , select_overload<void(SkCanvas*, const SkRect&) const>
-                                    (&ManagedAnimation::render), allow_raw_pointers())
-        .function("setColor"  , &ManagedAnimation::setColor)
-        .function("setOpacity", &ManagedAnimation::setOpacity)
-        .function("getMarkers", &ManagedAnimation::getMarkers)
-        .function("getColorProps"  , &ManagedAnimation::getColorProps)
-        .function("getOpacityProps", &ManagedAnimation::getOpacityProps);
-
-    function("MakeManagedAnimation", &ManagedAnimation::Make);
-    constant("managed_skottie", true);
-#endif // SK_INCLUDE_MANAGED_SKOTTIE
-#endif // SK_INCLUDE_SKOTTIE
-
+    constant("MOVE_VERB",  MOVE);
+    constant("LINE_VERB",  LINE);
+    constant("QUAD_VERB",  QUAD);
+    constant("CONIC_VERB", CONIC);
+    constant("CUBIC_VERB", CUBIC);
+    constant("CLOSE_VERB", CLOSE);
 }

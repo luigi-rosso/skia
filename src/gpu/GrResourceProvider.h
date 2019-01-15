@@ -25,6 +25,7 @@ class GrSemaphore;
 class GrSingleOwner;
 class GrStencilAttachment;
 class GrTexture;
+struct GrVkDrawableInfo;
 
 class GrStyle;
 class SkDescriptor;
@@ -65,8 +66,7 @@ public:
      * must be sure that if a resource of exists in the cache with the given unique key then it is
      * of type T.
      */
-    template <typename T>
-    sk_sp<T> findByUniqueKey(const GrUniqueKey& key) {
+    template <typename T = GrGpuResource> sk_sp<T> findByUniqueKey(const GrUniqueKey& key) {
         return sk_sp<T>(static_cast<T*>(this->findResourceByUniqueKey(key).release()));
     }
 
@@ -130,6 +130,9 @@ public:
      * @return GrRenderTarget object or NULL on failure.
      */
     sk_sp<GrRenderTarget> wrapBackendRenderTarget(const GrBackendRenderTarget&);
+
+    sk_sp<GrRenderTarget> wrapVulkanSecondaryCBAsRenderTarget(const SkImageInfo&,
+                                                              const GrVkDrawableInfo&);
 
     static const uint32_t kMinScratchTextureSize;
 

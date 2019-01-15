@@ -120,13 +120,13 @@ SkBitmap create_string_bitmap(int w, int h, SkColor c, int x, int y,
     SkCanvas canvas(bitmap);
 
     SkPaint paint;
-    paint.setAntiAlias(true);
-    sk_tool_utils::set_portable_typeface(&paint);
     paint.setColor(c);
-    paint.setTextSize(SkIntToScalar(textSize));
+
+    SkFont font(sk_tool_utils::create_portable_typeface(), textSize);
 
     canvas.clear(0x00000000);
-    canvas.drawString(str, SkIntToScalar(x), SkIntToScalar(y), paint);
+    canvas.drawSimpleText(str, strlen(str), kUTF8_SkTextEncoding,
+                          SkIntToScalar(x), SkIntToScalar(y), font, paint);
 
     // Tag data as sRGB (without doing any color space conversion). Color-space aware configs
     // will process this correctly but legacy configs will render as if this returned N32.
@@ -175,11 +175,12 @@ void get_text_path(const SkFont& font, const void* text, size_t length, SkTextEn
 }
 
 SkPath make_star(const SkRect& bounds, int numPts, int step) {
+    SkASSERT(numPts != step);
     SkPath path;
     path.setFillType(SkPath::kEvenOdd_FillType);
     path.moveTo(0,-1);
     for (int i = 1; i < numPts; ++i) {
-        int idx = i*step;
+        int idx = i*step % numPts;
         SkScalar theta = idx * 2*SK_ScalarPI/numPts + SK_ScalarPI/2;
         SkScalar x = SkScalarCos(theta);
         SkScalar y = -SkScalarSin(theta);

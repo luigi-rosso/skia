@@ -12,8 +12,7 @@
 #include "SkColor.h"
 #include "SkImageInfo.h"
 #include "SkNx.h"
-#include "SkTArray.h"  // TODO: unused
-#include "SkTDArray.h"
+#include "SkTArray.h" // TODO: unused
 #include "SkTypes.h"
 #include <functional>
 #include <vector>  // TODO: unused
@@ -260,11 +259,6 @@ private:
     StageList*    fStages;
     int           fNumStages;
     int           fSlotsNeeded;
-
-    // Passed directly to SkOpts::run_program_obs().
-    SkTDArray<StockStage> fStockStages;
-    SkTDArray<void*>      fCtxPointers;
-    bool                  fCanUseRunProgramObs;
 };
 
 template <size_t bytes>

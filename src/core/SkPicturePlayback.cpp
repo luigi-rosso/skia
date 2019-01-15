@@ -78,7 +78,7 @@ public:
                     fCount = 0;
                 } else {
                     fCount = SkPaintPriv::ValidCountText(fText, fByteLength,
-                                                         paint->getTextEncoding());
+                                                         SkPaintPriv::GetEncoding(*paint));
                     reader->validate(fCount > 0);
                 }
             }
@@ -450,6 +450,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
                 canvas->drawPoints(mode, count, pts, *paint);
             }
         } break;
+#ifdef SK_SUPPORT_LEGACY_PAINT_FONT_FIELDS
         case DRAW_POS_TEXT: {
             const SkPaint* paint = fPictureData->getPaint(reader);
             TextContainer text(reader, paint);
@@ -461,7 +462,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             if (paint && text.text()) {
                 SkFont font = SkFont::LEGACY_ExtractFromPaint(*paint);
                 auto blob = SkTextBlob::MakeFromPosText(text.text(), text.length(), pos, font,
-                                                        paint->getTextEncoding());
+                                                        SkPaintPriv::GetEncoding(*paint));
                 canvas->drawTextBlob(blob, 0, 0, *paint);
             }
         } break;
@@ -479,7 +480,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             if (top < clip.fBottom && bottom > clip.fTop && paint && text.text()) {
                 SkFont font = SkFont::LEGACY_ExtractFromPaint(*paint);
                 auto blob = SkTextBlob::MakeFromPosText(text.text(), text.length(), pos, font,
-                                                        paint->getTextEncoding());
+                                                        SkPaintPriv::GetEncoding(*paint));
                 canvas->drawTextBlob(blob, 0, 0, *paint);
             }
         } break;
@@ -495,7 +496,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             if (paint && text.text()) {
                 SkFont font = SkFont::LEGACY_ExtractFromPaint(*paint);
                 auto blob = SkTextBlob::MakeFromPosTextH(text.text(), text.length(), xpos, constY,
-                                                         font, paint->getTextEncoding());
+                                                         font, SkPaintPriv::GetEncoding(*paint));
                 canvas->drawTextBlob(blob, 0, 0, *paint);
             }
         } break;
@@ -515,10 +516,11 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             if (top < clip.fBottom && bottom > clip.fTop && paint && text.text()) {
                 SkFont font = SkFont::LEGACY_ExtractFromPaint(*paint);
                 auto blob = SkTextBlob::MakeFromPosTextH(text.text(), text.length(), xpos, constY,
-                                                         font, paint->getTextEncoding());
+                                                         font, SkPaintPriv::GetEncoding(*paint));
                 canvas->drawTextBlob(blob, 0, 0, *paint);
             }
         } break;
+#endif
         case DRAW_RECT: {
             const SkPaint* paint = fPictureData->getPaint(reader);
             SkRect rect;
@@ -570,6 +572,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
 
             canvas->private_draw_shadow_rec(path, rec);
         } break;
+#ifdef SK_SUPPORT_LEGACY_PAINT_FONT_FIELDS
         case DRAW_TEXT: {
             const SkPaint* paint = fPictureData->getPaint(reader);
             TextContainer text(reader, paint);
@@ -578,9 +581,12 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             BREAK_ON_READ_ERROR(reader);
 
             if (paint && text.text()) {
-                canvas->drawText(text.text(), text.length(), x, y, *paint);
+                canvas->drawSimpleText(text.text(), text.length(),
+                                       paint->private_internal_getTextEncoding(),
+                                       x, y, SkFont::LEGACY_ExtractFromPaint(*paint), *paint);
             }
         } break;
+#endif
         case DRAW_TEXT_BLOB: {
             const SkPaint* paint = fPictureData->getPaint(reader);
             const SkTextBlob* blob = fPictureData->getTextBlob(reader);
@@ -592,6 +598,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
                 canvas->drawTextBlob(blob, x, y, *paint);
             }
         } break;
+#ifdef SK_SUPPORT_LEGACY_PAINT_FONT_FIELDS
         case DRAW_TEXT_TOP_BOTTOM: {
             const SkPaint* paint = fPictureData->getPaint(reader);
             TextContainer text(reader, paint);
@@ -606,7 +613,9 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             float top = ptr[2];
             float bottom = ptr[3];
             if (top < clip.fBottom && bottom > clip.fTop && paint && text.text()) {
-                canvas->drawText(text.text(), text.length(), ptr[0], ptr[1], *paint);
+                canvas->drawSimpleText(text.text(), text.length(),
+                                       paint->private_internal_getTextEncoding(), ptr[0], ptr[1],
+                                       SkFont::LEGACY_ExtractFromPaint(*paint), *paint);
             }
         } break;
         case DRAW_TEXT_ON_PATH_RETIRED_08_2018_REMOVED_10_2018: {
@@ -624,17 +633,21 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             uint32_t flags = reader->readUInt();
             TextContainer text(reader, paint);
             const SkRSXform* xform = (const SkRSXform*)reader->skip(count, sizeof(SkRSXform));
-            const SkRect* cull = nullptr;
             if (flags & DRAW_TEXT_RSXFORM_HAS_CULL) {
-                cull = (const SkRect*)reader->skip(sizeof(SkRect));
+                // skip past cull rect
+                (void)reader->skip(sizeof(SkRect));
             }
             reader->validate(count == text.count());
             BREAK_ON_READ_ERROR(reader);
 
             if (text.text()) {
-                canvas->drawTextRSXform(text.text(), text.length(), xform, cull, *paint);
+                SkFont font = SkFont::LEGACY_ExtractFromPaint(*paint);
+                auto blob = SkTextBlob::MakeFromRSXform(text.text(), text.length(), xform, font,
+                                                        SkPaintPriv::GetEncoding(*paint));
+                canvas->drawTextBlob(blob, 0, 0, *paint);
             }
         } break;
+#endif
         case DRAW_VERTICES_OBJECT: {
             const SkPaint* paint = fPictureData->getPaint(reader);
             const SkVertices* vertices = fPictureData->getVertices(reader);

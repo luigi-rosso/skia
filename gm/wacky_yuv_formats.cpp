@@ -622,43 +622,43 @@ static void draw_col_label(SkCanvas* canvas, int x, int yuvColorSpace, bool opaq
     static const char* kYUVColorSpaceNames[] = { "JPEG", "601", "709" };
     GR_STATIC_ASSERT(SK_ARRAY_COUNT(kYUVColorSpaceNames) == kLastEnum_SkYUVColorSpace+1);
 
-    SkPaint textPaint;
-    sk_tool_utils::set_portable_typeface(&textPaint, nullptr, SkFontStyle::Bold());
-    textPaint.setTextSize(16);
+    SkPaint paint;
+    SkFont font(sk_tool_utils::create_portable_typeface(nullptr, SkFontStyle::Bold()), 16);
+    font.setEdging(SkFont::Edging::kAlias);
 
     SkRect textRect;
     SkString colLabel;
 
     colLabel.printf("%s", kYUVColorSpaceNames[yuvColorSpace]);
-    textPaint.measureText(colLabel.c_str(), colLabel.size(), &textRect);
+    font.measureText(colLabel.c_str(), colLabel.size(), kUTF8_SkTextEncoding, &textRect);
     int y = textRect.height();
 
-    SkTextUtils::DrawString(canvas, colLabel, x, y, textPaint, SkTextUtils::kCenter_Align);
+    SkTextUtils::DrawString(canvas, colLabel.c_str(), x, y, font, paint, SkTextUtils::kCenter_Align);
 
     colLabel.printf("%s", opaque ? "Opaque" : "Transparent");
 
-    textPaint.measureText(colLabel.c_str(), colLabel.size(), &textRect);
+    font.measureText(colLabel.c_str(), colLabel.size(), kUTF8_SkTextEncoding, &textRect);
     y += textRect.height();
 
-    SkTextUtils::DrawString(canvas, colLabel, x, y, textPaint, SkTextUtils::kCenter_Align);
+    SkTextUtils::DrawString(canvas, colLabel.c_str(), x, y, font, paint, SkTextUtils::kCenter_Align);
 }
 
 static void draw_row_label(SkCanvas* canvas, int y, int yuvFormat) {
     static const char* kYUVFormatNames[] = { "AYUV", "NV12", "NV21", "I420", "YV12" };
     GR_STATIC_ASSERT(SK_ARRAY_COUNT(kYUVFormatNames) == kLast_YUVFormat+1);
 
-    SkPaint textPaint;
-    sk_tool_utils::set_portable_typeface(&textPaint, nullptr, SkFontStyle::Bold());
-    textPaint.setTextSize(16);
+    SkPaint paint;
+    SkFont font(sk_tool_utils::create_portable_typeface(nullptr, SkFontStyle::Bold()), 16);
+    font.setEdging(SkFont::Edging::kAlias);
 
     SkRect textRect;
     SkString rowLabel;
 
     rowLabel.printf("%s", kYUVFormatNames[yuvFormat]);
-    textPaint.measureText(rowLabel.c_str(), rowLabel.size(), &textRect);
+    font.measureText(rowLabel.c_str(), rowLabel.size(), kUTF8_SkTextEncoding, &textRect);
     y += kTileWidthHeight/2 + textRect.height()/2;
 
-    canvas->drawText(rowLabel.c_str(), rowLabel.size(), 0, y, textPaint);
+    canvas->drawString(rowLabel, 0, y, font, paint);
 }
 
 static GrBackendTexture create_yuva_texture(GrGpu* gpu, const SkBitmap& bm,
@@ -692,7 +692,8 @@ static GrBackendTexture create_yuva_texture(GrGpu* gpu, const SkBitmap& bm,
             false,
             GrMipMapped::kNo,
             2*bm.width());
-    } else {
+    }
+    if (!tex.isValid()) {
         tex = gpu->createTestingOnlyBackendTexture(
             bm.getPixels(),
             bm.width(),
@@ -719,14 +720,18 @@ namespace skiagm {
 // YV12
 class WackyYUVFormatsGM : public GM {
 public:
-    WackyYUVFormatsGM() {
+    WackyYUVFormatsGM(bool useTargetColorSpace) : fUseTargetColorSpace(useTargetColorSpace) {
         this->setBGColor(0xFFCCCCCC);
     }
 
 protected:
 
     SkString onShortName() override {
-        return SkString("wacky_yuv_formats");
+        SkString name("wacky_yuv_formats");
+        if (fUseTargetColorSpace) {
+            name += "_cs";
+        }
+        return name;
     }
 
     SkISize onISize() override {
@@ -753,6 +758,10 @@ protected:
             SkTDArray<SkRect> circles;
             SkPath path = create_splat(origin, innerRadius, outerRadius, 1.0f, 7, &circles);
             fOriginalBMs[1] = make_bitmap(path, circles, true);
+        }
+
+        if (fUseTargetColorSpace) {
+            fTargetColorSpace = SkColorSpace::MakeSRGB()->makeColorSpin();
         }
     }
 
@@ -850,8 +859,13 @@ protected:
 
                 for (int format = kAYUV_YUVFormat; format <= kLast_YUVFormat; ++format) {
                     draw_row_label(canvas, y, format);
-                    canvas->drawImage(fImages[opaque][cs][format], x, y);
-
+                    if (fUseTargetColorSpace && fImages[opaque][cs][format]) {
+                        sk_sp<SkImage> csImage =
+                            fImages[opaque][cs][format]->makeColorSpace(fTargetColorSpace);
+                        canvas->drawImage(csImage, x, y);
+                    } else {
+                        canvas->drawImage(fImages[opaque][cs][format], x, y);
+                    }
                     y += kTileWidthHeight + kPad;
                 }
 
@@ -863,11 +877,14 @@ protected:
 private:
     SkBitmap       fOriginalBMs[2];
     sk_sp<SkImage> fImages[2][kLastEnum_SkYUVColorSpace+1][kLast_YUVFormat+1];
+    bool           fUseTargetColorSpace;
+    sk_sp<SkColorSpace> fTargetColorSpace;
 
     typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
-DEF_GM(return new WackyYUVFormatsGM;)
+DEF_GM(return new WackyYUVFormatsGM(false);)
+DEF_GM(return new WackyYUVFormatsGM(true);)
 }

@@ -61,7 +61,7 @@ static void show_k_text(SkCanvas* canvas, SkScalar x, SkScalar y, const SkScalar
         SkString str;
         str.appendScalar(k[i]);
         SkScalar width = font.measureText(str.c_str(), str.size(), kUTF8_SkTextEncoding);
-        canvas->drawSimpleText(str.c_str(), str.size(), kUTF8_SkTextEncoding, x, y + font.getSize(), font, paint);
+        canvas->drawString(str, x, y + font.getSize(), font, paint);
         x += width + SkIntToScalar(10);
     }
 }
@@ -149,12 +149,9 @@ protected:
                 canvas->translate(gap, 0);
 
                 // Label
-                SkPaint paint;
-                paint.setTextSize(SkIntToScalar(24));
-                paint.setAntiAlias(true);
-                sk_tool_utils::set_portable_typeface(&paint);
+                SkFont font(sk_tool_utils::create_portable_typeface(), 24);
                 SkString str(enforcePMColor ? "enforcePM" : "no enforcePM");
-                canvas->drawString(str, 0, paint.getTextSize(), paint);
+                canvas->drawString(str, 0, font.getSize(), font, SkPaint());
             }
             canvas->translate(0, HH + 12);
         }

@@ -31,26 +31,60 @@ GrVkResourceProvider::GrVkResourceProvider(GrVkGpu* gpu)
 
 GrVkResourceProvider::~GrVkResourceProvider() {
     SkASSERT(0 == fRenderPassArray.count());
+    SkASSERT(0 == fExternalRenderPasses.count());
     SkASSERT(VK_NULL_HANDLE == fPipelineCache);
     delete fPipelineStateCache;
 }
 
-void GrVkResourceProvider::init() {
-    VkPipelineCacheCreateInfo createInfo;
-    memset(&createInfo, 0, sizeof(VkPipelineCacheCreateInfo));
-    createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-    createInfo.pNext = nullptr;
-    createInfo.flags = 0;
-    createInfo.initialDataSize = 0;
-    createInfo.pInitialData = nullptr;
-    VkResult result = GR_VK_CALL(fGpu->vkInterface(),
-                                 CreatePipelineCache(fGpu->device(), &createInfo, nullptr,
-                                                     &fPipelineCache));
-    SkASSERT(VK_SUCCESS == result);
-    if (VK_SUCCESS != result) {
-        fPipelineCache = VK_NULL_HANDLE;
-    }
+VkPipelineCache GrVkResourceProvider::pipelineCache() {
+    if (fPipelineCache == VK_NULL_HANDLE) {
+        VkPipelineCacheCreateInfo createInfo;
+        memset(&createInfo, 0, sizeof(VkPipelineCacheCreateInfo));
+        createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+        createInfo.pNext = nullptr;
+        createInfo.flags = 0;
 
+        auto persistentCache = fGpu->getContext()->contextPriv().getPersistentCache();
+        sk_sp<SkData> cached;
+        if (persistentCache) {
+            uint32_t key = GrVkGpu::kPipelineCache_PersistentCacheKeyType;
+            sk_sp<SkData> keyData = SkData::MakeWithoutCopy(&key, sizeof(uint32_t));
+            cached = persistentCache->load(*keyData);
+        }
+        bool usedCached = false;
+        if (cached) {
+            uint32_t* cacheHeader = (uint32_t*)cached->data();
+            if (cacheHeader[1] == VK_PIPELINE_CACHE_HEADER_VERSION_ONE) {
+                // For version one of the header, the total header size is 16 bytes plus
+                // VK_UUID_SIZE bytes. See Section 9.6 (Pipeline Cache) in the vulkan spec to see
+                // the breakdown of these bytes.
+                SkASSERT(cacheHeader[0] == 16 + VK_UUID_SIZE);
+                const VkPhysicalDeviceProperties& devProps = fGpu->physicalDeviceProperties();
+                const uint8_t* supportedPipelineCacheUUID = devProps.pipelineCacheUUID;
+                if (cacheHeader[2] == devProps.vendorID && cacheHeader[3] == devProps.deviceID &&
+                    !memcmp(&cacheHeader[4], supportedPipelineCacheUUID, VK_UUID_SIZE)) {
+                    createInfo.initialDataSize = cached->size();
+                    createInfo.pInitialData = cached->data();
+                    usedCached = true;
+                }
+            }
+        }
+        if (!usedCached) {
+            createInfo.initialDataSize = 0;
+            createInfo.pInitialData = nullptr;
+        }
+        VkResult result = GR_VK_CALL(fGpu->vkInterface(),
+                                     CreatePipelineCache(fGpu->device(), &createInfo, nullptr,
+                                                         &fPipelineCache));
+        SkASSERT(VK_SUCCESS == result);
+        if (VK_SUCCESS != result) {
+            fPipelineCache = VK_NULL_HANDLE;
+        }
+    }
+    return fPipelineCache;
+}
+
+void GrVkResourceProvider::init() {
     // Init uniform descriptor objects
     GrVkDescriptorSetManager* dsm = GrVkDescriptorSetManager::CreateUniformManager(fGpu);
     fDescriptorSetManagers.emplace_back(dsm);
@@ -68,7 +102,7 @@ GrVkPipeline* GrVkResourceProvider::createPipeline(const GrPrimitiveProcessor& p
                                                    VkPipelineLayout layout) {
     return GrVkPipeline::Create(fGpu, primProc, pipeline, stencil, shaderStageInfo,
                                 shaderStageCount, primitiveType, compatibleRenderPass, layout,
-                                fPipelineCache);
+                                this->pipelineCache());
 }
 
 GrVkCopyPipeline* GrVkResourceProvider::findOrCreateCopyPipeline(
@@ -87,7 +121,7 @@ GrVkCopyPipeline* GrVkResourceProvider::findOrCreateCopyPipeline(
                                             pipelineLayout,
                                             dst->numColorSamples(),
                                             *dst->simpleRenderPass(),
-                                            fPipelineCache);
+                                            this->pipelineCache());
         if (!pipeline) {
             return nullptr;
         }
@@ -132,6 +166,26 @@ GrVkResourceProvider::findCompatibleRenderPass(const CompatibleRPHandle& compati
     const GrVkRenderPass* renderPass = fRenderPassArray[index].getCompatibleRenderPass();
     renderPass->ref();
     return renderPass;
+}
+
+const GrVkRenderPass* GrVkResourceProvider::findCompatibleExternalRenderPass(
+        VkRenderPass renderPass, uint32_t colorAttachmentIndex) {
+    for (int i = 0; i < fExternalRenderPasses.count(); ++i) {
+        if (fExternalRenderPasses[i]->isCompatibleExternalRP(renderPass)) {
+            fExternalRenderPasses[i]->ref();
+#ifdef SK_DEBUG
+            uint32_t cachedColorIndex;
+            SkASSERT(fExternalRenderPasses[i]->colorAttachmentIndex(&cachedColorIndex));
+            SkASSERT(cachedColorIndex == colorAttachmentIndex);
+#endif
+            return fExternalRenderPasses[i];
+        }
+    }
+
+    const GrVkRenderPass* newRenderPass = new GrVkRenderPass(renderPass, colorAttachmentIndex);
+    fExternalRenderPasses.push_back(newRenderPass);
+    newRenderPass->ref();
+    return newRenderPass;
 }
 
 const GrVkRenderPass* GrVkResourceProvider::findRenderPass(
@@ -294,7 +348,7 @@ GrVkCommandPool* GrVkResourceProvider::findOrCreateCommandPool() {
         for (const GrVkCommandPool* pool : fAvailableCommandPools) {
             SkASSERT(pool != result);
         }
-    );
+    )
     fActiveCommandPools.push_back(result);
     result->ref();
     return result;
@@ -345,6 +399,11 @@ void GrVkResourceProvider::destroyResources(bool deviceLost) {
         fRenderPassArray[i].releaseResources(fGpu);
     }
     fRenderPassArray.reset();
+
+    for (int i = 0; i < fExternalRenderPasses.count(); ++i) {
+        fExternalRenderPasses[i]->unref(fGpu);
+    }
+    fExternalRenderPasses.reset();
 
     // Iterate through all store GrVkSamplers and unref them before resetting the hash.
     SkTDynamicHash<GrVkSampler, GrVkSampler::Key>::Iter iter(&fSamplers);
@@ -414,6 +473,11 @@ void GrVkResourceProvider::abandonResources() {
     }
     fRenderPassArray.reset();
 
+    for (int i = 0; i < fExternalRenderPasses.count(); ++i) {
+        fExternalRenderPasses[i]->unrefAndAbandon();
+    }
+    fExternalRenderPasses.reset();
+
     // Iterate through all store GrVkSamplers and unrefAndAbandon them before resetting the hash.
     SkTDynamicHash<GrVkSampler, GrVkSampler::Key>::Iter iter(&fSamplers);
     for (; !iter.done(); ++iter) {
@@ -458,6 +522,28 @@ void GrVkResourceProvider::reset(GrVkCommandPool* pool) {
     pool->reset(fGpu);
     std::unique_lock<std::recursive_mutex> providerLock(fBackgroundMutex);
     fAvailableCommandPools.push_back(pool);
+}
+
+void GrVkResourceProvider::storePipelineCacheData() {
+    size_t dataSize = 0;
+    VkResult result = GR_VK_CALL(fGpu->vkInterface(), GetPipelineCacheData(fGpu->device(),
+                                                                           this->pipelineCache(),
+                                                                           &dataSize, nullptr));
+    SkASSERT(result == VK_SUCCESS);
+
+    std::unique_ptr<uint8_t[]> data(new uint8_t[dataSize]);
+
+    result = GR_VK_CALL(fGpu->vkInterface(), GetPipelineCacheData(fGpu->device(),
+                                                                  this->pipelineCache(),
+                                                                  &dataSize,
+                                                                  (void*)data.get()));
+    SkASSERT(result == VK_SUCCESS);
+
+    uint32_t key = GrVkGpu::kPipelineCache_PersistentCacheKeyType;
+    sk_sp<SkData> keyData = SkData::MakeWithoutCopy(&key, sizeof(uint32_t));
+
+    fGpu->getContext()->contextPriv().getPersistentCache()->store(
+            *keyData, *SkData::MakeWithoutCopy(data.get(), dataSize));
 }
 
 ////////////////////////////////////////////////////////////////////////////////

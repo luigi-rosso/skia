@@ -26,14 +26,13 @@
 
 class SkGlyphRunList;
 class SkKeyedImage;
-class SkPath;
 class SkPDFArray;
-class SkPDFCanon;
 class SkPDFDevice;
-class SkPDFDocument;
 class SkPDFDict;
+class SkPDFDocument;
 class SkPDFFont;
 class SkPDFObject;
+class SkPath;
 class SkRRect;
 struct SkPDFIndirectReference;
 
@@ -49,8 +48,8 @@ public:
      *  @param pageSize Page size in point units.
      *         1 point == 127/360 mm == 1/72 inch
      *  @param document  A non-null pointer back to the
-     *         PDFDocument object.  The document is repsonsible for
-     *         de-duplicating across pages (via the SkPDFCanon) and
+     *         PDFDocument object.  The document is responsible for
+     *         de-duplicating across pages (via the SkPDFDocument) and
      *         for early serializing of large immutable objects, such
      *         as images (via SkPDFDocument::serialize()).
      *  @param initialTransform Transform to be applied to the entire page.
@@ -114,8 +113,6 @@ public:
     /** Returns a SkStream with the page contents.
      */
     std::unique_ptr<SkStreamAsset> content();
-
-    SkPDFCanon* getCanon() const;
 
     SkISize size() const { return this->imageInfo().dimensions(); }
     SkIRect bounds() const { return this->imageInfo().bounds(); }
@@ -213,16 +210,10 @@ private:
     SkDynamicMemoryWStream* setUpContentEntry(const SkClipStack* clipStack,
                                               const SkMatrix& matrix,
                                               const SkPaint& paint,
-                                              bool hasText,
+                                              SkScalar,
                                               SkPDFIndirectReference* dst);
     void finishContentEntry(const SkClipStack*, SkBlendMode, SkPDFIndirectReference, SkPath*);
     bool isContentEmpty();
-
-    void populateGraphicStateEntryFromPaint(const SkMatrix& matrix,
-                                            const SkClipStack* clipStack,
-                                            const SkPaint& paint,
-                                            bool hasText,
-                                            GraphicStateEntry* entry);
 
     void internalDrawGlyphRun(const SkGlyphRun& glyphRun, SkPoint offset, const SkPaint& runPaint);
     void drawGlyphRunAsPath(const SkGlyphRun& glyphRun, SkPoint offset, const SkPaint& runPaint);

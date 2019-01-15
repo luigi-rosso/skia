@@ -60,6 +60,45 @@ SkImageInfo SkImage_Gpu::onImageInfo() const {
     return SkImageInfo::Make(fProxy->width(), fProxy->height(), colorType, fAlphaType, fColorSpace);
 }
 
+sk_sp<SkImage> SkImage_Gpu::onMakeColorTypeAndColorSpace(SkColorType targetCT,
+                                                         sk_sp<SkColorSpace> targetCS) const {
+    auto xform = GrColorSpaceXformEffect::Make(fColorSpace.get(), fAlphaType,
+                                               targetCS.get(), fAlphaType);
+    SkASSERT(xform || targetCT != this->colorType());
+
+    sk_sp<GrTextureProxy> proxy = this->asTextureProxyRef();
+
+    GrBackendFormat format = proxy->backendFormat().makeTexture2D();
+    if (!format.isValid()) {
+        return nullptr;
+    }
+
+    sk_sp<GrRenderTargetContext> renderTargetContext(
+        fContext->contextPriv().makeDeferredRenderTargetContextWithFallback(
+            format, SkBackingFit::kExact, this->width(), this->height(),
+            SkColorType2GrPixelConfig(targetCT), nullptr));
+    if (!renderTargetContext) {
+        return nullptr;
+    }
+
+    GrPaint paint;
+    paint.setPorterDuffXPFactory(SkBlendMode::kSrc);
+    paint.addColorTextureProcessor(std::move(proxy), SkMatrix::I());
+    if (xform) {
+        paint.addColorFragmentProcessor(std::move(xform));
+    }
+
+    renderTargetContext->drawRect(GrNoClip(), std::move(paint), GrAA::kNo, SkMatrix::I(),
+                                  SkRect::MakeIWH(this->width(), this->height()));
+    if (!renderTargetContext->asTextureProxy()) {
+        return nullptr;
+    }
+
+    // MDB: this call is okay bc we know 'renderTargetContext' was exact
+    return sk_make_sp<SkImage_Gpu>(fContext, kNeedNewImageUniqueID, fAlphaType,
+                                   renderTargetContext->asTextureProxyRef(), std::move(targetCS));
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 static sk_sp<SkImage> new_wrapped_texture_common(GrContext* ctx,
@@ -282,8 +321,8 @@ sk_sp<SkImage> SkImage::makeTextureImage(GrContext* context, SkColorSpace* dstCo
     if (!context) {
         return nullptr;
     }
-    if (GrContext* incumbent = as_IB(this)->context()) {
-        if (incumbent != context) {
+    if (uint32_t incumbentID = as_IB(this)->contextID()) {
+        if (incumbentID != context->uniqueID()) {
             return nullptr;
         }
         sk_sp<GrTextureProxy> proxy = as_IB(this)->asTextureProxyRef();
@@ -322,10 +361,10 @@ sk_sp<SkImage> SkImage_Gpu::MakePromiseTexture(GrContext* context,
                                                SkColorType colorType,
                                                SkAlphaType alphaType,
                                                sk_sp<SkColorSpace> colorSpace,
-                                               TextureFulfillProc textureFulfillProc,
-                                               TextureReleaseProc textureReleaseProc,
-                                               PromiseDoneProc promiseDoneProc,
-                                               TextureContext textureContext) {
+                                               PromiseImageTextureFulfillProc textureFulfillProc,
+                                               PromiseImageTextureReleaseProc textureReleaseProc,
+                                               PromiseImageTextureDoneProc promiseDoneProc,
+                                               PromiseImageTextureContext textureContext) {
     // The contract here is that if 'promiseDoneProc' is passed in it should always be called,
     // even if creation of the SkImage fails. Once we call MakePromiseImageLazyProxy it takes
     // responsibility for calling the done proc.
