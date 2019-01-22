@@ -200,41 +200,43 @@ void SkPaint::setHinting(SkFontHinting hintingLevel) {
     fBitfields.fHinting = static_cast<unsigned>(hintingLevel);
 }
 
+#ifdef SK_SUPPORT_LEGACY_PAINT_FLAGS
 void SkPaint::setFlags(uint32_t flags) {
     fBitfields.fFlags = flags;
 }
+#endif
 
 void SkPaint::setAntiAlias(bool doAA) {
-    this->setFlags(set_clear_mask(fBitfields.fFlags, doAA, kAntiAlias_Flag));
+    this->internal_setFlags(set_clear_mask(fBitfields.fFlags, doAA, kAntiAlias_Flag));
 }
 
 void SkPaint::setDither(bool doDither) {
-    this->setFlags(set_clear_mask(fBitfields.fFlags, doDither, kDither_Flag));
+    this->internal_setFlags(set_clear_mask(fBitfields.fFlags, doDither, kDither_Flag));
 }
 
 #ifdef SK_SUPPORT_LEGACY_PAINT_FONT_FIELDS
 void SkPaint::setSubpixelText(bool doSubpixel) {
-    this->setFlags(set_clear_mask(fBitfields.fFlags, doSubpixel, kSubpixelText_Flag));
+    this->internal_setFlags(set_clear_mask(fBitfields.fFlags, doSubpixel, kSubpixelText_Flag));
 }
 
 void SkPaint::setLCDRenderText(bool doLCDRender) {
-    this->setFlags(set_clear_mask(fBitfields.fFlags, doLCDRender, kLCDRenderText_Flag));
+    this->internal_setFlags(set_clear_mask(fBitfields.fFlags, doLCDRender, kLCDRenderText_Flag));
 }
 
 void SkPaint::setEmbeddedBitmapText(bool doEmbeddedBitmapText) {
-    this->setFlags(set_clear_mask(fBitfields.fFlags, doEmbeddedBitmapText, kEmbeddedBitmapText_Flag));
+    this->internal_setFlags(set_clear_mask(fBitfields.fFlags, doEmbeddedBitmapText, kEmbeddedBitmapText_Flag));
 }
 
 void SkPaint::setAutohinted(bool useAutohinter) {
-    this->setFlags(set_clear_mask(fBitfields.fFlags, useAutohinter, kAutoHinting_Flag));
+    this->internal_setFlags(set_clear_mask(fBitfields.fFlags, useAutohinter, kAutoHinting_Flag));
 }
 
 void SkPaint::setLinearText(bool doLinearText) {
-    this->setFlags(set_clear_mask(fBitfields.fFlags, doLinearText, kLinearText_Flag));
+    this->internal_setFlags(set_clear_mask(fBitfields.fFlags, doLinearText, kLinearText_Flag));
 }
 
 void SkPaint::setFakeBoldText(bool doFakeBold) {
-    this->setFlags(set_clear_mask(fBitfields.fFlags, doFakeBold, kFakeBoldText_Flag));
+    this->internal_setFlags(set_clear_mask(fBitfields.fFlags, doFakeBold, kFakeBoldText_Flag));
 }
 #endif
 
@@ -421,6 +423,8 @@ static FlatFlags unpack_paint_flags(SkPaint* paint, uint32_t packed, SkFont* fon
         font->setSubpixel((f & kSubpixel_PaintFlagForFont) != 0);
         font->setEmbeddedBitmaps((f & kEmbeddedBitmap_PaintFlagForFont) != 0);
         font->setForceAutoHinting((f & kAutoHinting_PaintFlagForFont) != 0);
+
+        font->setHinting((SkFontHinting)((packed >> 14) & BPF_Mask(kHint_BPF)));
 
         if (f & kAA_PaintFlagForPaint) {
             if (f & kLCD_PaintFlagForFont) {

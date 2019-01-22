@@ -1635,7 +1635,7 @@ Error PDFSink::draw(const Src& src, SkBitmap*, SkWStream* dst, SkString*) const 
     std::unique_ptr<SkExecutor> executor = SkExecutor::MakeFIFOThreadPool();
     metadata.fExecutor = executor.get();
 #endif
-    sk_sp<SkDocument> doc = SkPDF::MakeDocument(dst, metadata);
+    auto doc = SkPDF::MakeDocument(dst, metadata);
     if (!doc) {
         return "SkPDF::MakeDocument() returned nullptr";
     }
@@ -1665,9 +1665,9 @@ Error XPSSink::draw(const Src& src, SkBitmap*, SkWStream* dst, SkString*) const 
     if (!factory) {
         return "Failed to create XPS Factory.";
     }
-    sk_sp<SkDocument> doc(SkXPS::MakeDocument(dst, factory.get()));
+    auto doc = SkXPS::MakeDocument(dst, factory.get());
     if (!doc) {
-        return "SkXPS::MAkeDocument() returned nullptr";
+        return "SkXPS::MakeDocument() returned nullptr";
     }
     return draw_skdocument(src, doc.get(), dst);
 }
@@ -1978,6 +1978,9 @@ Error ViaDDL::draw(const Src& src, SkBitmap* bitmap, SkWStream* stream, SkString
             DDLTileHelper tiles(canvas, viewport, fNumDivisions);
 
             // Second, reinflate the compressed picture individually for each thread
+            // This recreates the promise SkImages on each replay iteration. We are currently
+            // relying on this to test using a SkPromiseImageTexture to fulfill different
+            // SkImages. On each replay the promise SkImages are recreated in createSKPPerTile.
             tiles.createSKPPerTile(compressedPictureData.get(), promiseImageHelper);
 
             // Third, create the DDLs in parallel
