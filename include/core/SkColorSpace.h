@@ -17,13 +17,6 @@
 
 class SkData;
 
-enum SkGammaNamed {
-    kLinear_SkGammaNamed,
-    kSRGB_SkGammaNamed,
-    k2Dot2Curve_SkGammaNamed,
-    kNonStandard_SkGammaNamed,
-};
-
 /**
  *  Describes a color gamut with primaries and a white point.
  */
@@ -131,13 +124,6 @@ public:
      */
     static sk_sp<SkColorSpace> MakeSRGBLinear();
 
-    // DEPRECATED
-    // Keeping this around until Android stops using it.
-    enum Gamut {
-        kSRGB_Gamut,
-        kDCIP3_D65_Gamut,
-    };
-
     /**
      *  Create an SkColorSpace from a transfer function and a row-major 3x3 transformation to XYZ.
      */
@@ -154,17 +140,15 @@ public:
      */
     void toProfile(skcms_ICCProfile*) const;
 
-    SkGammaNamed gammaNamed() const { return fGammaNamed; }
-
     /**
      *  Returns true if the color space gamma is near enough to be approximated as sRGB.
      */
-    bool gammaCloseToSRGB() const { return kSRGB_SkGammaNamed == fGammaNamed; }
+    bool gammaCloseToSRGB() const;
 
     /**
      *  Returns true if the color space gamma is linear.
      */
-    bool gammaIsLinear() const { return kLinear_SkGammaNamed == fGammaNamed; }
+    bool gammaIsLinear() const;
 
     /**
      *  If the transfer function can be represented as coefficients to the standard
@@ -258,13 +242,11 @@ public:
 private:
     friend class SkColorSpaceSingletonFactory;
 
-    SkColorSpace(SkGammaNamed gammaNamed,
-                 const float transferFn[7],
+    SkColorSpace(const float transferFn[7],
                  const skcms_Matrix3x3& toXYZ);
 
     void computeLazyDstFields() const;
 
-    SkGammaNamed                        fGammaNamed;         // TODO: 2-bit, pack tightly?  drop?
     uint32_t                            fTransferFnHash;
     uint32_t                            fToXYZD50Hash;
 

@@ -7,6 +7,7 @@
 _tests = get_path_info("../tests", "abspath")
 
 tests_sources = [
+  "$_tests/AdvancedBlendTest.cpp",
   "$_tests/AndroidCodecTest.cpp",
   "$_tests/AnimatedImageTest.cpp",
   "$_tests/AAClipTest.cpp",
@@ -240,6 +241,7 @@ tests_sources = [
   "$_tests/SkSLGLSLTest.cpp",
   "$_tests/SkSLJITTest.cpp",
   "$_tests/SkSLMemoryLayoutTest.cpp",
+  "$_tests/SkSLMetalTest.cpp",
   "$_tests/SkSLSPIRVTest.cpp",
   "$_tests/SkUTFTest.cpp",
   "$_tests/SortTest.cpp",

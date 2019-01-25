@@ -980,7 +980,7 @@ static void apply_paint_patheffect(const SkPaint& paint, Json::Value* target,
 
 static void apply_font_typeface(const SkFont& font, Json::Value* target,
                                  UrlDataManager& urlDataManager) {
-    SkTypeface* typeface = font.getTypeface();
+    SkTypeface* typeface = font.getTypefaceOrDefault();
     if (typeface != nullptr) {
         Json::Value jsonTypeface;
         SkDynamicMemoryWStream buffer;
@@ -1978,6 +1978,19 @@ Json::Value SkDrawRectCommand::toJSON(UrlDataManager& urlDataManager) const {
     result[SKDEBUGCANVAS_ATTRIBUTE_SHORTDESC] = Json::Value(str_append(&desc, fRect)->c_str());
 
     return result;
+}
+
+SkDrawEdgeAARectCommand::SkDrawEdgeAARectCommand(const SkRect& rect, SkCanvas::QuadAAFlags aa,
+                                                 SkColor color, SkBlendMode mode)
+    : INHERITED(kDrawEdgeAARect_OpType) {
+    fRect = rect;
+    fAA = aa;
+    fColor = color;
+    fMode = mode;
+}
+
+void SkDrawEdgeAARectCommand::execute(SkCanvas* canvas) const {
+    canvas->experimental_DrawEdgeAARectV1(fRect, fAA, fColor, fMode);
 }
 
 SkDrawRRectCommand::SkDrawRRectCommand(const SkRRect& rrect, const SkPaint& paint)
