@@ -181,6 +181,13 @@ var CanvasKit = {
 		delete: function() {},
 	},
 
+	SkPathMeasure: {
+		// public API (from C++ bindings)
+		getLength: function() {},
+		getSegment: function() {},
+		nextContour: function() {},
+	},
+
 	SkPath: {
 		// public API (from C++ bindings)
 		computeTightBounds: function() {},

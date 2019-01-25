@@ -49,6 +49,7 @@
 #include "SkTypeface.h"
 #include "SkTypes.h"
 #include "SkVertices.h"
+#include "SkPathMeasure.h"
 
 #include <iostream>
 #include <string>
@@ -137,6 +138,10 @@ struct SimpleImageInfo {
 
 SkImageInfo toSkImageInfo(const SimpleImageInfo& sii) {
     return SkImageInfo::Make(sii.width, sii.height, sii.colorType, sii.alphaType);
+}
+
+bool GetSegment(SkPathMeasure& measure, SkScalar startD, SkScalar stopD, SkPath& dst, bool startWithMoveTo) {
+    return measure.getSegment(startD, stopD, &dst, startWithMoveTo);
 }
 
 //========================================================================================
@@ -824,6 +829,15 @@ EMSCRIPTEN_BINDINGS(Skia) {
 
     class_<SkPathEffect>("SkPathEffect")
         .smart_ptr<sk_sp<SkPathEffect>>("sk_sp<SkPathEffect>");
+
+
+    class_<SkPathMeasure>("SkPathMeasure")
+        .constructor<>()
+        .constructor<const SkPath&, bool, SkScalar>()
+        .function("getLength", &SkPathMeasure::getLength)
+        .function("getSegment", &GetSegment)
+        .function("nextContour", &SkPathMeasure::nextContour);
+        
 
     class_<SkPath>("SkPath")
         .constructor<>()
