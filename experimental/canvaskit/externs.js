@@ -34,6 +34,7 @@ var CanvasKit = {
 	MakeBlurMaskFilter: function() {},
 	MakeCanvas: function() {},
 	MakeCanvasSurface: function() {},
+	MakeImage: function() {},
 	MakeImageShader: function() {},
 	/** @return {CanvasKit.SkImage} */
 	MakeImageFromEncoded: function() {},
