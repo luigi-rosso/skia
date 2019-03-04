@@ -34,6 +34,7 @@ var CanvasKit = {
 	MakeBlurMaskFilter: function() {},
 	MakeCanvas: function() {},
 	MakeCanvasSurface: function() {},
+	MakeWebGL: function() {},
 	MakeImage: function() {},
 	MakeImageShader: function() {},
 	/** @return {CanvasKit.SkImage} */
@@ -74,6 +75,9 @@ var CanvasKit = {
 	_getRasterDirectSurface: function() {},
 	_getRasterN32PremulSurface: function() {},
 	_getWebGLSurface: function() {},
+	MakeGrContext: function() {},
+	SurfaceFromBackendRenderTarget: function() {},
+	MakeRenderTarget: function() {},
 
 	// The testing object is meant to expose internal functions
 	// for more fine-grained testing, e.g. parseColor

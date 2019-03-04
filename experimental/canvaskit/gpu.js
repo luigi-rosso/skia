@@ -41,6 +41,10 @@
         return GL.createContext(canvas, contextAttributes);
       }
 
+      CanvasKit.MakeWebGL = function(canvas) {
+        return makeWebGLContext(canvas);
+      };
+
       // arg can be of types:
       //  - String - in which case it is interpreted as an id of a
       //          canvas element.
