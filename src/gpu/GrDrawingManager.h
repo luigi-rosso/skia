@@ -8,17 +8,19 @@
 #ifndef GrDrawingManager_DEFINED
 #define GrDrawingManager_DEFINED
 
+#include "GrBufferAllocPool.h"
 #include "GrDeferredUpload.h"
 #include "GrPathRenderer.h"
 #include "GrPathRendererChain.h"
 #include "GrResourceCache.h"
+#include "SkSurface.h"
 #include "SkTArray.h"
 #include "text/GrTextContext.h"
 
-class GrContext;
 class GrCoverageCountingPathRenderer;
 class GrOnFlushCallbackObject;
 class GrOpFlushState;
+class GrRecordingContext;
 class GrRenderTargetContext;
 class GrRenderTargetProxy;
 class GrSingleOWner;
@@ -37,7 +39,6 @@ class GrDrawingManager {
 public:
     ~GrDrawingManager();
 
-    bool wasAbandoned() const { return fAbandoned; }
     void freeGpuResources();
 
     sk_sp<GrRenderTargetContext> makeRenderTargetContext(sk_sp<GrSurfaceProxy>,
@@ -53,7 +54,7 @@ public:
     sk_sp<GrRenderTargetOpList> newRTOpList(GrRenderTargetProxy* rtp, bool managedOpList);
     sk_sp<GrTextureOpList> newTextureOpList(GrTextureProxy* textureProxy);
 
-    GrContext* getContext() { return fContext; }
+    GrRecordingContext* getContext() { return fContext; }
 
     GrTextContext* getTextContext();
 
@@ -73,11 +74,16 @@ public:
     static bool ProgramUnitTest(GrContext* context, int maxStages, int maxLevels);
 
     GrSemaphoresSubmitted prepareSurfaceForExternalIO(GrSurfaceProxy*,
+                                                      SkSurface::BackendSurfaceAccess access,
+                                                      SkSurface::FlushFlags flags,
                                                       int numSemaphores,
                                                       GrBackendSemaphore backendSemaphores[]);
 
     void addOnFlushCallbackObject(GrOnFlushCallbackObject*);
+
+#if GR_TEST_UTILS
     void testingOnly_removeOnFlushCallbackObject(GrOnFlushCallbackObject*);
+#endif
 
     void moveOpListsToDDL(SkDeferredDisplayList* ddl);
     void copyOpListsFromDDL(const SkDeferredDisplayList*, GrRenderTargetProxy* newDest);
@@ -131,40 +137,43 @@ private:
         bool                      fSortOpLists;
     };
 
-    GrDrawingManager(GrContext*, const GrPathRendererChain::Options&,
+    GrDrawingManager(GrRecordingContext*, const GrPathRendererChain::Options&,
                      const GrTextContext::Options&, GrSingleOwner*,
                      bool explicitlyAllocating, GrContextOptions::Enable sortRenderTargets,
                      GrContextOptions::Enable reduceOpListSplitting);
 
-    void abandon();
+    bool wasAbandoned() const;
+
     void cleanup();
 
     // return true if any opLists were actually executed; false otherwise
     bool executeOpLists(int startIndex, int stopIndex, GrOpFlushState*, int* numOpListsExecuted);
 
     GrSemaphoresSubmitted flush(GrSurfaceProxy* proxy,
-                                int numSemaphores = 0,
-                                GrBackendSemaphore backendSemaphores[] = nullptr);
+                                SkSurface::BackendSurfaceAccess access,
+                                SkSurface::FlushFlags flags,
+                                int numSemaphores,
+                                GrBackendSemaphore backendSemaphores[]);
 
     SkDEBUGCODE(void validate() const);
 
-    friend class GrContext;  // for access to: ctor, abandon, reset & flush
+    friend class GrContext; // access to: flush & cleanup
     friend class GrContextPriv; // access to: flush
     friend class GrOnFlushResourceProvider; // this is just a shallow wrapper around this class
+    friend class GrRecordingContext;  // access to: ctor
 
     static const int kNumPixelGeometries = 5; // The different pixel geometries
     static const int kNumDFTOptions = 2;      // DFT or no DFT
 
-    GrContext*                        fContext;
+    GrRecordingContext*               fContext;
     GrPathRendererChain::Options      fOptionsForPathRendererChain;
     GrTextContext::Options            fOptionsForTextContext;
-
-    std::unique_ptr<char[]>           fVertexBufferSpace;
-    std::unique_ptr<char[]>           fIndexBufferSpace;
+    // This cache is used by both the vertex and index pools. It reuses memory across multiple
+    // flushes.
+    sk_sp<GrBufferAllocPool::CpuBufferCache> fCpuBufferCache;
     // In debug builds we guard against improper thread handling
     GrSingleOwner*                    fSingleOwner;
 
-    bool                              fAbandoned;
     OpListDAG                         fDAG;
     GrOpList*                         fActiveOpList = nullptr;
     // These are the IDs of the opLists currently being flushed (in internalFlush)

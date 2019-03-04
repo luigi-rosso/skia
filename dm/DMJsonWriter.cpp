@@ -10,7 +10,7 @@
 #include "ProcStats.h"
 #include "SkCommonFlags.h"
 #include "SkData.h"
-#include "SkJSONCPP.h"
+#include "SkJSON.h"
 #include "SkJSONWriter.h"
 #include "SkMutex.h"
 #include "SkOSFile.h"
@@ -82,8 +82,9 @@ void JsonWriter::DumpJson() {
             writer.endObject(); // key
 
             writer.beginObject("options");
-            writer.appendString("ext"          , gBitmapResults[i].ext.c_str());
-            writer.appendString("gamma_correct", gBitmapResults[i].gammaCorrect ? "yes" : "no");
+            writer.appendString("ext"  ,       gBitmapResults[i].ext.c_str());
+            writer.appendString("gamut",       gBitmapResults[i].gamut.c_str());
+            writer.appendString("transfer_fn", gBitmapResults[i].transferFn.c_str());
             writer.endObject(); // options
 
             writer.appendString("md5", gBitmapResults[i].md5.c_str());
@@ -116,32 +117,40 @@ void JsonWriter::DumpJson() {
     stream.flush();
 }
 
+using namespace skjson;
+
 bool JsonWriter::ReadJson(const char* path, void(*callback)(BitmapResult)) {
     sk_sp<SkData> json(SkData::MakeFromFileName(path));
     if (!json) {
         return false;
     }
 
-    Json::Reader reader;
-    Json::Value root;
-    const char* data = (const char*)json->data();
-    if (!reader.parse(data, data+json->size(), root)) {
+    DOM dom((const char*)json->data(), json->size());
+    const ObjectValue* root = dom.root();
+    if (!root) {
         return false;
     }
 
-    const Json::Value& results = root["results"];
-    BitmapResult br;
-    for (unsigned i = 0; i < results.size(); i++) {
-        const Json::Value& r = results[i];
-        br.name         = r["key"]["name"].asCString();
-        br.config       = r["key"]["config"].asCString();
-        br.sourceType   = r["key"]["source_type"].asCString();
-        br.ext          = r["options"]["ext"].asCString();
-        br.gammaCorrect = 0 == strcmp("yes", r["options"]["gamma_correct"].asCString());
-        br.md5          = r["md5"].asCString();
+    const ArrayValue* results = (*root)["results"];
+    if (!results) {
+        return false;
+    }
 
-        if (!r["key"]["source_options"].isNull()) {
-            br.sourceOptions = r["key"]["source_options"].asCString();
+    BitmapResult br;
+    for (const ObjectValue* r : *results) {
+        const ObjectValue& key = (*r)["key"].as<ObjectValue>();
+        const ObjectValue& options = (*r)["options"].as<ObjectValue>();
+
+        br.name         = key["name"].as<StringValue>().begin();
+        br.config       = key["config"].as<StringValue>().begin();
+        br.sourceType   = key["source_type"].as<StringValue>().begin();
+        br.ext          = options["ext"].as<StringValue>().begin();
+        br.gamut        = options["gamut"].as<StringValue>().begin();
+        br.transferFn   = options["transfer_fn"].as<StringValue>().begin();
+        br.md5          = (*r)["md5"].as<StringValue>().begin();
+
+        if (const StringValue* so = key["source_options"]) {
+            br.sourceOptions = so->begin();
         }
         callback(br);
     }

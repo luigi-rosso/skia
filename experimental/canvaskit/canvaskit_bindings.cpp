@@ -40,6 +40,7 @@
 #include "SkScalar.h"
 #include "SkShader.h"
 #include "SkShadowUtils.h"
+#include "SkShaper.h"
 #include "SkString.h"
 #include "SkStrokeRec.h"
 #include "SkSurface.h"
@@ -467,6 +468,58 @@ Uint8Array getSkDataBytes(const SkData *data) {
     return Uint8Array(typed_memory_view(data->size(), data->bytes()));
 }
 
+// Text Shaping abstraction
+
+struct ShapedTextOpts {
+    SkFont font;
+    bool leftToRight;
+    std::string text;
+    SkScalar width;
+};
+
+std::unique_ptr<SkShaper> shaper;
+
+static sk_sp<SkTextBlob> do_shaping(const ShapedTextOpts& opts, SkPoint* pt) {
+    SkTextBlobBuilderRunHandler builder(opts.text.c_str());
+    if (!shaper) {
+        shaper = SkShaper::Make();
+    }
+    *pt = shaper->shape(&builder, opts.font, opts.text.c_str(),
+                        opts.text.length(), opts.leftToRight,
+                        {0, 0}, opts.width);
+    return builder.makeBlob();
+}
+
+class ShapedText {
+public:
+    ShapedText(ShapedTextOpts opts) : fOpts(opts) {}
+
+    SkRect getBounds() {
+        this->init();
+        return SkRect::MakeLTRB(0, 0, fOpts.width, fPoint.y());
+    }
+
+    SkTextBlob* blob() {
+        this->init();
+        return fBlob.get();
+    }
+private:
+    const ShapedTextOpts fOpts;
+    SkPoint fPoint;
+    sk_sp<SkTextBlob> fBlob;
+
+    void init() {
+        if (!fBlob) {
+            fBlob = do_shaping(fOpts, &fPoint);
+        }
+    }
+};
+
+void drawShapedText(SkCanvas& canvas, ShapedText st, SkScalar x,
+                     SkScalar y, SkPaint paint) {
+    canvas.drawTextBlob(st.blob(), x, y, paint);
+}
+
 // These objects have private destructors / delete mthods - I don't think
 // we need to do anything other than tell emscripten to do nothing.
 namespace emscripten {
@@ -513,8 +566,8 @@ EMSCRIPTEN_BINDINGS(Skia) {
     function("_decodeImage", optional_override([](uintptr_t /* uint8_t*  */ iptr,
                                                   size_t length)->sk_sp<SkImage> {
         uint8_t* imgData = reinterpret_cast<uint8_t*>(iptr);
-        sk_sp<SkData> bytes = SkData::MakeWithoutCopy(imgData, length);
-        return SkImage::MakeFromEncoded(bytes);
+        sk_sp<SkData> bytes = SkData::MakeFromMalloc(imgData, length);
+        return SkImage::MakeFromEncoded(std::move(bytes));
     }), allow_raw_pointers());
     function("_getRasterDirectSurface", optional_override([](const SimpleImageInfo ii,
                                                              uintptr_t /* uint8_t*  */ pPtr,
@@ -695,6 +748,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
             SkShadowUtils::DrawShadow(&self, path, zPlaneParams, lightPos, lightRadius,
                                       SkColor(ambientColor), SkColor(spotColor), flags);
         }))
+        .function("_drawShapedText", &drawShapedText)
         .function("_drawSimpleText", optional_override([](SkCanvas& self, uintptr_t /* char* */ sptr,
                                                           size_t len, SkScalar x, SkScalar y, const SkFont& font,
                                                           const SkPaint& paint) {
@@ -757,6 +811,10 @@ EMSCRIPTEN_BINDINGS(Skia) {
         .function("setSize", &SkFont::setSize)
         .function("setSkewX", &SkFont::setSkewX)
         .function("setTypeface", &SkFont::setTypeface, allow_raw_pointers());
+
+    class_<ShapedText>("ShapedText")
+        .constructor<ShapedTextOpts>()
+        .function("getBounds", &ShapedText::getBounds);
 
     class_<SkFontMgr>("SkFontMgr")
         .smart_ptr<sk_sp<SkFontMgr>>("sk_sp<SkFontMgr>")
@@ -899,7 +957,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
         .smart_ptr<sk_sp<SkSurface>>("sk_sp<SkSurface>")
         .function("width", &SkSurface::width)
         .function("height", &SkSurface::height)
-        .function("_flush", &SkSurface::flush)
+        .function("_flush", select_overload<void()>(&SkSurface::flush))
         .function("makeImageSnapshot", select_overload<sk_sp<SkImage>()>(&SkSurface::makeImageSnapshot))
         .function("makeImageSnapshot", select_overload<sk_sp<SkImage>(const SkIRect& bounds)>(&SkSurface::makeImageSnapshot))
         .function("getCanvas", &SkSurface::getCanvas, allow_raw_pointers());
@@ -1057,6 +1115,12 @@ EMSCRIPTEN_BINDINGS(Skia) {
     // A value object is much simpler than a class - it is returned as a JS
     // object and does not require delete().
     // https://kripken.github.io/emscripten-site/docs/porting/connecting_cpp_and_javascript/embind.html#value-types
+    value_object<ShapedTextOpts>("ShapedTextOpts")
+        .field("font",        &ShapedTextOpts::font)
+        .field("leftToRight", &ShapedTextOpts::leftToRight)
+        .field("text",        &ShapedTextOpts::text)
+        .field("width",       &ShapedTextOpts::width);
+
     value_object<SkRect>("SkRect")
         .field("fLeft",   &SkRect::fLeft)
         .field("fTop",    &SkRect::fTop)

@@ -23,12 +23,12 @@ sk_sp<GrVkSecondaryCBDrawContext> GrVkSecondaryCBDrawContext::Make(GrContext* ct
         return nullptr;
     }
 
-    if (ctx->contextPriv().getBackend() != GrBackendApi::kVulkan) {
+    if (ctx->backend() != GrBackendApi::kVulkan) {
         return nullptr;
     }
 
     sk_sp<GrRenderTargetContext> rtc(
-            ctx->contextPriv().makeVulkanSecondaryCBRenderTargetContext(imageInfo, vkInfo, props));
+            ctx->priv().makeVulkanSecondaryCBRenderTargetContext(imageInfo, vkInfo, props));
 
     int width = rtc->width();
     int height = rtc->height();

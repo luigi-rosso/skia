@@ -77,10 +77,20 @@ public:
         fNeedsTiling = clipR.right() > kMaxDim || clipR.bottom() > kMaxDim;
         if (fNeedsTiling) {
             if (bounds) {
-                SkRect devBounds;
-                dev->ctm().mapRect(&devBounds, *bounds);
-                if (devBounds.intersect(SkRect::Make(clipR))) {
-                    fSrcBounds = devBounds.roundOut();
+                // Make sure we round first, and then intersect. We can't rely on promoting the
+                // clipR to floats (and then intersecting with devBounds) since promoting
+                // int --> float can make the float larger than the int.
+                // rounding(out) first runs the risk of clamping if the float is larger an intmax
+                // but our roundOut() is saturating, which is fine for this use case
+                //
+                // e.g. the older version of this code did this:
+                //    devBounds = mapRect(bounds);
+                //    if (devBounds.intersect(SkRect::Make(clipR))) {
+                //        fSrcBounds = devBounds.roundOut();
+                // The problem being that the promotion of clipR to SkRect was unreliable
+                //
+                fSrcBounds = dev->ctm().mapRect(*bounds).roundOut();
+                if (fSrcBounds.intersect(clipR)) {
                     // Check again, now that we have computed srcbounds.
                     fNeedsTiling = fSrcBounds.right() > kMaxDim || fSrcBounds.bottom() > kMaxDim;
                 } else {
@@ -389,13 +399,6 @@ void SkBitmapDevice::drawPath(const SkPath& path,
     }
 }
 
-void SkBitmapDevice::drawBitmap(const SkBitmap& bitmap, SkScalar x, SkScalar y,
-                                const SkPaint& paint) {
-    SkMatrix matrix = SkMatrix::MakeTrans(x, y);
-    LogDrawScaleFactor(SkMatrix::Concat(this->ctm(), matrix), paint.getFilterQuality());
-    this->drawBitmap(bitmap, matrix, nullptr, paint);
-}
-
 void SkBitmapDevice::drawBitmap(const SkBitmap& bitmap, const SkMatrix& matrix,
                                 const SkRect* dstOrNull, const SkPaint& paint) {
     const SkRect* bounds = dstOrNull;
@@ -440,7 +443,7 @@ void SkBitmapDevice::drawBitmapRect(const SkBitmap& bitmap,
     }
     matrix.setRectToRect(tmpSrc, dst, SkMatrix::kFill_ScaleToFit);
 
-    LogDrawScaleFactor(SkMatrix::Concat(this->ctm(), matrix), paint.getFilterQuality());
+    LogDrawScaleFactor(this->ctm(), matrix, paint.getFilterQuality());
 
     const SkRect* dstPtr = &dst;
     const SkBitmap* bitmapPtr = &bitmap;
@@ -694,7 +697,10 @@ void SkBitmapDevice::drawSpecial(SkSpecialImage* src, int x, int y, const SkPain
 
     SkAutoDeviceCTMRestore adctmr(this, maskMatrix);
     paint.writable()->setShader(srcImage->makeShader(&shaderMatrix));
-    this->drawImage(mask.get(), maskBounds.x(), maskBounds.y(), *paint);
+    this->drawImageRect(mask.get(), nullptr,
+                        SkRect::MakeXYWH(maskBounds.x(), maskBounds.y(),
+                                         mask->width(), mask->height()),
+                        *paint, SkCanvas::kFast_SrcRectConstraint);
 }
 
 sk_sp<SkSpecialImage> SkBitmapDevice::makeSpecial(const SkBitmap& bitmap) {

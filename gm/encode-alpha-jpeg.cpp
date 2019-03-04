@@ -42,10 +42,12 @@ protected:
         return SkISize::Make(400, 200);
     }
 
-    void onDraw(SkCanvas* canvas) override {
+    DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override {
         sk_sp<SkImage> srcImg = GetResourceAsImage("images/rainbow-gradient.png");
         if (!srcImg) {
-            return;
+            *errorMsg = "Could not load images/rainbow-gradient.png. "
+                        "Did you forget to set the resourcePath?";
+            return DrawResult::kFail;
         }
         fStorage.reset(srcImg->width() * srcImg->height() *
                 SkColorTypeBytesPerPixel(kRGBA_F16_SkColorType));
@@ -87,6 +89,7 @@ protected:
             canvas->drawImage(img0, 300.0f, 0.0f);
             canvas->drawImage(img1, 300.0f, 100.0f);
         }
+        return DrawResult::kOk;
     }
 
 private:

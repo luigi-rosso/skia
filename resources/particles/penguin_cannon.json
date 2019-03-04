@@ -1,0 +1,100 @@
+{
+   "MaxCount": 32,
+   "Duration": 1,
+   "Rate": 0.5,
+   "Life": {
+      "XValues": [],
+      "Segments": [
+         {
+            "Type": "Constant",
+            "Ranged": false,
+            "Bidirectional": false,
+            "A0": 20
+         }
+      ]
+   },
+   "Drawable": {
+      "Type": "SkImageDrawable",
+      "Path": "images/baby_tux.png",
+      "Columns": 1,
+      "Rows": 1
+   },
+   "Spawn": [
+      {
+         "Type": "SkLinearVelocityAffector",
+         "Enabled": true,
+         "Force": false,
+         "Frame": "World",
+         "Angle": {
+            "XValues": [],
+            "Segments": [
+               {
+                  "Type": "Constant",
+                  "Ranged": true,
+                  "Bidirectional": false,
+                  "A0": 10,
+                  "A1": 70
+               }
+            ]
+         },
+         "Strength": {
+            "XValues": [],
+            "Segments": [
+               {
+                  "Type": "Constant",
+                  "Ranged": true,
+                  "Bidirectional": false,
+                  "A0": 140,
+                  "A1": 200
+               }
+            ]
+         }
+      }
+   ],
+   "Update": [
+      {
+         "Type": "SkLinearVelocityAffector",
+         "Enabled": true,
+         "Force": true,
+         "Frame": "World",
+         "Angle": {
+            "XValues": [],
+            "Segments": [
+               {
+                  "Type": "Constant",
+                  "Ranged": false,
+                  "Bidirectional": false,
+                  "A0": 180
+               }
+            ]
+         },
+         "Strength": {
+            "XValues": [],
+            "Segments": [
+               {
+                  "Type": "Constant",
+                  "Ranged": false,
+                  "Bidirectional": false,
+                  "A0": 50
+               }
+            ]
+         }
+      },
+      {
+         "Type": "SkOrientationAffector",
+         "Enabled": true,
+         "Frame": "Velocity",
+         "Angle": {
+            "XValues": [],
+            "Segments": [
+               {
+                  "Type": "Constant",
+                  "Ranged": false,
+                  "Bidirectional": false,
+                  "A0": 0
+               }
+            ]
+         }
+      }
+   ]
+}

@@ -1,0 +1,77 @@
+{
+   "MaxCount": 4096,
+   "Duration": 1,
+   "Rate": 1000,
+   "Life": {
+      "XValues": [],
+      "Segments": [
+         {
+            "Type": "Constant",
+            "Ranged": true,
+            "Bidirectional": false,
+            "A0": 1,
+            "A1": 3
+         }
+      ]
+   },
+   "Drawable": {
+      "Type": "SkCircleDrawable",
+      "Radius": 1
+   },
+   "Spawn": [
+      {
+         "Type": "SkLinearVelocityAffector",
+         "Enabled": true,
+         "Force": false,
+         "Frame": "World",
+         "Angle": {
+            "XValues": [],
+            "Segments": [
+               {
+                  "Type": "Constant",
+                  "Ranged": true,
+                  "Bidirectional": false,
+                  "A0": -30,
+                  "A1": 30
+               }
+            ]
+         },
+         "Strength": {
+            "XValues": [],
+            "Segments": [
+               {
+                  "Type": "Constant",
+                  "Ranged": true,
+                  "Bidirectional": false,
+                  "A0": 10,
+                  "A1": 30
+               }
+            ]
+         }
+      },
+      {
+         "Type": "SkPositionOnTextAffector",
+         "Enabled": true,
+         "SetHeading": true,
+         "Text": "SKIA",
+         "FontSize": 96
+      }
+   ],
+   "Update": [
+      {
+         "Type": "SkColorAffector",
+         "Enabled": true,
+         "Curve": {
+            "XValues": [],
+            "Segments": [
+               {
+                  "Type": "Linear",
+                  "Ranged": false,
+                  "A0": [ 1, 0.196078, 0.0784314, 1 ],
+                  "D0": [ 1, 0.784314, 0.0784314, 1 ]
+               }
+            ]
+         }
+      }
+   ]
+}

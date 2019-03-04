@@ -2930,10 +2930,12 @@ SI void load_565_(const uint16_t* ptr, size_t tail, U16* r, U16* g, U16* b) {
     from_565(load<U16>(ptr, tail), r,g,b);
 }
 SI void store_565_(uint16_t* ptr, size_t tail, U16 r, U16 g, U16 b) {
-    // Select the top 5,6,5 bits.
-    U16 R = r >> 3,
-        G = g >> 2,
-        B = b >> 3;
+    // Round from [0,255] to [0,31] or [0,63], as if x * (31/255.0f) + 0.5f.
+    // (Don't feel like you need to find some fundamental truth in these...
+    // they were brute-force searched.)
+    U16 R = (r *  9 + 36) / 74,   //  9/74 ≈ 31/255, plus 36/74, about half.
+        G = (g * 21 + 42) / 85,   // 21/85 = 63/255 exactly.
+        B = (b *  9 + 36) / 74;
     // Pack them back into 15|rrrrr gggggg bbbbb|0.
     store(ptr, tail, R << 11
                    | G <<  5
@@ -2975,11 +2977,11 @@ SI void load_4444_(const uint16_t* ptr, size_t tail, U16* r, U16* g, U16* b, U16
     from_4444(load<U16>(ptr, tail), r,g,b,a);
 }
 SI void store_4444_(uint16_t* ptr, size_t tail, U16 r, U16 g, U16 b, U16 a) {
-    // Select the top 4 bits of each.
-    U16 R = r >> 4,
-        G = g >> 4,
-        B = b >> 4,
-        A = a >> 4;
+    // Round from [0,255] to [0,15], producing the same value as (x*(15/255.0f) + 0.5f).
+    U16 R = (r + 8) / 17,
+        G = (g + 8) / 17,
+        B = (b + 8) / 17,
+        A = (a + 8) / 17;
     // Pack them back into 15|rrrr gggg bbbb aaaa|0.
     store(ptr, tail, R << 12
                    | G <<  8
@@ -3271,6 +3273,73 @@ STAGE_PP(srcover_rgba_8888, const SkRasterPipeline_MemoryCtx* ctx) {
     store_8888_(ptr, tail, r,g,b,a);
 }
 
+#if defined(SK_DISABLE_LOWP_BILERP_CLAMP_CLAMP_STAGE)
+    static void(*bilerp_clamp_8888)(void) = nullptr;
+#else
+STAGE_GP(bilerp_clamp_8888, const SkRasterPipeline_GatherCtx* ctx) {
+    // (cx,cy) are the center of our sample.
+    F cx = x,
+      cy = y;
+
+    // All sample points are at the same fractional offset (fx,fy).
+    // They're the 4 corners of a logical 1x1 pixel surrounding (x,y) at (0.5,0.5) offsets.
+    F fx = fract(cx + 0.5f),
+      fy = fract(cy + 0.5f);
+
+    // We'll accumulate the color of all four samples into {r,g,b,a} directly.
+    r = g = b = a = 0;
+
+    // The first three sample points will calculate their area using math
+    // just like in the float code above, but the fourth will take up all the rest.
+    //
+    // Logically this is the same as doing the math for the fourth pixel too,
+    // but rounding error makes this a better strategy, keeping opaque opaque, etc.
+    //
+    // We can keep up to 8 bits of fractional precision without overflowing 16-bit,
+    // so our "1.0" area is 256.
+    const uint16_t bias = 256;
+    U16 remaining = bias;
+
+    for (float dy = -0.5f; dy <= +0.5f; dy += 1.0f)
+    for (float dx = -0.5f; dx <= +0.5f; dx += 1.0f) {
+        // (x,y) are the coordinates of this sample point.
+        F x = cx + dx,
+          y = cy + dy;
+
+        // ix_and_ptr() will clamp to the image's bounds for us.
+        const uint32_t* ptr;
+        U32 ix = ix_and_ptr(&ptr, ctx, x,y);
+
+        U16 sr,sg,sb,sa;
+        from_8888(gather<U32>(ptr, ix), &sr,&sg,&sb,&sa);
+
+        // In bilinear interpolation, the 4 pixels at +/- 0.5 offsets from the sample pixel center
+        // are combined in direct proportion to their area overlapping that logical query pixel.
+        // At positive offsets, the x-axis contribution to that rectangle is fx,
+        // or (1-fx) at negative x.  Same deal for y.
+        F sx = (dx > 0) ? fx : 1.0f - fx,
+          sy = (dy > 0) ? fy : 1.0f - fy;
+
+        U16 area = (dy == 0.5f && dx == 0.5f) ? remaining
+                                              : cast<U16>(sx * sy * bias);
+        for (size_t i = 0; i < N; i++) {
+            SkASSERT(remaining[i] >= area[i]);
+        }
+        remaining -= area;
+
+        r += sr * area;
+        g += sg * area;
+        b += sb * area;
+        a += sa * area;
+    }
+
+    r = (r + bias/2) / bias;
+    g = (g + bias/2) / bias;
+    b = (b + bias/2) / bias;
+    a = (a + bias/2) / bias;
+}
+#endif
+
 // Now we'll add null stand-ins for stages we haven't implemented in lowp.
 // If a pipeline uses these stages, it'll boot it out of lowp into highp.
 #define NOT_IMPLEMENTED(st) static void (*st)(void) = nullptr;
@@ -3318,7 +3387,6 @@ STAGE_PP(srcover_rgba_8888, const SkRasterPipeline_MemoryCtx* ctx) {
     NOT_IMPLEMENTED(mirror_y)
     NOT_IMPLEMENTED(repeat_y)
     NOT_IMPLEMENTED(negate_x)
-    NOT_IMPLEMENTED(bilerp_clamp_8888)
     NOT_IMPLEMENTED(bilinear_nx)
     NOT_IMPLEMENTED(bilinear_ny)
     NOT_IMPLEMENTED(bilinear_px)

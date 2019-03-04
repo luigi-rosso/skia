@@ -29,6 +29,8 @@ VkPipelineStageFlags GrVkImage::LayoutToPipelineSrcStageFlags(const VkImageLayou
         return VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     } else if (VK_IMAGE_LAYOUT_PREINITIALIZED == layout) {
         return VK_PIPELINE_STAGE_HOST_BIT;
+    } else if (VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
+        return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     }
 
     SkASSERT(VK_IMAGE_LAYOUT_UNDEFINED == layout);
@@ -64,6 +66,8 @@ VkAccessFlags GrVkImage::LayoutToSrcAccessMask(const VkImageLayout layout) {
         flags = VK_ACCESS_TRANSFER_READ_BIT;
     } else if (VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL == layout) {
         flags = VK_ACCESS_SHADER_READ_BIT;
+    } else if (VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
+        flags = 0;
     }
     return flags;
 }
@@ -89,7 +93,8 @@ void GrVkImage::setImageLayout(const GrVkGpu* gpu, VkImageLayout newLayout,
              VK_IMAGE_LAYOUT_PREINITIALIZED != newLayout);
     VkImageLayout currentLayout = this->currentLayout();
 
-    if (releaseFamilyQueue && fInfo.fCurrentQueueFamily == fInitialQueueFamily) {
+    if (releaseFamilyQueue && fInfo.fCurrentQueueFamily == fInitialQueueFamily &&
+        newLayout == currentLayout) {
         // We never transfered the image to this queue and we are releasing it so don't do anything.
         return;
     }
@@ -97,6 +102,7 @@ void GrVkImage::setImageLayout(const GrVkGpu* gpu, VkImageLayout newLayout,
     // If the old and new layout are the same and the layout is a read only layout, there is no need
     // to put in a barrier.
     if (newLayout == currentLayout &&
+        !releaseFamilyQueue &&
         (VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL == currentLayout ||
          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL == currentLayout ||
          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL == currentLayout)) {
@@ -142,7 +148,8 @@ void GrVkImage::setImageLayout(const GrVkGpu* gpu, VkImageLayout newLayout,
         { aspectFlags, 0, fInfo.fLevelCount, 0, 1 }      // subresourceRange
     };
 
-    gpu->addImageMemoryBarrier(srcStageMask, dstStageMask, byRegion, &imageMemoryBarrier);
+    gpu->addImageMemoryBarrier(this->resource(), srcStageMask, dstStageMask, byRegion,
+                               &imageMemoryBarrier);
 
     this->updateImageLayout(newLayout);
 }
@@ -214,9 +221,26 @@ GrVkImage::~GrVkImage() {
     SkASSERT(!fResource);
 }
 
+void GrVkImage::prepareForPresent(GrVkGpu* gpu) {
+    VkImageLayout layout = this->currentLayout();
+    if (fInitialQueueFamily != VK_QUEUE_FAMILY_EXTERNAL &&
+        fInitialQueueFamily != VK_QUEUE_FAMILY_FOREIGN_EXT) {
+        if (gpu->vkCaps().supportsSwapchain()) {
+            layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        }
+    }
+    this->setImageLayout(gpu, layout, 0, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, false, true);
+}
+
 void GrVkImage::releaseImage(GrVkGpu* gpu) {
     if (fInfo.fCurrentQueueFamily != fInitialQueueFamily) {
-        this->setImageLayout(gpu, this->currentLayout(), 0, 0, false, true);
+        // The Vulkan spec is vague on what to put for the dstStageMask here. The spec for image
+        // memory barrier says the dstStageMask must not be zero. However, in the spec when it talks
+        // about family queue transfers it says the dstStageMask is ignored and should be set to
+        // zero. Assuming it really is ignored we set it to VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT here
+        // since it makes the Vulkan validation layers happy.
+        this->setImageLayout(gpu, this->currentLayout(), 0, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                             false, true);
     }
     if (fResource) {
         fResource->removeOwningTexture();
@@ -240,7 +264,7 @@ void GrVkImage::setResourceRelease(sk_sp<GrReleaseProcHelper> releaseHelper) {
 }
 
 void GrVkImage::Resource::freeGPUData(GrVkGpu* gpu) const {
-    SkASSERT(!fReleaseHelper);
+    this->invokeReleaseProc();
     VK_CALL(gpu, DestroyImage(gpu->device(), fImage, nullptr));
     bool isLinear = (VK_IMAGE_TILING_LINEAR == fImageTiling);
     GrVkMemory::FreeImageMemory(gpu, isLinear, fAlloc);
@@ -284,4 +308,10 @@ void GrVkImage::BorrowedResource::freeGPUData(GrVkGpu* gpu) const {
 void GrVkImage::BorrowedResource::abandonGPUData() const {
     this->invokeReleaseProc();
 }
+
+#if GR_TEST_UTILS
+void GrVkImage::setCurrentQueueFamilyToGraphicsQueue(GrVkGpu* gpu) {
+    fInfo.fCurrentQueueFamily = gpu->queueIndex();
+}
+#endif
 

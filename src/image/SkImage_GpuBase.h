@@ -9,12 +9,13 @@
 #define SkImage_GpuBase_DEFINED
 
 #include "GrBackendSurface.h"
+#include "GrContext.h"
 #include "GrTypesPriv.h"
 #include "SkDeferredDisplayListRecorder.h"
 #include "SkImage_Base.h"
 #include "SkYUVAIndex.h"
 
-class GrContext;
+class GrColorSpaceXform;
 class SkColorSpace;
 
 class SkImage_GpuBase : public SkImage_Base {
@@ -24,7 +25,6 @@ public:
     ~SkImage_GpuBase() override;
 
     GrContext* context() const final { return fContext.get(); }
-    uint32_t contextID() const final { return fContext->uniqueID(); }
 
     bool getROPixels(SkBitmap*, CachingHint) const final;
     sk_sp<SkImage> onMakeSubset(const SkIRect& subset) const final;
@@ -37,7 +37,7 @@ public:
         SkASSERT(false);
         return this->INHERITED::asTextureProxyRef();
     }
-    sk_sp<GrTextureProxy> asTextureProxyRef(GrContext*, const GrSamplerState&,
+    sk_sp<GrTextureProxy> asTextureProxyRef(GrRecordingContext*, const GrSamplerState&,
                                             SkScalar scaleAdjust[2]) const final;
 
     sk_sp<GrTextureProxy> refPinnedTextureProxy(uint32_t* uniqueID) const final {
@@ -53,10 +53,7 @@ public:
     bool onIsValid(GrContext*) const final;
 
 #if GR_TEST_UTILS
-    void resetContext(sk_sp<GrContext> newContext) {
-        SkASSERT(fContext->uniqueID() == newContext->uniqueID());
-        fContext = newContext;
-    }
+    void resetContext(sk_sp<GrContext> newContext);
 #endif
 
     static bool ValidateBackendTexture(GrContext* ctx, const GrBackendTexture& tex,
@@ -91,6 +88,7 @@ protected:
 
     static bool RenderYUVAToRGBA(GrContext* ctx, GrRenderTargetContext* renderTargetContext,
                                  const SkRect& rect, SkYUVColorSpace yuvColorSpace,
+                                 sk_sp<GrColorSpaceXform> colorSpaceXform,
                                  const sk_sp<GrTextureProxy> proxies[4],
                                  const SkYUVAIndex yuvaIndices[4]);
 

@@ -717,8 +717,15 @@ void GrGLCaps::initGLSL(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli
             shaderCaps->fFBFetchColorName = "gl_LastFragData[0]";
             shaderCaps->fFBFetchExtensionString = "GL_EXT_shader_framebuffer_fetch";
             fFBFetchRequiresEnablePerSample = false;
+        } else if (ctxInfo.hasExtension("GL_NV_shader_framebuffer_fetch")) {
+            // Actually, we haven't seen an ES3.0 device with this extension yet, so we don't know.
+            shaderCaps->fFBFetchNeedsCustomOutput = false;
+            shaderCaps->fFBFetchSupport = true;
+            shaderCaps->fFBFetchColorName = "gl_LastFragData[0]";
+            shaderCaps->fFBFetchExtensionString = "GL_NV_shader_framebuffer_fetch";
+            fFBFetchRequiresEnablePerSample = false;
         } else if (ctxInfo.hasExtension("GL_ARM_shader_framebuffer_fetch")) {
-            // The arm extension also requires an additional flag which we will set onResetContext
+            // The arm extension also requires an additional flag which we will set onResetContext.
             shaderCaps->fFBFetchNeedsCustomOutput = false;
             shaderCaps->fFBFetchSupport = true;
             shaderCaps->fFBFetchColorName = "gl_LastFragColorARM";
@@ -748,6 +755,17 @@ void GrGLCaps::initGLSL(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli
             shaderCaps->fNoPerspectiveInterpolationSupport = true;
             shaderCaps->fNoPerspectiveInterpolationExtensionString =
                 "GL_NV_shader_noperspective_interpolation";
+        }
+    }
+
+    if (kGL_GrGLStandard == standard) {
+        shaderCaps->fSampleVariablesSupport = ctxInfo.glslGeneration() >= k400_GrGLSLGeneration;
+    } else {
+        if (ctxInfo.glslGeneration() >= k320es_GrGLSLGeneration) {
+            shaderCaps->fSampleVariablesSupport = true;
+        } else if (ctxInfo.hasExtension("GL_OES_sample_variables")) {
+            shaderCaps->fSampleVariablesSupport = true;
+            shaderCaps->fSampleVariablesExtensionString = "GL_OES_sample_variables";
         }
     }
 
@@ -1472,6 +1490,13 @@ void GrGLCaps::initConfigTable(const GrContextOptions& contextOptions,
     if (disableRGB8ForMali400) {
         fConfigTable[kRGB_888_GrPixelConfig].fFlags = 0;
     }
+
+    fConfigTable[kRGB_888X_GrPixelConfig] = fConfigTable[kRGBA_8888_GrPixelConfig];
+    fConfigTable[kRGB_888X_GrPixelConfig].fSwizzle = GrSwizzle::RGB1();
+    // Currently we don't allow RGB_888X to be renderable because we don't have a way to handle
+    // blends that reference the dst alpha when the values in the dst alpha channel are
+    // uninitialized.
+    fConfigTable[kRGB_888X_GrPixelConfig].fFlags = ConfigInfo::kTextureable_Flag;
 
     // ES2 Command Buffer has several TexStorage restrictions. It appears to fail for any format
     // not explicitly allowed by GL_EXT_texture_storage, particularly those from other extensions.
@@ -2407,8 +2432,8 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         fClearTextureSupport = false;
     }
 
-    // Calling glClearTexImage crashes on the NexusPlayer. TODO: Use isX86PowerVRRogue?
-    if (kPowerVRRogue_GrGLRenderer == ctxInfo.renderer()) {
+    // Calling glClearTexImage crashes on the NexusPlayer.
+    if (isX86PowerVRRogue) {
         fClearTextureSupport = false;
     }
 
@@ -2457,8 +2482,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         fMipMapSupport = false;
     }
 
-    // TODO: Use isX86PowerVRRogue?
-    if (kPowerVRRogue_GrGLRenderer == ctxInfo.renderer()) {
+    if (isX86PowerVRRogue) {
         // Temporarily disabling clip analytic fragments processors on Nexus player while we work
         // around a driver bug related to gl_FragCoord.
         // https://bugs.chromium.org/p/skia/issues/detail?id=7286
@@ -2805,6 +2829,9 @@ void GrGLCaps::onApplyOptionsOverrides(const GrContextOptions& options) {
     if (options.fDoManualMipmapping) {
         fDoManualMipmapping = true;
     }
+    if (options.fDisallowGLSLBinaryCaching) {
+        fProgramBinarySupport = false;
+    }
 }
 
 bool GrGLCaps::onSurfaceSupportsWritePixels(const GrSurface* surface) const {
@@ -2844,6 +2871,9 @@ GrColorType GrGLCaps::supportedReadPixelsColorType(GrPixelConfig config,
     // this as makes sense to increase performance and correctness.
     switch (fConfigTable[config].fFormatType) {
         case kNormalizedFixedPoint_FormatType:
+            if (kRGB_888X_GrPixelConfig == config) {
+                return GrColorType::kRGB_888x;
+            }
             return GrColorType::kRGBA_8888;
         case kFloat_FormatType:
             if ((kAlpha_half_GrPixelConfig == config ||
@@ -2933,6 +2963,8 @@ GrPixelConfig validate_sized_format(GrGLenum format, SkColorType ct, GrGLStandar
         case kRGB_888x_SkColorType:
             if (GR_GL_RGB8 == format) {
                 return kRGB_888_GrPixelConfig;
+            } else if (GR_GL_RGBA8 == format) {
+                return kRGB_888X_GrPixelConfig;
             }
             break;
         case kBGRA_8888_SkColorType:
