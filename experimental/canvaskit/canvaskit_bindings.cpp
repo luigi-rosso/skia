@@ -100,6 +100,7 @@ SkImageInfo toSkImageInfo(const SimpleImageInfo& sii) {
     return SkImageInfo::Make(sii.width, sii.height, sii.colorType, sii.alphaType);
 }
 
+
 #if SK_SUPPORT_GPU
 sk_sp<GrContext> MakeGrContext(EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context)
 {
@@ -112,15 +113,16 @@ sk_sp<GrContext> MakeGrContext(EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context)
     auto interface = GrGLMakeNativeInterface();
     // setup contexts
     sk_sp<GrContext> grContext(GrContext::MakeGL(interface));
-    return grContext;
-}
-
-sk_sp<SkSurface> MakeOnScreenGLSurface(sk_sp<GrContext> grContext, int width, int height) {
+    
     glClearColor(0, 0, 0, 0);
     glClearStencil(0);
     glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
+    return grContext;
+}
 
+sk_sp<SkSurface> MakeOnScreenGLSurface(sk_sp<GrContext> grContext, int width, int height) {
+    
     // Wrap the frame buffer object attached to the screen in a Skia render
     // target so Skia can render to it
     GrGLint buffer;
@@ -990,9 +992,6 @@ EMSCRIPTEN_BINDINGS(Skia) {
     class_<SkShader>("SkShader")
         .smart_ptr<sk_sp<SkShader>>("sk_sp<SkShader>");
     
-    class_<GrContext>("GrContext")
-        .smart_ptr<sk_sp<GrContext>>("sk_sp<GrContext>");
-
     class_<SkSurface>("SkSurface")
         .smart_ptr<sk_sp<SkSurface>>("sk_sp<SkSurface>")
         .function("_flush", select_overload<void()>(&SkSurface::flush))
