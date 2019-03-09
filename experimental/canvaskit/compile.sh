@@ -51,18 +51,8 @@ if [[ $@ == *cpu* ]]; then
   WASM_GPU="-DSK_SUPPORT_GPU=0 --pre-js $BASE_DIR/cpu.js"
 fi
 
-# TODO(fmalita,kjlubick): reduce this list to one item by fixing
-# the libskottie.a and libsksg.a builds
 SKOTTIE_JS="--pre-js $BASE_DIR/skottie.js"
-SKOTTIE_BINDINGS="$BASE_DIR/skottie_bindings.cpp\
-  src/core/SkColorMatrixFilterRowMajor255.cpp \
-  src/core/SkCubicMap.cpp \
-  src/core/SkTime.cpp \
-  src/effects/SkTableColorFilter.cpp \
-  src/effects/imagefilters/SkDropShadowImageFilter.cpp \
-  src/pathops/SkOpBuilder.cpp \
-  src/utils/SkJSON.cpp \
-  src/utils/SkParse.cpp "
+SKOTTIE_BINDINGS="$BASE_DIR/skottie_bindings.cpp"
 
 SKOTTIE_LIB="$BUILD_DIR/libskottie.a \
              $BUILD_DIR/libsksg.a"
@@ -80,6 +70,15 @@ MANAGED_SKOTTIE_BINDINGS="\
 if [[ $@ == *no_managed_skottie* ]]; then
   echo "Omitting managed Skottie"
   MANAGED_SKOTTIE_BINDINGS="-DSK_INCLUDE_MANAGED_SKOTTIE=0"
+fi
+
+PARTICLES_BINDINGS="$BASE_DIR/particles_bindings.cpp"
+PARTICLES_LIB="$BUILD_DIR/libparticles.a"
+
+if [[ $@ == *no_particles* ]]; then
+  echo "Omitting Particles"
+  PARTICLES_BINDINGS=""
+  PARTICLES_LIB=""
 fi
 
 HTML_CANVAS_API="--pre-js $BASE_DIR/htmlcanvas/preamble.js \
@@ -133,6 +132,8 @@ fi
 # Re-enable error checking
 set -e
 
+./bin/fetch-gn
+
 echo "Compiling bitcode"
 
 # Inspired by https://github.com/Zubnix/skia-wasm-port/blob/master/build_bindings.sh
@@ -181,7 +182,7 @@ echo "Compiling bitcode"
   skia_enable_pdf=false"
 
 # Build all the libs, we'll link the appropriate ones down below
-${NINJA} -C ${BUILD_DIR} libskia.a libskottie.a libsksg.a libskshaper.a $SHAPER_TARGETS
+${NINJA} -C ${BUILD_DIR} libskia.a libskottie.a libsksg.a libskshaper.a libparticles.a $SHAPER_TARGETS
 
 export EMCC_CLOSURE_ARGS="--externs $BASE_DIR/externs.js "
 
@@ -207,6 +208,7 @@ ${EMCXX} \
     -Imodules/skottie/utils \
     -Imodules/sksg/include \
     -Imodules/skshaper/include \
+    -Imodules/particles/include \
     -Isrc/core/ \
     -Isrc/gpu/ \
     -Isrc/sfnt/ \
@@ -229,12 +231,14 @@ ${EMCXX} \
     --post-js $BASE_DIR/ready.js \
     $BUILTIN_FONT \
     $BASE_DIR/canvaskit_bindings.cpp \
+    $PARTICLES_BINDINGS \
     $SKOTTIE_BINDINGS \
     $MANAGED_SKOTTIE_BINDINGS \
-    $BUILD_DIR/libskia.a \
     $SKOTTIE_LIB \
+    $PARTICLES_LIB \
     $BUILD_DIR/libskshaper.a \
     $SHAPER_LIB \
+    $BUILD_DIR/libskia.a \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s EXPORT_NAME="CanvasKitInit" \
     -s FORCE_FILESYSTEM=0 \

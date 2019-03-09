@@ -551,7 +551,7 @@ CanvasKit.MakeImageFromEncoded = function(data) {
   return img;
 }
 
-// imgData is an Encoded SkImage, e.g. from MakeImageFromEncoded
+// imgData is an SkImage, e.g. from MakeImageFromEncoded or SkSurface.makeImageSnapshot
 CanvasKit.MakeImageShader = function(img, xTileMode, yTileMode, clampUnpremul, localMatrix) {
   if (!img) {
     return null;
@@ -654,7 +654,7 @@ CanvasKit.MakeTwoPointConicalGradientShader = function(start, startRadius, end, 
 }
 
 CanvasKit.MakeSkVertices = function(mode, positions, textureCoordinates, colors,
-                                    boneIndices, boneWeights, indices) {
+                                    boneIndices, boneWeights, indices, isVolatile) {
   var positionPtr = copy2dArray(positions,          CanvasKit.HEAPF32);
   var texPtr =      copy2dArray(textureCoordinates, CanvasKit.HEAPF32);
   // Since we write the colors to memory as signed integers (JSColor), we can
@@ -666,12 +666,15 @@ CanvasKit.MakeSkVertices = function(mode, positions, textureCoordinates, colors,
   var boneWtPtr  =  copy2dArray(boneWeights,        CanvasKit.HEAPF32);
   var idxPtr =      copy1dArray(indices,            CanvasKit.HEAPU16);
 
+  // Default isVolitile to true if not set
+  isVolatile = isVolatile === undefined ? true : isVolatile;
+
   var idxCount = (indices && indices.length) || 0;
   // _MakeVertices will copy all the values in, so we are free to release
   // the memory after.
   var vertices = CanvasKit._MakeSkVertices(mode, positions.length, positionPtr,
                                            texPtr, colorPtr, boneIdxPtr, boneWtPtr,
-                                           idxCount, idxPtr);
+                                           idxCount, idxPtr, isVolatile);
   positionPtr && CanvasKit._free(positionPtr);
   texPtr && CanvasKit._free(texPtr);
   colorPtr && CanvasKit._free(colorPtr);

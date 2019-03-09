@@ -31,20 +31,23 @@ var CanvasKit = {
 	XYWHRect: function() {},
 	/** @return {ImageData} */
 	ImageData: function() {},
+
+	GetWebGLContext: function() {},
 	MakeBlurMaskFilter: function() {},
 	MakeCanvas: function() {},
 	MakeCanvasSurface: function() {},
-	MakeWebGL: function() {},
-	MakeImage: function() {},
+	MakeGrContext: function() {},
 	MakeImageShader: function() {},
 	/** @return {CanvasKit.SkImage} */
 	MakeImageFromEncoded: function() {},
 	/** @return {LinearCanvasGradient} */
 	MakeLinearGradientShader: function() {},
+	MakeOnScreenGLSurface: function() {},
 	MakePathFromCmds: function() {},
 	MakePathFromOp: function() {},
 	MakePathFromSVGString: function() {},
 	MakeRadialGradientShader: function() {},
+	MakeRenderTarget: function() {},
 	MakeSWCanvasSurface: function() {},
 	MakeManagedAnimation: function() {},
 	MakeSkDashPathEffect: function() {},
@@ -74,10 +77,6 @@ var CanvasKit = {
 	_drawShapedText: function() {},
 	_getRasterDirectSurface: function() {},
 	_getRasterN32PremulSurface: function() {},
-	_getWebGLSurface: function() {},
-	MakeGrContext: function() {},
-	SurfaceFromBackendRenderTarget: function() {},
-	MakeRenderTarget: function() {},
 
 	// The testing object is meant to expose internal functions
 	// for more fine-grained testing, e.g. parseColor
@@ -111,9 +110,12 @@ var CanvasKit = {
 		drawVertices: function() {},
 		flush: function() {},
 		getTotalMatrix: function() {},
+		makeSurface: function() {},
 		restore: function() {},
+		restoreToCount: function() {},
 		rotate: function() {},
 		save: function() {},
+		saveLayer: function() {},
 		scale: function() {},
 		skew: function() {},
 		translate: function() {},
@@ -258,6 +260,7 @@ var CanvasKit = {
 		getCanvas: function() {},
 		/** @return {CanvasKit.SkImage} */
 		makeImageSnapshot: function() {},
+		makeSurface: function() {},
 
 		// private API
 		_flush: function() {},

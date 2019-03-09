@@ -41,7 +41,7 @@ const (
 	ISOLATE_WIN_TOOLCHAIN_NAME = "Housekeeper-PerCommit-IsolateWinToolchain"
 
 	DEFAULT_OS_DEBIAN    = "Debian-9.4"
-	DEFAULT_OS_LINUX_GCE = DEFAULT_OS_DEBIAN
+	DEFAULT_OS_LINUX_GCE = "Debian-9.8"
 	DEFAULT_OS_MAC       = "Mac-10.13.6"
 	DEFAULT_OS_UBUNTU    = "Ubuntu-14.04"
 	DEFAULT_OS_WIN       = "Windows-2016Server-14393"
@@ -66,7 +66,6 @@ const (
 	// Name prefix for upload jobs.
 	PREFIX_UPLOAD = "Upload"
 
-	SERVICE_ACCOUNT_BOOKMAKER          = "skia-bookmaker@skia-swarming-bots.iam.gserviceaccount.com"
 	SERVICE_ACCOUNT_COMPILE            = "skia-external-compile-tasks@skia-swarming-bots.iam.gserviceaccount.com"
 	SERVICE_ACCOUNT_HOUSEKEEPER        = "skia-external-housekeeper@skia-swarming-bots.iam.gserviceaccount.com"
 	SERVICE_ACCOUNT_RECREATE_SKPS      = "skia-recreate-skps@skia-swarming-bots.iam.gserviceaccount.com"
@@ -526,7 +525,7 @@ func defaultSwarmDimensions(parts map[string]string) []string {
 				glog.Fatalf("Please update defaultSwarmDimensions for SKQP::Emulator %s %s.", parts["os"], parts["model"])
 			}
 			d["cpu"] = "x86-64-i5-7260U"
-			d["os"] = "Debian-9.4"
+			d["os"] = DEFAULT_OS_DEBIAN
 			// KVM means Kernel-based Virtual Machine, that is, can this vm virtualize commands
 			// For us, this means, can we run an x86 android emulator on it.
 			// kjlubick tried running this on GCE, but it was a bit too slow on the large install.
@@ -972,18 +971,6 @@ func housekeeper(b *specs.TasksCfgBuilder, name string) string {
 	return name
 }
 
-// bookmaker generates a Bookmaker task. Returns the name of the last task
-// in the generated chain of tasks, which the Job should add as a dependency.
-func bookmaker(b *specs.TasksCfgBuilder, name, compileTaskName string) string {
-	task := kitchenTask(name, "bookmaker", "swarm_recipe.isolate", SERVICE_ACCOUNT_BOOKMAKER, linuxGceDimensions(MACHINE_TYPE_SMALL), nil, OUTPUT_NONE)
-	task.Caches = append(task.Caches, CACHES_WORKDIR...)
-	task.CipdPackages = append(task.CipdPackages, CIPD_PKGS_GIT...)
-	task.Dependencies = append(task.Dependencies, compileTaskName, isolateCIPDAsset(b, ISOLATE_GO_DEPS_NAME))
-	timeout(task, 2*time.Hour)
-	b.MustAddTask(name, task)
-	return name
-}
-
 // androidFrameworkCompile generates an Android Framework Compile task. Returns
 // the name of the last task in the generated chain of tasks, which the Job
 // should add as a dependency.
@@ -1347,9 +1334,6 @@ func process(b *specs.TasksCfgBuilder, name string) {
 	if name == "Housekeeper-OnDemand-Presubmit" {
 		priority = 1
 		deps = append(deps, presubmit(b, name))
-	}
-	if strings.Contains(name, "Bookmaker") {
-		deps = append(deps, bookmaker(b, name, compileTaskName))
 	}
 
 	// Common assets needed by the remaining bots.

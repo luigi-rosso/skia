@@ -23,7 +23,6 @@ class GrOpFlushState;
 class GrRecordingContext;
 class GrRenderTargetContext;
 class GrRenderTargetProxy;
-class GrSingleOWner;
 class GrRenderTargetOpList;
 class GrSoftwarePathRenderer;
 class GrTextureContext;
@@ -92,7 +91,7 @@ private:
     // This class encapsulates maintenance and manipulation of the drawing manager's DAG of opLists.
     class OpListDAG {
     public:
-        OpListDAG(bool explicitlyAllocating, GrContextOptions::Enable sortOpLists);
+        OpListDAG(bool explicitlyAllocating, bool sortOpLists);
         ~OpListDAG();
 
         // Currently, when explicitly allocating resources, this call will topologically sort the
@@ -138,8 +137,9 @@ private:
     };
 
     GrDrawingManager(GrRecordingContext*, const GrPathRendererChain::Options&,
-                     const GrTextContext::Options&, GrSingleOwner*,
-                     bool explicitlyAllocating, GrContextOptions::Enable sortRenderTargets,
+                     const GrTextContext::Options&,
+                     bool explicitlyAllocating,
+                     bool sortOpLists,
                      GrContextOptions::Enable reduceOpListSplitting);
 
     bool wasAbandoned() const;
@@ -161,6 +161,7 @@ private:
     friend class GrContextPriv; // access to: flush
     friend class GrOnFlushResourceProvider; // this is just a shallow wrapper around this class
     friend class GrRecordingContext;  // access to: ctor
+    friend class SkImage; // for access to: flush
 
     static const int kNumPixelGeometries = 5; // The different pixel geometries
     static const int kNumDFTOptions = 2;      // DFT or no DFT
@@ -171,8 +172,6 @@ private:
     // This cache is used by both the vertex and index pools. It reuses memory across multiple
     // flushes.
     sk_sp<GrBufferAllocPool::CpuBufferCache> fCpuBufferCache;
-    // In debug builds we guard against improper thread handling
-    GrSingleOwner*                    fSingleOwner;
 
     OpListDAG                         fDAG;
     GrOpList*                         fActiveOpList = nullptr;

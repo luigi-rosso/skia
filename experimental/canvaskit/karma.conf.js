@@ -14,6 +14,7 @@ module.exports = function(config) {
       { pattern: 'tests/assets/*', included:false, served:true},
       '../../modules/pathkit/tests/testReporter.js',
       'canvaskit/bin/canvaskit.js',
+      'tests/canvaskitinit.js',
       'tests/util.js',
       'tests/*.spec.js'
     ],
@@ -41,8 +42,8 @@ module.exports = function(config) {
     // enable / disable watching file and executing tests whenever any file changes
     autoWatch: true,
 
-    browserDisconnectTimeout: 15000,
-    browserNoActivityTimeout: 15000,
+    browserDisconnectTimeout: 20000,
+    browserNoActivityTimeout: 20000,
 
     // start these browsers
     browsers: ['Chrome'],

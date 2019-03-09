@@ -1066,7 +1066,7 @@ STAGE(white_color, Ctx::None) {
 }
 
 // load registers r,g,b,a from context (mirrors store_rgba)
-STAGE(load_rgba, const float* ptr) {
+STAGE(load_src, const float* ptr) {
     r = unaligned_load<F>(ptr + 0*N);
     g = unaligned_load<F>(ptr + 1*N);
     b = unaligned_load<F>(ptr + 2*N);
@@ -1074,11 +1074,27 @@ STAGE(load_rgba, const float* ptr) {
 }
 
 // store registers r,g,b,a into context (mirrors load_rgba)
-STAGE(store_rgba, float* ptr) {
+STAGE(store_src, float* ptr) {
     unaligned_store(ptr + 0*N, r);
     unaligned_store(ptr + 1*N, g);
     unaligned_store(ptr + 2*N, b);
     unaligned_store(ptr + 3*N, a);
+}
+
+// load registers dr,dg,db,da from context (mirrors store_dst)
+STAGE(load_dst, const float* ptr) {
+    dr = unaligned_load<F>(ptr + 0*N);
+    dg = unaligned_load<F>(ptr + 1*N);
+    db = unaligned_load<F>(ptr + 2*N);
+    da = unaligned_load<F>(ptr + 3*N);
+}
+
+// store registers dr,dg,db,da into context (mirrors load_dst)
+STAGE(store_dst, float* ptr) {
+    unaligned_store(ptr + 0*N, dr);
+    unaligned_store(ptr + 1*N, dg);
+    unaligned_store(ptr + 2*N, db);
+    unaligned_store(ptr + 3*N, da);
 }
 
 // Most blend modes apply the same logic to each channel.
@@ -3344,12 +3360,14 @@ STAGE_GP(bilerp_clamp_8888, const SkRasterPipeline_GatherCtx* ctx) {
 // If a pipeline uses these stages, it'll boot it out of lowp into highp.
 #define NOT_IMPLEMENTED(st) static void (*st)(void) = nullptr;
     NOT_IMPLEMENTED(callback)
-    NOT_IMPLEMENTED(load_rgba)
-    NOT_IMPLEMENTED(store_rgba)
+    NOT_IMPLEMENTED(load_src)
+    NOT_IMPLEMENTED(store_src)
+    NOT_IMPLEMENTED(load_dst)
+    NOT_IMPLEMENTED(store_dst)
     NOT_IMPLEMENTED(unbounded_set_rgb)
     NOT_IMPLEMENTED(unbounded_uniform_color)
     NOT_IMPLEMENTED(unpremul)
-    NOT_IMPLEMENTED(dither)
+    NOT_IMPLEMENTED(dither)  // TODO
     NOT_IMPLEMENTED(from_srgb)
     NOT_IMPLEMENTED(to_srgb)
     NOT_IMPLEMENTED(load_f16)
@@ -3365,7 +3383,7 @@ STAGE_GP(bilerp_clamp_8888, const SkRasterPipeline_GatherCtx* ctx) {
     NOT_IMPLEMENTED(store_1010102)
     NOT_IMPLEMENTED(gather_1010102)
     NOT_IMPLEMENTED(store_u16_be)
-    NOT_IMPLEMENTED(byte_tables)
+    NOT_IMPLEMENTED(byte_tables)  // TODO
     NOT_IMPLEMENTED(colorburn)
     NOT_IMPLEMENTED(colordodge)
     NOT_IMPLEMENTED(softlight)
@@ -3375,32 +3393,32 @@ STAGE_GP(bilerp_clamp_8888, const SkRasterPipeline_GatherCtx* ctx) {
     NOT_IMPLEMENTED(luminosity)
     NOT_IMPLEMENTED(matrix_3x3)
     NOT_IMPLEMENTED(matrix_3x4)
-    NOT_IMPLEMENTED(matrix_4x5)
-    NOT_IMPLEMENTED(matrix_4x3)
+    NOT_IMPLEMENTED(matrix_4x5)  // TODO
+    NOT_IMPLEMENTED(matrix_4x3)  // TODO
     NOT_IMPLEMENTED(parametric)
     NOT_IMPLEMENTED(gamma)
     NOT_IMPLEMENTED(rgb_to_hsl)
     NOT_IMPLEMENTED(hsl_to_rgb)
-    NOT_IMPLEMENTED(gauss_a_to_rgba)
-    NOT_IMPLEMENTED(mirror_x)
-    NOT_IMPLEMENTED(repeat_x)
-    NOT_IMPLEMENTED(mirror_y)
-    NOT_IMPLEMENTED(repeat_y)
+    NOT_IMPLEMENTED(gauss_a_to_rgba)  // TODO
+    NOT_IMPLEMENTED(mirror_x)         // TODO
+    NOT_IMPLEMENTED(repeat_x)         // TODO
+    NOT_IMPLEMENTED(mirror_y)         // TODO
+    NOT_IMPLEMENTED(repeat_y)         // TODO
     NOT_IMPLEMENTED(negate_x)
-    NOT_IMPLEMENTED(bilinear_nx)
-    NOT_IMPLEMENTED(bilinear_ny)
-    NOT_IMPLEMENTED(bilinear_px)
-    NOT_IMPLEMENTED(bilinear_py)
-    NOT_IMPLEMENTED(bicubic_n3x)
-    NOT_IMPLEMENTED(bicubic_n1x)
-    NOT_IMPLEMENTED(bicubic_p1x)
-    NOT_IMPLEMENTED(bicubic_p3x)
-    NOT_IMPLEMENTED(bicubic_n3y)
-    NOT_IMPLEMENTED(bicubic_n1y)
-    NOT_IMPLEMENTED(bicubic_p1y)
-    NOT_IMPLEMENTED(bicubic_p3y)
-    NOT_IMPLEMENTED(save_xy)
-    NOT_IMPLEMENTED(accumulate)
+    NOT_IMPLEMENTED(bilinear_nx)      // TODO
+    NOT_IMPLEMENTED(bilinear_ny)      // TODO
+    NOT_IMPLEMENTED(bilinear_px)      // TODO
+    NOT_IMPLEMENTED(bilinear_py)      // TODO
+    NOT_IMPLEMENTED(bicubic_n3x)      // TODO
+    NOT_IMPLEMENTED(bicubic_n1x)      // TODO
+    NOT_IMPLEMENTED(bicubic_p1x)      // TODO
+    NOT_IMPLEMENTED(bicubic_p3x)      // TODO
+    NOT_IMPLEMENTED(bicubic_n3y)      // TODO
+    NOT_IMPLEMENTED(bicubic_n1y)      // TODO
+    NOT_IMPLEMENTED(bicubic_p1y)      // TODO
+    NOT_IMPLEMENTED(bicubic_p3y)      // TODO
+    NOT_IMPLEMENTED(save_xy)          // TODO
+    NOT_IMPLEMENTED(accumulate)       // TODO
     NOT_IMPLEMENTED(xy_to_2pt_conical_well_behaved)
     NOT_IMPLEMENTED(xy_to_2pt_conical_strip)
     NOT_IMPLEMENTED(xy_to_2pt_conical_focal_on_circle)
