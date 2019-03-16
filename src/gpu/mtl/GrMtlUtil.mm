@@ -31,8 +31,8 @@ bool GrPixelConfigToMTLFormat(GrPixelConfig config, MTLPixelFormat* format) {
             *format = MTLPixelFormatRGBA8Unorm;
             return true;
         case kRGB_888_GrPixelConfig:
-            // TODO: MTLPixelFormatRGB8Unorm
-            return false;
+            *format = MTLPixelFormatRGBA8Unorm;
+            return true;
         case kRGB_888X_GrPixelConfig:
             *format = MTLPixelFormatRGBA8Unorm;
             return true;
@@ -84,6 +84,9 @@ bool GrPixelConfigToMTLFormat(GrPixelConfig config, MTLPixelFormat* format) {
             *format = MTLPixelFormatRG32Float;
             return true;
         case kRGBA_half_GrPixelConfig:
+            *format = MTLPixelFormatRGBA16Float;
+            return true;
+        case kRGBA_half_Clamped_GrPixelConfig:
             *format = MTLPixelFormatRGBA16Float;
             return true;
         case kAlpha_half_GrPixelConfig: // fall through

@@ -1331,13 +1331,6 @@ STAGE(clamp_a, Ctx::None) {
     b = min(b, a);
 }
 
-STAGE(clamp_a_dst, Ctx::None) {
-    da = min(da, 1.0f);
-    dr = min(dr, da);
-    dg = min(dg, da);
-    db = min(db, da);
-}
-
 STAGE(clamp_gamut, Ctx::None) {
     // If you're using this stage, a should already be in [0,1].
     r = min(max(r, 0), a);
@@ -1490,6 +1483,13 @@ STAGE(lerp_1_float, const float* c) {
     g = lerp(dg, g, *c);
     b = lerp(db, b, *c);
     a = lerp(da, a, *c);
+}
+STAGE(lerp_native, const float scales[]) {
+    auto c = unaligned_load<F>(scales);
+    r = lerp(dr, r, c);
+    g = lerp(dg, g, c);
+    b = lerp(db, b, c);
+    a = lerp(da, a, c);
 }
 STAGE(lerp_u8, const SkRasterPipeline_MemoryCtx* ctx) {
     auto ptr = ptr_at_xy<const uint8_t>(ctx, dx,dy);
@@ -2633,11 +2633,6 @@ STAGE_PP(clamp_a, Ctx::None) {
     g = min(g, a);
     b = min(b, a);
 }
-STAGE_PP(clamp_a_dst, Ctx::None) {
-    dr = min(dr, da);
-    dg = min(dg, da);
-    db = min(db, da);
-}
 
 STAGE_PP(clamp_gamut, Ctx::None) {
     // It shouldn't be possible to get out-of-gamut
@@ -3360,14 +3355,15 @@ STAGE_GP(bilerp_clamp_8888, const SkRasterPipeline_GatherCtx* ctx) {
 // If a pipeline uses these stages, it'll boot it out of lowp into highp.
 #define NOT_IMPLEMENTED(st) static void (*st)(void) = nullptr;
     NOT_IMPLEMENTED(callback)
-    NOT_IMPLEMENTED(load_src)
-    NOT_IMPLEMENTED(store_src)
-    NOT_IMPLEMENTED(load_dst)
-    NOT_IMPLEMENTED(store_dst)
+    NOT_IMPLEMENTED(load_src) // TODO
+    NOT_IMPLEMENTED(store_src) // TODO
+    NOT_IMPLEMENTED(load_dst) // TODO
+    NOT_IMPLEMENTED(store_dst) // TODO
     NOT_IMPLEMENTED(unbounded_set_rgb)
     NOT_IMPLEMENTED(unbounded_uniform_color)
     NOT_IMPLEMENTED(unpremul)
     NOT_IMPLEMENTED(dither)  // TODO
+    NOT_IMPLEMENTED(lerp_native) // TODO
     NOT_IMPLEMENTED(from_srgb)
     NOT_IMPLEMENTED(to_srgb)
     NOT_IMPLEMENTED(load_f16)

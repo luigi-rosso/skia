@@ -130,7 +130,7 @@ void GrMtlGpuRTCommandBuffer::onDraw(const GrPrimitiveProcessor& primProc,
                                      const GrMesh meshes[],
                                      int meshCount,
                                      const SkRect& bounds) {
-SK_BEGIN_AUTORELEASE_BLOCK
+    SK_BEGIN_AUTORELEASE_BLOCK
     if (!meshCount) {
         return;
     }
@@ -182,7 +182,6 @@ SK_BEGIN_AUTORELEASE_BLOCK
 
     [fActiveRenderCmdEncoder endEncoding];
     fActiveRenderCmdEncoder = nil;
-
     fCommandBufferInfo.fBounds.join(bounds);
     SK_END_AUTORELEASE_BLOCK
 }
@@ -345,4 +344,5 @@ void GrMtlGpuRTCommandBuffer::sendIndexedInstancedMeshToGpu(GrPrimitiveType prim
                                      instanceCount:instanceCount
                                         baseVertex:baseVertex
                                       baseInstance:baseInstance];
+    fGpu->stats()->incNumDraws();
 }

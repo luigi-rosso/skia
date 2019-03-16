@@ -304,7 +304,7 @@ void GrMtlCaps::initShaderCaps() {
         } else {
             if (kGray_8_GrPixelConfig == config) {
                 shaderCaps->fConfigTextureSwizzle[i] = GrSwizzle::RRRA();
-            } else if (kRGB_888X_GrPixelConfig == config) {
+            } else if (kRGB_888X_GrPixelConfig == config || kRGB_888_GrPixelConfig == config ) {
                 shaderCaps->fConfigTextureSwizzle[i] = GrSwizzle::RGB1();
             } else {
                 shaderCaps->fConfigTextureSwizzle[i] = GrSwizzle::RGBA();
@@ -360,6 +360,10 @@ void GrMtlCaps::initConfigTable() {
     info = &fConfigTable[kAlpha_8_GrPixelConfig];
     info->fFlags = ConfigInfo::kAllFlags;
 
+    // Alpha_8_as_Red uses R8Unorm
+    info = &fConfigTable[kAlpha_8_as_Red_GrPixelConfig];
+    info->fFlags = ConfigInfo::kAllFlags;
+
     // Gray_8 uses R8Unorm
     info = &fConfigTable[kGray_8_GrPixelConfig];
     info->fFlags = ConfigInfo::kAllFlags;
@@ -388,6 +392,10 @@ void GrMtlCaps::initConfigTable() {
     info = &fConfigTable[kRGB_888X_GrPixelConfig];
     info->fFlags = ConfigInfo::kTextureable_Flag;
 
+    // RGB_888 uses RGBA8Unorm and we will swizzle the 1
+    info = &fConfigTable[kRGB_888_GrPixelConfig];
+    info->fFlags = ConfigInfo::kTextureable_Flag;
+
     // BGRA_8888 uses BGRA8Unorm
     info = &fConfigTable[kBGRA_8888_GrPixelConfig];
     info->fFlags = ConfigInfo::kAllFlags;
@@ -413,7 +421,7 @@ void GrMtlCaps::initConfigTable() {
     if (this->isMac()) {
         info->fFlags = ConfigInfo::kAllFlags;
     } else {
-        info->fFlags = ConfigInfo::kRenderable_Flag;
+        info->fFlags = ConfigInfo::kTextureable_Flag | ConfigInfo::kRenderable_Flag;
     }
 
     // Alpha_half uses R16Float
@@ -422,6 +430,9 @@ void GrMtlCaps::initConfigTable() {
 
     // RGBA_half uses RGBA16Float
     info = &fConfigTable[kRGBA_half_GrPixelConfig];
+    info->fFlags = ConfigInfo::kAllFlags;
+
+    info = &fConfigTable[kRGBA_half_Clamped_GrPixelConfig];
     info->fFlags = ConfigInfo::kAllFlags;
 }
 
@@ -489,13 +500,13 @@ GrPixelConfig validate_sized_format(GrMTLPixelFormat grFormat, SkColorType ct) {
                 return kGray_8_as_Red_GrPixelConfig;
             }
             break;
-        case kRGBA_F16Norm_SkColorType:  // TODO(brianosman): ?
-            if (MTLPixelFormatRG16Float == format) {
-                return kRGBA_half_GrPixelConfig;
+        case kRGBA_F16Norm_SkColorType:
+            if (MTLPixelFormatRGBA16Float == format) {
+                return kRGBA_half_Clamped_GrPixelConfig;
             }
             break;
         case kRGBA_F16_SkColorType:
-            if (MTLPixelFormatRG16Float == format) {
+            if (MTLPixelFormatRGBA16Float == format) {
                 return kRGBA_half_GrPixelConfig;
             }
             break;
