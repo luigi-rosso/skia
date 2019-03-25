@@ -29,7 +29,6 @@
 #include "SkParsePath.h"
 #include "SkPath.h"
 #include "SkPathEffect.h"
-#include "SkPathMeasure.h"
 #include "SkPathOps.h"
 #include "SkScalar.h"
 #include "SkShader.h"
@@ -950,15 +949,6 @@ EMSCRIPTEN_BINDINGS(Skia) {
     class_<SkPathEffect>("SkPathEffect")
         .smart_ptr<sk_sp<SkPathEffect>>("sk_sp<SkPathEffect>");
 
-
-    class_<SkPathMeasure>("SkPathMeasure")
-        .constructor<>()
-        .constructor<const SkPath&, bool, SkScalar>()
-        .function("getLength", &SkPathMeasure::getLength)
-        .function("getSegment", &GetSegment)
-        .function("nextContour", &SkPathMeasure::nextContour);
-        
-
     class_<SkPath>("SkPath")
         .constructor<>()
         .constructor<const SkPath&>()
@@ -1025,6 +1015,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
             return PosTan{p.x(), p.y(), v.x(), v.y()};
         }))
         .function("isClosed", &SkPathMeasure::isClosed)
+        .function("getSegment", &GetSegment)
         .function("nextContour", &SkPathMeasure::nextContour);
 
     class_<SkShader>("SkShader")

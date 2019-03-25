@@ -38,6 +38,7 @@ var CanvasKit = {
 	MakeCanvasSurface: function() {},
 	MakeGrContext: function() {},
 	MakeImageShader: function() {},
+	MakeImage: function() {},
 	/** @return {CanvasKit.SkImage} */
 	MakeImageFromEncoded: function() {},
 	/** @return {LinearCanvasGradient} */
@@ -200,14 +201,6 @@ var CanvasKit = {
 		//private API
 		delete: function() {},
 	},
-
-	SkPathMeasure: {
-		// public API (from C++ bindings)
-		getLength: function() {},
-		getSegment: function() {},
-		nextContour: function() {},
-	},
-
 	SkPath: {
 		// public API (from C++ bindings)
 		computeTightBounds: function() {},
@@ -257,6 +250,7 @@ var CanvasKit = {
 		getPosTan: function() {},
 		isClosed: function() {},
 		nextContour: function() {},
+		getSegment: function() {}
 	},
 
 	SkRect: {
