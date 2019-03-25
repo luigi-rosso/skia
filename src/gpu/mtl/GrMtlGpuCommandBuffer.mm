@@ -134,9 +134,6 @@ void GrMtlGpuRTCommandBuffer::onDraw(const GrPrimitiveProcessor& primProc,
     if (!meshCount) {
         return;
     }
-    if (pipeline.isScissorEnabled()) {
-        return; // TODO: ScissorRects are not supported.
-    }
 
     GrPrimitiveType primitiveType = meshes[0].primitiveType();
     GrMtlPipelineState* pipelineState = this->prepareDrawState(primProc, pipeline,
@@ -151,12 +148,30 @@ void GrMtlGpuRTCommandBuffer::onDraw(const GrPrimitiveProcessor& primProc,
     SkASSERT(fActiveRenderCmdEncoder);
     // TODO: can we set this once somewhere at the beginning of the draw?
     [fActiveRenderCmdEncoder setFrontFacingWinding:MTLWindingCounterClockwise];
+    // Strictly speaking we shouldn't have to set this, as the default viewport is the size of
+    // the drawable used to generate the renderCommandEncoder -- but just in case.
+    MTLViewport viewport = { 0.0, 0.0,
+                             (double) fRenderTarget->width(), (double) fRenderTarget->height(),
+                             0.0, 1.0 };
+    [fActiveRenderCmdEncoder setViewport:viewport];
 
     [fActiveRenderCmdEncoder setRenderPipelineState:pipelineState->mtlPipelineState()];
-    pipelineState->bind(fActiveRenderCmdEncoder);
-    pipelineState->setBlendConstants(fActiveRenderCmdEncoder, fRenderTarget->config(),
-                                     pipeline.getXferProcessor());
-    pipelineState->setDepthStencilState(fActiveRenderCmdEncoder);
+    pipelineState->setDrawState(fActiveRenderCmdEncoder, fRenderTarget->config(),
+                                pipeline.getXferProcessor());
+
+    bool dynamicScissor =
+            pipeline.isScissorEnabled() && dynamicStateArrays && dynamicStateArrays->fScissorRects;
+    if (!pipeline.isScissorEnabled()) {
+        GrMtlPipelineState::SetDynamicScissorRectState(fActiveRenderCmdEncoder,
+                                                       fRenderTarget, fOrigin,
+                                                       SkIRect::MakeWH(fRenderTarget->width(),
+                                                                       fRenderTarget->height()));
+    } else if (!dynamicScissor) {
+        SkASSERT(fixedDynamicState);
+        GrMtlPipelineState::SetDynamicScissorRectState(fActiveRenderCmdEncoder,
+                                                       fRenderTarget, fOrigin,
+                                                       fixedDynamicState->fScissorRect);
+    }
 
     for (int i = 0; i < meshCount; ++i) {
         const GrMesh& mesh = meshes[i];
@@ -171,10 +186,14 @@ void GrMtlGpuRTCommandBuffer::onDraw(const GrPrimitiveProcessor& primProc,
             }
 
             [fActiveRenderCmdEncoder setRenderPipelineState:pipelineState->mtlPipelineState()];
-            pipelineState->bind(fActiveRenderCmdEncoder);
-            pipelineState->setBlendConstants(fActiveRenderCmdEncoder, fRenderTarget->config(),
-                                             pipeline.getXferProcessor());
-            pipelineState->setDepthStencilState(fActiveRenderCmdEncoder);
+            pipelineState->setDrawState(fActiveRenderCmdEncoder, fRenderTarget->config(),
+                                        pipeline.getXferProcessor());
+        }
+
+        if (dynamicScissor) {
+            GrMtlPipelineState::SetDynamicScissorRectState(fActiveRenderCmdEncoder, fRenderTarget,
+                                                           fOrigin,
+                                                           dynamicStateArrays->fScissorRects[i]);
         }
 
         mesh.sendToGpu(this);

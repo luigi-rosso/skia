@@ -69,29 +69,30 @@ def dm_flags(api, bot):
   if 'Android' not in bot and 'MSAN' not in bot:
     args.append('--randomProcessorTest')
 
+  thread_limit = None
+  MAIN_THREAD_ONLY = 0
+
   # 32-bit desktop bots tend to run out of memory, because they have relatively
   # far more cores than RAM (e.g. 32 cores, 3G RAM).  Hold them back a bit.
-  if '-x86-' in bot and not 'NexusPlayer' in bot:
-    args.extend(['--threads', '4'])
+  if '-x86-' in bot:
+    thread_limit = 4
 
-  # Nexus7 runs out of memory due to having 4 cores and only 1G RAM.
-  if 'CPU' in bot and 'Nexus7' in bot:
-    args.extend(['--threads', '2'])
-
-  # MotoG4 occasionally fails when multiple threads read the same image file.
-  if 'CPU' in bot and 'MotoG4' in bot:
-    args.extend(['--threads', '0'])
-
-  if 'Chromecast' in bot:
-    args.extend(['--threads', '0'])
+  # These bots run out of memory easily.
+  if 'Chromecast' in bot or 'MotoG4' in bot or 'Nexus7' in bot:
+    thread_limit = MAIN_THREAD_ONLY
+  if 'NexusPlayer' in bot:
+    thread_limit = 2
 
   # Avoid issues with dynamically exceeding resource cache limits.
   if 'Test' in bot and 'DISCARDABLE' in bot:
-    args.extend(['--threads', '0'])
+    thread_limit = MAIN_THREAD_ONLY
 
   # See if staying on the main thread helps skia:6748.
   if 'Test-iOS' in bot:
-    args.extend(['--threads', '0'])
+    thread_limit = MAIN_THREAD_ONLY
+
+  if thread_limit is not None:
+    args.extend(['--threads', str(thread_limit)])
 
   # Android's kernel will occasionally attempt to kill our process, using
   # SIGINT, in an effort to free up resources. If requested, that signal
@@ -115,7 +116,6 @@ def dm_flags(api, bot):
         'pdf',
         'g8', '565',
         'pic-8888', 'tiles_rt-8888', 'lite-8888', 'serialize-8888',
-        'gbr-8888',
         'f16', 'srgb', 'esrgb', 'narrow', 'enarrow',
         'p3', 'ep3', 'rec2020', 'erec2020'])
 
@@ -234,10 +234,10 @@ def dm_flags(api, bot):
         blacklist('gltestpersistentcache gm _ dftext')
         blacklist('gltestpersistentcache gm _ glyph_pos_h_b')
 
-    # Test SkColorSpaceXformCanvas and rendering to wrapped dsts on a few bots
+    # Test rendering to wrapped dsts on a few bots
     # Also test 'glenarrow', which hits F16 surfaces and F16 vertex colors.
     if 'BonusConfigs' in api.vars.extra_tokens:
-      configs = ['gbr-gl', 'glbetex', 'glbert', 'glenarrow']
+      configs = ['glbetex', 'glbert', 'glenarrow']
 
 
     if 'ChromeOS' in bot:
@@ -332,10 +332,6 @@ def dm_flags(api, bot):
   blacklist('f16 _ _ dstreadshuffle')
   blacklist('glsrgb image _ _')
   blacklist('glessrgb image _ _')
-
-  # Not any point to running these.
-  blacklist('gbr-8888 image _ _')
-  blacklist('gbr-8888 colorImage _ _')
 
   # --src image --config g8 means "decode into Gray8", which isn't supported.
   blacklist('g8 image _ _')
@@ -484,6 +480,7 @@ def dm_flags(api, bot):
   bad_serialize_gms.append('makecolorspace')
   bad_serialize_gms.append('readpixels')
   bad_serialize_gms.append('draw_image_set_rect_to_rect')
+  bad_serialize_gms.append('compositor_quads_shader')
 
   # This GM forces a path to be convex. That property doesn't survive
   # serialization.
@@ -672,6 +669,7 @@ def dm_flags(api, bot):
     # skia:8659
     blacklist(['vk', 'gm', '_', 'aarectmodes'])
     blacklist(['vk', 'gm', '_', 'aaxfermodes'])
+    blacklist(['vk', 'gm', '_', 'compositor_quads_filter'])
     blacklist(['vk', 'gm', '_', 'crbug_892988'])
     blacklist(['vk', 'gm', '_', 'dftext'])
     blacklist(['vk', 'gm', '_', 'dftext_blob_persp'])
@@ -803,11 +801,9 @@ def dm_flags(api, bot):
     args.append('--noRAW_threading')
 
   if 'FSAA' in bot:
-    args.extend(['--analyticAA', 'false', '--deltaAA', 'false'])
+    args.extend(['--analyticAA', 'false'])
   if 'FAAA' in bot:
-    args.extend(['--deltaAA', 'false', '--forceAnalyticAA'])
-  if 'FDAA' in bot:
-    args.extend(['--deltaAA', '--forceDeltaAA'])
+    args.extend(['--forceAnalyticAA'])
 
   if 'NativeFonts' not in bot:
     args.append('--nonativeFonts')
@@ -1074,7 +1070,6 @@ TEST_BUILDERS = [
   'Test-Win10-Clang-ShuttleA-GPU-GTX660-x86_64-Release-All-Vulkan',
   'Test-Win10-Clang-ShuttleC-GPU-GTX960-x86_64-Debug-All-ANGLE',
   'Test-Win2016-Clang-GCE-CPU-AVX2-x86_64-Debug-All-FAAA',
-  'Test-Win2016-Clang-GCE-CPU-AVX2-x86_64-Debug-All-FDAA',
   'Test-Win2016-Clang-GCE-CPU-AVX2-x86_64-Debug-All-FSAA',
   'Test-Win2016-MSVC-GCE-CPU-AVX2-x86_64-Debug-All-MSRTC',
   'Test-iOS-Clang-iPadPro-GPU-PowerVRGT7800-arm64-Release-All',
