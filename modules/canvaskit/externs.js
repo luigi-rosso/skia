@@ -113,6 +113,7 @@ var CanvasKit = {
 		drawOval: function() {},
 		drawPaint: function() {},
 		drawPath: function() {},
+		drawPicture: function() {},
 		drawRect: function() {},
 		drawRoundRect: function() {},
 		drawShadow: function() {},
@@ -261,6 +262,15 @@ var CanvasKit = {
 		isClosed: function() {},
 		nextContour: function() {},
 		getSegment: function() {}
+	},
+
+	SkPicture: {
+		DEBUGONLY_serialize: function() {},
+	},
+
+	SkPictureRecorder: {
+		beginRecording: function() {},
+		finishRecordingAsPicture: function() {},
 	},
 
 	SkRect: {
@@ -509,9 +519,12 @@ CanvasKit.SkPath.prototype.stroke = function() {};
 CanvasKit.SkPath.prototype.transform = function() {};
 CanvasKit.SkPath.prototype.trim = function() {};
 
+CanvasKit.SkPicture.prototype.DEBUGONLY_saveAsFile = function() {};
+
 CanvasKit.SkSurface.prototype.dispose = function() {};
 CanvasKit.SkSurface.prototype.flush = function() {};
 CanvasKit.SkSurface.prototype.requestAnimationFrame = function() {};
+CanvasKit.SkSurface.prototype.captureFrameAsSkPicture = function() {};
 
 /** @return {CanvasKit.SkVertices} */
 CanvasKit.SkVertices.prototype.applyBones = function() {};
