@@ -77,35 +77,13 @@ SkColor color_to_565(SkColor color) {
     return SkPixel16ToColor(color16);
 }
 
-void write_pixels(SkCanvas*       canvas,
-                  const SkBitmap& bitmap,
-                  int             x,
-                  int             y,
-                  SkColorType     colorType,
-                  SkAlphaType     alphaType) {
-    SkBitmap          tmp(bitmap);
-    const SkImageInfo info = SkImageInfo::Make(tmp.width(), tmp.height(), colorType, alphaType);
-
-    canvas->writePixels(info, tmp.getPixels(), tmp.rowBytes(), x, y);
-}
-
-void write_pixels(SkSurface*      surface,
-                  const SkBitmap& src,
-                  int             x,
-                  int             y,
-                  SkColorType     colorType,
-                  SkAlphaType     alphaType) {
-    const SkImageInfo info = SkImageInfo::Make(src.width(), src.height(), colorType, alphaType);
-    surface->writePixels({info, src.getPixels(), src.rowBytes()}, x, y);
-}
-
 sk_sp<SkShader> create_checkerboard_shader(SkColor c1, SkColor c2, int size) {
     SkBitmap bm;
     bm.allocPixels(SkImageInfo::MakeS32(2 * size, 2 * size, kPremul_SkAlphaType));
     bm.eraseColor(c1);
     bm.eraseArea(SkIRect::MakeLTRB(0, 0, size, size), c2);
     bm.eraseArea(SkIRect::MakeLTRB(size, size, 2 * size, 2 * size), c2);
-    return SkShader::MakeBitmapShader(bm, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode);
+    return SkShader::MakeBitmapShader(bm, SkTileMode::kRepeat, SkTileMode::kRepeat);
 }
 
 SkBitmap create_checkerboard_bitmap(int w, int h, SkColor c1, SkColor c2, int checkSize) {

@@ -14,6 +14,7 @@
 #include "SkFlattenable.h"
 #include "SkImageInfo.h"
 #include "SkMatrix.h"
+#include "SkTileMode.h"
 
 class SkArenaAlloc;
 class SkBitmap;
@@ -39,6 +40,7 @@ class GrFragmentProcessor;
  */
 class SK_API SkShader : public SkFlattenable {
 public:
+#ifdef SK_SUPPORT_LEGACY_TILEMODE_ENUM
     enum TileMode {
         /**
          *  Replicate the edge color if the shader draws outside of its
@@ -66,6 +68,7 @@ public:
     };
 
     static constexpr int kTileModeCount = kLast_TileMode + 1;
+#endif
 
     /**
      *  Returns the local matrix.
@@ -87,10 +90,15 @@ public:
      *  Iff this shader is backed by a single SkImage, return its ptr (the caller must ref this
      *  if they want to keep it longer than the lifetime of the shader). If not, return nullptr.
      */
-    SkImage* isAImage(SkMatrix* localMatrix, TileMode xy[2]) const;
+    SkImage* isAImage(SkMatrix* localMatrix, SkTileMode xy[2]) const;
+#ifdef SK_SUPPORT_LEGACY_TILEMODE_ENUM
+    SkImage* isAImage(SkMatrix* localMatrix, TileMode xy[2]) const {
+        return this->isAImage(localMatrix, (SkTileMode*)xy);
+    }
+#endif
 
     bool isAImage() const {
-        return this->isAImage(nullptr, nullptr) != nullptr;
+        return this->isAImage(nullptr, (SkTileMode*)nullptr) != nullptr;
     }
 
     /**
@@ -141,20 +149,16 @@ public:
         SkScalar*   fColorOffsets;  //!< The unit offset for color transitions.
         SkPoint     fPoint[2];      //!< Type specific, see above.
         SkScalar    fRadius[2];     //!< Type specific, see above.
+#ifdef SK_SUPPORT_LEGACY_TILEMODE_ENUM
         TileMode    fTileMode;      //!< The tile mode used.
+#else
+        SkTileMode  fTileMode;
+#endif
         uint32_t    fGradientFlags; //!< see SkGradientShader::Flags
     };
 
+    // DEPRECATED. skbug.com/8941
     virtual GradientType asAGradient(GradientInfo* info) const;
-
-#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
-    struct ComposeRec {
-        const SkShader*     fShaderA;
-        const SkShader*     fShaderB;
-        SkBlendMode         fBlendMode;
-    };
-    virtual bool asACompose(ComposeRec*) const { return false; }
-#endif
 
     //////////////////////////////////////////////////////////////////////////
     //  Methods to create combinations or variants of shaders
@@ -193,38 +197,25 @@ public:
      */
     static sk_sp<SkShader> MakeColorShader(const SkColor4f&, sk_sp<SkColorSpace>);
 
-    /**
-     *  Compose two shaders together, using two operators: mode and lerp. The resulting colors
-     *  are computed by first combining the src and dst shaders using mode, and then linearly
-     *  interpolating between the dst and result colors using lerp.
-     *
-     *      result = dst * (1 - lerp) + (src (mode) dst) * lerp
-     *
-     *  If either shader is nullptr, then this returns nullptr.
-     *  If lerp is NaN then this returns nullptr, otherwise lerp is clamped to [0..1].
-     */
-    static sk_sp<SkShader> MakeCompose(sk_sp<SkShader> dst, sk_sp<SkShader> src,
-                                       SkBlendMode mode, float lerp = 1);
+    static sk_sp<SkShader> MakeBlend(SkBlendMode mode, sk_sp<SkShader> dst, sk_sp<SkShader> src);
 
     /*
-     *  DEPRECATED: call MakeCompose.
+     *  DEPRECATED: call MakeBlend.
      */
     static sk_sp<SkShader> MakeComposeShader(sk_sp<SkShader> dst, sk_sp<SkShader> src,
                                              SkBlendMode mode) {
-        return MakeCompose(std::move(dst), std::move(src), mode, 1);
+        return MakeBlend(mode, std::move(dst), std::move(src));
     }
 
     /**
      *  Compose two shaders together using a weighted average.
      *
-     *  result = dst * (1 - lerp) + src * lerp
+     *  result = dst * (1 - weight) + src * weight
      *
      *  If either shader is nullptr, then this returns nullptr.
-     *  If lerp is NaN then this returns nullptr, otherwise lerp is clamped to [0..1].
+     *  If weight is NaN then this returns nullptr, otherwise lerp is clamped to [0..1].
      */
-    static sk_sp<SkShader> MakeLerp(sk_sp<SkShader> dst, sk_sp<SkShader> src, float lerp) {
-        return MakeCompose(std::move(dst), std::move(src), SkBlendMode::kSrc, lerp);
-    }
+    static sk_sp<SkShader> MakeLerp(float weight, sk_sp<SkShader> dst, sk_sp<SkShader> src);
 
     static sk_sp<SkShader> MakeMixer(sk_sp<SkShader> dst, sk_sp<SkShader> src, sk_sp<SkMixer>);
 
@@ -242,12 +233,17 @@ public:
      *  @param tmy  The tiling mode to use when sampling the bitmap in the y-direction.
      *  @return     Returns a new shader object. Note: this function never returns null.
     */
-    static sk_sp<SkShader> MakeBitmapShader(const SkBitmap& src, TileMode tmx, TileMode tmy,
+    static sk_sp<SkShader> MakeBitmapShader(const SkBitmap& src, SkTileMode tmx, SkTileMode tmy,
                                             const SkMatrix* localMatrix = nullptr);
+#ifdef SK_SUPPORT_LEGACY_TILEMODE_ENUM
+    static sk_sp<SkShader> MakeBitmapShader(const SkBitmap& src, TileMode tmx, TileMode tmy,
+                                            const SkMatrix* localMatrix = nullptr) {
+        return MakeBitmapShader(src, static_cast<SkTileMode>(tmx), static_cast<SkTileMode>(tmy),
+                                localMatrix);
+    }
 
-    // NOTE: You can create an SkImage Shader with SkImage::newShader().
-
-    /** Call this to create a new shader that will draw with the specified picture.
+    /** DEPRECATED: call picture->makeShader(...)
+     *  Call this to create a new shader that will draw with the specified picture.
      *
      *  @param src  The picture to use inside the shader (if not NULL, its ref count
      *              is incremented). The SkPicture must not be changed after
@@ -263,8 +259,9 @@ public:
     */
     static sk_sp<SkShader> MakePictureShader(sk_sp<SkPicture> src, TileMode tmx, TileMode tmy,
                                              const SkMatrix* localMatrix, const SkRect* tile);
+#endif
 
-    /**
+    /** DEPRECATED. skbug.com/8941
      *  If this shader can be represented by another shader + a localMatrix, return that shader and
      *  the localMatrix. If not, return nullptr and ignore the localMatrix parameter.
      */

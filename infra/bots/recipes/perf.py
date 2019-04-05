@@ -69,6 +69,9 @@ def nanobench_flags(api, bot):
           'enarrow',
       ]
 
+    if 'Nexus7' in bot:
+      args.append('--purgeBetweenBenches')  # Debugging skia:8929
+
   elif api.vars.builder_cfg.get('cpu_or_gpu') == 'GPU':
     args.append('--nocpu')
 
@@ -250,6 +253,11 @@ def nanobench_flags(api, bot):
     match.append('~^top25desk_techcrunch.skp_1$')
     match.append('~^top25desk_techcrunch.skp_1.1_mpd$')
     match.append('~^top25desk_techcrunch.skp_1.1$')
+    # skia:skia:8706
+    match.append('~^mobi_wsj.skp_1_mpd$')
+    match.append('~^mobi_wsj.skp_1$')
+    match.append('~^mobi_wsj.skp_1.1_mpd$')
+    match.append('~^mobi_wsj.skp_1.1$')
 
   # We do not need or want to benchmark the decodes of incomplete images.
   # In fact, in nanobench we assert that the full image decode succeeds.
@@ -394,6 +402,7 @@ def RunSteps(api):
 
 
 TEST_BUILDERS = [
+  'Perf-Android-Clang-Nexus7-CPU-Tegra3-arm-Debug-All-Android',
   'Perf-Android-Clang-Nexus5-GPU-Adreno330-arm-Debug-All-Android',
   ('Perf-Android-Clang-Nexus5x-GPU-Adreno418-arm64-Release-All-'
    'Android_NoGPUThreads'),

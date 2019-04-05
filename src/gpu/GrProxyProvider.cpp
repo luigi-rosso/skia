@@ -102,8 +102,15 @@ sk_sp<GrTextureProxy> GrProxyProvider::findProxyByUniqueKey(const GrUniqueKey& k
         return nullptr;
     }
 
-    sk_sp<GrTextureProxy> result = sk_ref_sp(fUniquelyKeyedProxies.find(key));
-    if (result) {
+    GrTextureProxy* proxy = fUniquelyKeyedProxies.find(key);
+    sk_sp<GrTextureProxy> result;
+    if (proxy) {
+        GrResourceCache* cache = nullptr;
+        if (auto directContext = fImageContext->priv().asDirectContext()) {
+            cache = directContext->priv().getResourceCache();
+        }
+        proxy->firstRefAccess().ref(cache);
+        result.reset(proxy);
         SkASSERT(result->origin() == origin);
     }
     return result;
@@ -255,8 +262,8 @@ sk_sp<GrTextureProxy> GrProxyProvider::createTextureProxy(sk_sp<SkImage> srcImag
                 if (surfaceFlags & GrInternalSurfaceFlags::kNoPendingIO) {
                     resourceProviderFlags |= GrResourceProvider::Flags::kNoPendingIO;
                 }
-                return resourceProvider->createTexture(desc, budgeted, fit, mipLevel,
-                                                       resourceProviderFlags);
+                return LazyInstantiationResult(resourceProvider->createTexture(
+                        desc, budgeted, fit, mipLevel, resourceProviderFlags));
             },
             format, desc, kTopLeft_GrSurfaceOrigin, GrMipMapped::kNo, surfaceFlags, fit, budgeted);
 
@@ -374,8 +381,8 @@ sk_sp<GrTextureProxy> GrProxyProvider::createProxyFromBitmap(const SkBitmap& bit
                     SkASSERT(texels[i].fPixels);
                 }
 
-                return resourceProvider->createTexture(desc, SkBudgeted::kYes, texels.get(),
-                                                       mipLevelCount);
+                return LazyInstantiationResult(resourceProvider->createTexture(
+                        desc, SkBudgeted::kYes, texels.get(), mipLevelCount));
             },
             format, desc, kTopLeft_GrSurfaceOrigin, GrMipMapped::kYes, SkBackingFit::kExact,
             SkBudgeted::kYes);
@@ -446,7 +453,8 @@ sk_sp<GrTextureProxy> GrProxyProvider::createProxy(sk_sp<SkData> data, const GrS
             GrMipLevel texels;
             texels.fPixels = data->data();
             texels.fRowBytes = GrBytesPerPixel(desc.fConfig)*desc.fWidth;
-            return resourceProvider->createTexture(desc, SkBudgeted::kYes, &texels, 1);
+            return LazyInstantiationResult(
+                    resourceProvider->createTexture(desc, SkBudgeted::kYes, &texels, 1));
         },
         format, desc, kTopLeft_GrSurfaceOrigin, GrMipMapped::kNo, SkBackingFit::kExact,
         SkBudgeted::kYes);
@@ -789,15 +797,10 @@ void GrProxyProvider::processInvalidUniqueKey(const GrUniqueKey& key, GrTextureP
     // proxy's unique key. We must do it in this order because 'key' may alias the proxy's key.
     sk_sp<GrGpuResource> invalidGpuResource;
     if (InvalidateGPUResource::kYes == invalidateGPUResource) {
-        if (proxy && proxy->isInstantiated()) {
-            invalidGpuResource = sk_ref_sp(proxy->peekSurface());
-        }
-        if (!invalidGpuResource) {
-            GrContext* direct = fImageContext->priv().asDirectContext();
-            if (direct) {
-                GrResourceProvider* resourceProvider = direct->priv().resourceProvider();
-                invalidGpuResource = resourceProvider->findByUniqueKey<GrGpuResource>(key);
-            }
+        GrContext* direct = fImageContext->priv().asDirectContext();
+        if (direct) {
+            GrResourceProvider* resourceProvider = direct->priv().resourceProvider();
+            invalidGpuResource = resourceProvider->findByUniqueKey<GrGpuResource>(key);
         }
         SkASSERT(!invalidGpuResource || invalidGpuResource->getUniqueKey() == key);
     }

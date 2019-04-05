@@ -318,6 +318,14 @@ GrGpuTextureCommandBuffer* GrVkGpu::getCommandBuffer(GrTexture* texture, GrSurfa
 
 void GrVkGpu::submitCommandBuffer(SyncQueue sync) {
     SkASSERT(fCurrentCmdBuffer);
+
+    if (!fCurrentCmdBuffer->hasWork() && kForce_SyncQueue != sync &&
+        !fSemaphoresToSignal.count() && !fSemaphoresToWaitOn.count()) {
+        SkASSERT(fDrawables.empty());
+        fResourceProvider.checkCommandBuffers();
+        return;
+    }
+
     fCurrentCmdBuffer->end(this);
     fCmdPool->close();
     fCurrentCmdBuffer->submitToQueue(this, fQueue, sync, fSemaphoresToSignal, fSemaphoresToWaitOn);
@@ -1270,13 +1278,16 @@ bool GrVkGpu::onRegenerateMipMapLevels(GrTexture* tex) {
                                      VK_FILTER_LINEAR);
         ++mipLevel;
     }
-    // This barrier logically is not needed, but it changes the final level to the same layout as
-    // all the others, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL. This makes tracking of the layouts and
-    // future layout changes easier.
-    imageMemoryBarrier.subresourceRange.baseMipLevel = mipLevel - 1;
-    this->addImageMemoryBarrier(vkTex->resource(), VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                VK_PIPELINE_STAGE_TRANSFER_BIT, false, &imageMemoryBarrier);
-    vkTex->updateImageLayout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    if (levelCount > 1) {
+        // This barrier logically is not needed, but it changes the final level to the same layout
+        // as all the others, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL. This makes tracking of the
+        // layouts and future layout changes easier. The alternative here would be to track layout
+        // and memory accesses per layer which doesn't seem work it.
+        imageMemoryBarrier.subresourceRange.baseMipLevel = mipLevel - 1;
+        this->addImageMemoryBarrier(vkTex->resource(), VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                    VK_PIPELINE_STAGE_TRANSFER_BIT, false, &imageMemoryBarrier);
+        vkTex->updateImageLayout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    }
     return true;
 }
 
@@ -1756,20 +1767,6 @@ void GrVkGpu::testingOnly_flushGpuAndSync() {
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
-
-void GrVkGpu::addMemoryBarrier(VkPipelineStageFlags srcStageMask,
-                               VkPipelineStageFlags dstStageMask,
-                               bool byRegion,
-                               VkMemoryBarrier* barrier) const {
-    SkASSERT(fCurrentCmdBuffer);
-    fCurrentCmdBuffer->pipelineBarrier(this,
-                                       nullptr,
-                                       srcStageMask,
-                                       dstStageMask,
-                                       byRegion,
-                                       GrVkCommandBuffer::kMemory_BarrierType,
-                                       barrier);
-}
 
 void GrVkGpu::addBufferMemoryBarrier(const GrVkResource* resource,
                                      VkPipelineStageFlags srcStageMask,

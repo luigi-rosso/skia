@@ -322,9 +322,12 @@ void GrRenderTargetContext::internalClear(const GrFixedClip& clip,
                                           CanClearFullscreen canClearFullscreen) {
     bool isFull = false;
     if (!clip.hasWindowRectangles()) {
+        // TODO: wrt the shouldInitializeTextures path, it would be more performant to
+        // only clear the entire target if we knew it had not been cleared before. As
+        // is this could end up doing a lot of redundant clears.
         isFull = !clip.scissorEnabled() ||
                  (CanClearFullscreen::kYes == canClearFullscreen &&
-                  this->caps()->preferFullscreenClears()) ||
+                  (this->caps()->preferFullscreenClears() || this->caps()->shouldInitializeTextures())) ||
                  clip.scissorRect().contains(SkIRect::MakeWH(this->width(), this->height()));
     }
 
@@ -1074,7 +1077,8 @@ void GrRenderTargetContext::drawTextureQuad(const GrClip& clip, sk_sp<GrTextureP
 
 void GrRenderTargetContext::drawTextureSet(const GrClip& clip, const TextureSetEntry set[], int cnt,
                                            GrSamplerState::Filter filter, SkBlendMode mode,
-                                           GrAA aa, const SkMatrix& viewMatrix,
+                                           GrAA aa, SkCanvas::SrcRectConstraint constraint,
+                                           const SkMatrix& viewMatrix,
                                            sk_sp<GrColorSpaceXform> texXform) {
     ASSERT_SINGLE_OWNER
     RETURN_IF_ABANDONED
@@ -1097,24 +1101,23 @@ void GrRenderTargetContext::drawTextureSet(const GrClip& clip, const TextureSetE
                 // being drawn.
                 this->drawTexture(clip, set[i].fProxy, filter, mode, {alpha, alpha, alpha, alpha},
                                   set[i].fSrcRect, set[i].fDstRect, aa, set[i].fAAFlags,
-                                  SkCanvas::kFast_SrcRectConstraint, ctm, texXform);
+                                  constraint, ctm, texXform);
             } else {
                 // Generate interpolated texture coordinates to match the dst clip
                 SkPoint srcQuad[4];
                 GrMapRectPoints(set[i].fDstRect, set[i].fSrcRect, set[i].fDstClipQuad, srcQuad, 4);
-                // Don't send srcRect as the domain, since the normal case doesn't use a constraint
-                // with the entire srcRect, so sampling into dstRect outside of dstClip will just
-                // keep seams look more correct.
+                const SkRect* domain = constraint == SkCanvas::kStrict_SrcRectConstraint
+                        ? &set[i].fSrcRect : nullptr;
                 this->drawTextureQuad(clip, set[i].fProxy, filter, mode,
                                       {alpha, alpha, alpha, alpha}, srcQuad, set[i].fDstClipQuad,
-                                      aa, set[i].fAAFlags, nullptr, ctm, texXform);
+                                      aa, set[i].fAAFlags, domain, ctm, texXform);
             }
         }
     } else {
         // Can use a single op, avoiding GrPaint creation, and can batch across proxies
         AutoCheckFlush acf(this->drawingManager());
         GrAAType aaType = this->chooseAAType(aa);
-        auto op = GrTextureOp::MakeSet(fContext, set, cnt, filter, aaType, viewMatrix,
+        auto op = GrTextureOp::MakeSet(fContext, set, cnt, filter, aaType, constraint, viewMatrix,
                                        std::move(texXform));
         this->addDrawOp(clip, std::move(op));
     }
@@ -1225,21 +1228,22 @@ void GrRenderTargetContext::drawRRect(const GrClip& origClip,
     AutoCheckFlush acf(this->drawingManager());
 
     GrAAType aaType = this->chooseAAType(aa);
-    if (GrAAType::kCoverage == aaType) {
-        std::unique_ptr<GrDrawOp> op;
-        if (style.isSimpleFill()) {
-            op = GrFillRRectOp::Make(fContext, viewMatrix, rrect, *this->caps(), std::move(paint));
-        }
-        if (!op) {
-            assert_alive(paint);
-            op = GrOvalOpFactory::MakeRRectOp(fContext, std::move(paint), viewMatrix, rrect, stroke,
-                                              this->caps()->shaderCaps());
-        }
 
-        if (op) {
-            this->addDrawOp(*clip, std::move(op));
-            return;
-        }
+    std::unique_ptr<GrDrawOp> op;
+    if (style.isSimpleFill()) {
+        assert_alive(paint);
+        op = GrFillRRectOp::Make(
+                fContext, aaType, viewMatrix, rrect, *this->caps(), std::move(paint));
+    }
+    if (!op && GrAAType::kCoverage == aaType) {
+        assert_alive(paint);
+        op = GrOvalOpFactory::MakeRRectOp(
+                fContext, std::move(paint), viewMatrix, rrect, stroke, this->caps()->shaderCaps());
+
+    }
+    if (op) {
+        this->addDrawOp(*clip, std::move(op));
+        return;
     }
 
     assert_alive(paint);
@@ -1630,29 +1634,31 @@ void GrRenderTargetContext::drawOval(const GrClip& clip,
     AutoCheckFlush acf(this->drawingManager());
 
     GrAAType aaType = this->chooseAAType(aa);
-    if (GrAAType::kCoverage == aaType) {
-        std::unique_ptr<GrDrawOp> op;
+
+    std::unique_ptr<GrDrawOp> op;
+    if (style.isSimpleFill()) {
         // GrFillRRectOp has special geometry and a fragment-shader branch to conditionally evaluate
         // the arc equation. This same special geometry and fragment branch also turn out to be a
         // substantial optimization for drawing ovals (namely, by not evaluating the arc equation
         // inside the oval's inner diamond). Given these optimizations, it's a clear win to draw
         // ovals the exact same way we do round rects.
         //
-        // However, we still don't draw true circles as round rects, because it can cause perf
-        // regressions on some platforms as compared to the dedicated circle Op.
-        if (style.isSimpleFill() && oval.height() != oval.width()) {
-            op = GrFillRRectOp::Make(
-                    fContext, viewMatrix, SkRRect::MakeOval(oval), *this->caps(), std::move(paint));
-        }
-        if (!op) {
+        // However, we still don't draw true circles as round rects in coverage mode, because it can
+        // cause perf regressions on some platforms as compared to the dedicated circle Op.
+        if (GrAAType::kCoverage != aaType || oval.height() != oval.width()) {
             assert_alive(paint);
-            op = GrOvalOpFactory::MakeOvalOp(fContext, std::move(paint), viewMatrix, oval, style,
-                                             this->caps()->shaderCaps());
+            op = GrFillRRectOp::Make(fContext, aaType, viewMatrix, SkRRect::MakeOval(oval),
+                                     *this->caps(), std::move(paint));
         }
-        if (op) {
-            this->addDrawOp(clip, std::move(op));
-            return;
-        }
+    }
+    if (!op && GrAAType::kCoverage == aaType) {
+        assert_alive(paint);
+        op = GrOvalOpFactory::MakeOvalOp(fContext, std::move(paint), viewMatrix, oval, style,
+                                         this->caps()->shaderCaps());
+    }
+    if (op) {
+        this->addDrawOp(clip, std::move(op));
+        return;
     }
 
     assert_alive(paint);

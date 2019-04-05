@@ -145,6 +145,8 @@ config("skia_public") {
     defines += [ "SK_ASSUME_GL_ES=1" ]
   } else if (skia_gl_standard == "gl") {
     defines += [ "SK_ASSUME_GL=1" ]
+  } else if (skia_gl_standard == "webgl") {
+    defines += [ "SK_ASSUME_WEBGL=1" ]
   }
 }
 
@@ -1218,6 +1220,7 @@ if (skia_enable_tools) {
     # TODO: would be cool to not hard-code these here, but how?
     module_public_includes = [
       "modules/sksg/include",
+      "modules/skshaper/include",
       "modules/skottie/include",
     ]
     args =
@@ -1251,6 +1254,7 @@ if (skia_enable_tools) {
         ":skia",
         ":skia.h",
         "modules/skottie",
+        "modules/skshaper",
       ]
     }
   }
@@ -1264,6 +1268,7 @@ if (skia_enable_tools) {
       ":skia",
       ":skia.h",
       "modules/skottie",
+      "modules/skshaper",
     ]
 
     # We add this directory to simulate the client already have
@@ -1319,34 +1324,27 @@ if (skia_enable_tools) {
         ]
       }
 
-      bundle_ios_data =
-          defined(invoker.bundle_ios_data) && invoker.bundle_ios_data
-
-      if (bundle_ios_data) {
-        has_skps =
-            "True" == exec_script("//gn/checkdir.py",
-                                  [ rebase_path("skps", root_build_dir) ],
-                                  "trim string")
-        bundle_data("${app_name}_bundle_resources") {
+      has_skps = "True" == exec_script("//gn/checkdir.py",
+                                       [ rebase_path("skps", root_build_dir) ],
+                                       "trim string")
+      bundle_data("${app_name}_bundle_resources") {
+        sources = [
+          "resources",
+        ]
+        outputs = [
+          # iOS reserves the folders 'Resources' and 'resources' so store one level deeper
+          "{{bundle_resources_dir}}/data/resources",
+        ]
+      }
+      if (has_skps) {
+        bundle_data("${app_name}_bundle_skps") {
           sources = [
-            "resources",
+            "skps",
           ]
           outputs = [
-            # iOS reserves the folders 'Resources' and 'resources' so store one level deeper
-            "{{bundle_resources_dir}}/data/resources",
+            # Store in same folder as resources
+            "{{bundle_resources_dir}}/data/skps",
           ]
-        }
-
-        if (has_skps) {
-          bundle_data("${app_name}_bundle_skps") {
-            sources = [
-              "skps",
-            ]
-            outputs = [
-              # Store in same folder as resources
-              "{{bundle_resources_dir}}/data/skps",
-            ]
-          }
         }
       }
 
@@ -1376,6 +1374,19 @@ if (skia_enable_tools) {
         testonly = true
       }
 
+      bundle_data("${app_name}_bundle_symbols") {
+        public_deps = [
+          ":${app_name}_generate_executable",
+        ]
+        sources = [
+          "$gen_path/${app_name}.dSYM",
+        ]
+        outputs = [
+          "{{bundle_executable_dir}}/${app_name}.dSYM",
+        ]
+        testonly = true
+      }
+
       create_bundle("$app_name") {
         product_type = "com.apple.product-type.application"
         testonly = true
@@ -1383,17 +1394,15 @@ if (skia_enable_tools) {
         bundle_root_dir = "${root_build_dir}/${target_name}.app"
         bundle_resources_dir = bundle_root_dir
         bundle_executable_dir = bundle_root_dir
-        bundle_plugins_dir = bundle_root_dir + "/Plugins"
 
         deps = [
           ":${app_name}_bundle_executable",
           ":${app_name}_bundle_info_plist",
+          ":${app_name}_bundle_resources",
+          ":${app_name}_bundle_symbols",
         ]
-        if (bundle_ios_data) {
-          deps += [ ":${app_name}_bundle_resources" ]
-          if (has_skps) {
-            deps += [ ":${app_name}_bundle_skps" ]
-          }
+        if (has_skps) {
+          deps += [ ":${app_name}_bundle_skps" ]
         }
 
         # should only code sign when running on a device, not the simulator
@@ -1498,7 +1507,6 @@ if (skia_enable_tools) {
       "tools/gpu/atlastext/GLTestAtlasTextRenderer.cpp",
       "tools/gpu/gl/GLTestContext.cpp",
       "tools/gpu/gl/command_buffer/GLTestContext_command_buffer.cpp",
-      "tools/gpu/gl/null/NullGLTestContext.cpp",
       "tools/gpu/mock/MockTestContext.cpp",
     ]
     libs = []
@@ -1654,6 +1662,8 @@ if (skia_enable_tools) {
     deps = [
       ":experimental_svg_model",
       ":flags",
+    ]
+    public_deps = [
       ":gpu_tool_utils",
     ]
   }
@@ -1845,6 +1855,37 @@ if (skia_enable_tools) {
         ":skia",
       ]
     }
+    test_lib("hash_and_encode") {
+      public_include_dirs = [ "tools" ]
+      sources = [
+        "tools/HashAndEncode.cpp",
+        "tools/HashAndEncode.h",
+      ]
+      deps = [
+        ":flags",
+        ":skia",
+        "//third_party/libpng",
+      ]
+    }
+    test_app("fm") {
+      sources = [
+        "tools/fm/fm.cpp",
+      ]
+      deps = [
+        ":common_flags_aa",
+        ":common_flags_gpu",
+        ":experimental_svg_model",
+        ":flags",
+        ":gm",
+        ":gpu_tool_utils",
+        ":hash_and_encode",
+        ":skia",
+        ":tool_utils",
+        ":trace",
+        "modules/skottie",
+        "modules/skottie:utils",
+      ]
+    }
     test_app("dm") {
       sources = [
         "dm/DM.cpp",
@@ -1861,6 +1902,7 @@ if (skia_enable_tools) {
         ":flags",
         ":gm",
         ":gpu_tool_utils",
+        ":hash_and_encode",
         ":skia",
         ":tests",
         ":tool_utils",
@@ -1868,7 +1910,6 @@ if (skia_enable_tools) {
         "modules/skottie",
         "modules/skottie:utils",
         "modules/sksg",
-        "//third_party/libpng",
       ]
 
       # NIMA does not build on Windows clang
@@ -2297,14 +2338,13 @@ if (skia_enable_tools) {
     }
   }
 
-  import("gn/examples.gni")
   if (!skia_use_vulkan && (is_mac || is_linux || is_win)) {
     test_app("fiddle_examples") {
       sources = [
         "tools/fiddle/examples.cpp",
         "tools/fiddle/examples.h",
+        "tools/fiddle/all_examples.cpp",
       ]
-      sources += examples_sources
       include_dirs = [ "tools" ]
       if (is_win) {
         cflags = [ "/wd4756" ]  # Overflow in constant arithmetic
@@ -2313,14 +2353,12 @@ if (skia_enable_tools) {
         ":skia",
         ":skia.h",
         "modules/skottie",
+        "modules/skshaper",
       ]
     }
   }
   test_app("viewer") {
     is_shared_library = is_android
-    if (is_ios) {
-      bundle_ios_data = true
-    }
     sources = [
       "tools/viewer/BisectSlide.cpp",
       "tools/viewer/GMSlide.cpp",

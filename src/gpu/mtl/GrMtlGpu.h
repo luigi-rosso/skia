@@ -44,9 +44,9 @@ public:
 
     id<MTLDevice> device() const { return fDevice; }
 
-    id<MTLCommandBuffer> commandBuffer() const { return fCmdBuffer; }
-
     GrMtlResourceProvider& resourceProvider() { return fResourceProvider; }
+
+    id<MTLCommandBuffer> commandBuffer();
 
     enum SyncQueue {
         kForce_SyncQueue,
@@ -58,7 +58,7 @@ public:
     // command buffer to finish before creating a new buffer and returning.
     void submitCommandBuffer(SyncQueue sync);
 
-#ifdef GR_TEST_UTILS
+#if GR_TEST_UTILS
     GrBackendTexture createTestingOnlyBackendTexture(const void* pixels, int w, int h,
                                                      GrColorType colorType, bool isRT,
                                                      GrMipMapped, size_t rowBytes = 0) override;

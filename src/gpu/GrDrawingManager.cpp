@@ -238,7 +238,8 @@ GrSemaphoresSubmitted GrDrawingManager::flush(GrSurfaceProxy* proxy,
         fCpuBufferCache = GrBufferAllocPool::CpuBufferCache::Make(maxCachedBuffers);
     }
 
-    GrOpFlushState flushState(gpu, resourceProvider, &fTokenTracker, fCpuBufferCache);
+    GrOpFlushState flushState(gpu, resourceProvider, resourceCache, &fTokenTracker,
+                              fCpuBufferCache);
 
     GrOnFlushResourceProvider onFlushProvider(this);
     // TODO: AFAICT the only reason fFlushState is on GrDrawingManager rather than on the
@@ -285,7 +286,8 @@ GrSemaphoresSubmitted GrDrawingManager::flush(GrSurfaceProxy* proxy,
     bool flushed = false;
 
     {
-        GrResourceAllocator alloc(resourceProvider, flushState.deinstantiateProxyTracker());
+        GrResourceAllocator alloc(resourceProvider, flushState.deinstantiateProxyTracker()
+                                  SkDEBUGCODE(, fDAG.numOpLists()));
         for (int i = 0; i < fDAG.numOpLists(); ++i) {
             if (fDAG.opList(i)) {
                 fDAG.opList(i)->gatherProxyIntervals(&alloc);
@@ -480,15 +482,12 @@ GrSemaphoresSubmitted GrDrawingManager::prepareSurfaceForExternalIO(
         return GrSemaphoresSubmitted::kNo; // Can't flush while DDL recording
     }
 
-    auto resourceProvider = direct->priv().resourceProvider();
-
-    GrSemaphoresSubmitted result = GrSemaphoresSubmitted::kNo;
-    if (proxy->priv().hasPendingIO() || numSemaphores ||
-        SkToBool(flags & SkSurface::kSyncCpu_FlushFlag)) {
-        result = this->flush(proxy, access, flags, numSemaphores, backendSemaphores);
-    }
-
-    if (!proxy->instantiate(resourceProvider)) {
+    // TODO: It is important to upgrade the drawingmanager to just flushing the
+    // portion of the DAG required by 'proxy' in order to restore some of the
+    // semantics of this method.
+    GrSemaphoresSubmitted result = this->flush(proxy, access, flags, numSemaphores,
+                                               backendSemaphores);
+    if (!proxy->isInstantiated()) {
         return result;
     }
 

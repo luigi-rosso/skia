@@ -73,7 +73,7 @@ public:
 
     bool preferVRAMUseOverFlushes() const { return fPreferVRAMUseOverFlushes; }
 
-    bool blacklistCoverageCounting() const { return fBlacklistCoverageCounting; }
+    bool preferTrianglesOverSampleMask() const { return fPreferTrianglesOverSampleMask; }
 
     bool avoidStencilBuffers() const { return fAvoidStencilBuffers; }
 
@@ -231,6 +231,13 @@ public:
         is not initialized (even if not read by draw calls). */
     bool mustClearUploadedBufferData() const { return fMustClearUploadedBufferData; }
 
+    /** For some environments, there is a performance or safety concern to not
+        initializing textures. For example, with WebGL and Firefox, there is a large
+        performance hit to not doing it.
+     */
+    bool shouldInitializeTextures() const { return fShouldInitializeTextures; }
+
+
     /** Returns true if the given backend supports importing AHardwareBuffers via the
      * GrAHardwarebufferImageGenerator. This will only ever be supported on Android devices with API
      * level >= 26.
@@ -258,16 +265,19 @@ public:
     }
 
     // Many drivers have issues with color clears.
-    bool performColorClearsAsDraws() const {
-        return fPerformColorClearsAsDraws;
-    }
+    bool performColorClearsAsDraws() const { return fPerformColorClearsAsDraws; }
 
     /// Adreno 4xx devices experience an issue when there are a large number of stencil clip bit
     /// clears. The minimal repro steps are not precisely known but drawing a rect with a stencil
     /// op instead of using glClear seems to resolve the issue.
-    bool performStencilClearsAsDraws() const {
-        return fPerformStencilClearsAsDraws;
-    }
+    bool performStencilClearsAsDraws() const { return fPerformStencilClearsAsDraws; }
+
+    // Can we use coverage counting shortcuts to render paths? Coverage counting can cause artifacts
+    // along shared edges if care isn't taken to ensure both contours wind in the same direction.
+    bool allowCoverageCounting() const { return fAllowCoverageCounting; }
+
+    // Should we disable the CCPR code due to a faulty driver?
+    bool driverBlacklistCCPR() const { return fDriverBlacklistCCPR; }
 
     /**
      * This is can be called before allocating a texture to be a dst for copySurface. This is only
@@ -343,20 +353,25 @@ protected:
     bool fPreferClientSideDynamicBuffers             : 1;
     bool fPreferFullscreenClears                     : 1;
     bool fMustClearUploadedBufferData                : 1;
+    bool fShouldInitializeTextures                   : 1;
     bool fSupportsAHardwareBufferImages              : 1;
     bool fHalfFloatVertexAttributeSupport            : 1;
     bool fClampToBorderSupport                       : 1;
     bool fPerformPartialClearsAsDraws                : 1;
     bool fPerformColorClearsAsDraws                  : 1;
     bool fPerformStencilClearsAsDraws                : 1;
+    bool fAllowCoverageCounting                      : 1;
 
     // Driver workaround
-    bool fBlacklistCoverageCounting                  : 1;
+    bool fDriverBlacklistCCPR                        : 1;
     bool fAvoidStencilBuffers                        : 1;
     bool fAvoidWritePixelsFastPath                   : 1;
 
     // ANGLE performance workaround
     bool fPreferVRAMUseOverFlushes                   : 1;
+
+    // On some platforms it's better to make more triangles than to use the sample mask (MSAA only).
+    bool fPreferTrianglesOverSampleMask              : 1;
 
     // TODO: this may need to be an enum to support different fence types
     bool fFenceSyncSupport                           : 1;

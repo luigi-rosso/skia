@@ -173,7 +173,7 @@ DEF_GPUTEST(OpChainTest, reporter, /*ctxInfo*/) {
 
     auto proxy = context->priv().proxyProvider()->createProxy(
             format, desc, kTopLeft_GrSurfaceOrigin, GrMipMapped::kNo, SkBackingFit::kExact,
-            SkBudgeted::kNo, GrInternalSurfaceFlags::kNone);
+            SkBudgeted::kNo, GrInternalSurfaceFlags::kNoPendingIO);
     SkASSERT(proxy);
     proxy->instantiate(context->priv().resourceProvider());
     int result[result_width()];
@@ -203,7 +203,9 @@ DEF_GPUTEST(OpChainTest, reporter, /*ctxInfo*/) {
                 init_combinable(g, &combinable, &random);
                 GrTokenTracker tracker;
                 GrOpFlushState flushState(context->priv().getGpu(),
-                                          context->priv().resourceProvider(), &tracker);
+                                          context->priv().resourceProvider(),
+                                          context->priv().getResourceCache(),
+                                          &tracker);
                 GrRenderTargetOpList opList(context->priv().resourceProvider(),
                                             sk_ref_sp(context->priv().opMemoryPool()),
                                             proxy->asRenderTargetProxy(),
