@@ -72,6 +72,16 @@ void GrDrawingManager::OpListDAG::removeOpLists(int startIndex, int stopIndex) {
     }
 }
 
+bool GrDrawingManager::OpListDAG::isUsed(GrSurfaceProxy* proxy) const {
+    for (int i = 0; i < fOpLists.count(); ++i) {
+        if (fOpLists[i] && fOpLists[i]->isUsed(proxy)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void GrDrawingManager::OpListDAG::add(sk_sp<GrOpList> opList) {
     fOpLists.emplace_back(std::move(opList));
 }
@@ -206,7 +216,12 @@ GrSemaphoresSubmitted GrDrawingManager::flush(GrSurfaceProxy* proxy,
     if (fFlushing || this->wasAbandoned()) {
         return GrSemaphoresSubmitted::kNo;
     }
+
     SkDEBUGCODE(this->validate());
+
+    if (SkSurface::kNone_FlushFlags == flags && !numSemaphores && proxy && !fDAG.isUsed(proxy)) {
+        return GrSemaphoresSubmitted::kNo;
+    }
 
     auto direct = fContext->priv().asDirectContext();
     if (!direct) {

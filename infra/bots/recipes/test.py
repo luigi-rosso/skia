@@ -668,6 +668,8 @@ def dm_flags(api, bot):
     match.append('~FloatingPointTextureTest$')
 
   if 'Vulkan' in bot and 'Win10' in bot and 'IntelIris655' in bot:
+    # skia:8961
+    blacklist(['vk', 'gm', '_', 'savelayer_clipmask'])
     # skia:8659
     blacklist(['vk', 'gm', '_', 'aarectmodes'])
     blacklist(['vk', 'gm', '_', 'aaxfermodes'])
@@ -761,28 +763,8 @@ def dm_flags(api, bot):
 
   if 'Metal' in bot:
     # skia:8243
-    match.append('~^DDLMakeRenderTargetTest$')
-    match.append('~^DDLNonTextureabilityTest$')
     match.append('~^DDLOperatorEqTest$')
-    match.append('~^DDLSurfaceCharacterizationTest$')
-    match.append('~^GrContext_colorTypeSupportedAsImage$')
-    match.append('~^GrContext_colorTypeSupportedAsSurface$')
-    match.append('~^GrContext_maxSurfaceSamplesForColorType$')
-    match.append('~^GrContextFactory_sharedContexts$')
-    match.append('~^GrDefaultPathRendererTest$')
-    match.append('~^GrPipelineDynamicStateTest$')
-    match.append('~^InitialTextureClear$')
-    match.append('~^PromiseImageTextureFullCache$')
-    match.append('~^PromiseImageTextureReuseDifferentConfig$')
-    match.append('~^SurfaceSemaphores$')
-    match.append('~^SurfaceTest$')
-    match.append('~^TransferPixelsTest$')
-    match.append('~^VertexAttributeCount$')
     match.append('~^WritePixelsNonTexture_Gpu$')
-    if 'Mac' in bot:
-      match.append('~^RGB565TextureTest$')
-      match.append('~^RGBA4444TextureTest$')
-      match.append('~^TextureIdleProcFlushTest$')
 
   if 'Wuffs' in api.vars.extra_tokens:
     # skia:8750

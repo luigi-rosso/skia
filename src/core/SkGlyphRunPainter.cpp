@@ -333,6 +333,9 @@ void SkGlyphRunListPainter::processARGBFallback(SkScalar maxSourceGlyphDimension
         SkFont fallbackFont{runFont};
         fallbackFont.setSize(fallbackTextSize);
 
+        // No sub-pixel needed. The transform to the screen will take care of sub-pixel positioning.
+        fallbackFont.setSubpixel(false);
+
         // The scale factor to go from strike size to the source size for glyphs.
         SkScalar fallbackTextScale = runFontTextSize / fallbackTextSize;
 
@@ -401,6 +404,10 @@ void SkGlyphRunListPainter::processGlyphRunList(const SkGlyphRunList& glyphRunLi
 
         if (useSDFT) {
 
+            // Translate all glyphs to the origin.
+            SkMatrix translate = SkMatrix::MakeTrans(origin.x(), origin.y());
+            translate.mapPoints(fPositions, glyphRun.positions().data(), glyphRun.runSize());
+
             // Setup distance field runPaint and text ratio
             SkPaint dfPaint = GrTextContext::InitDistanceFieldPaint(runPaint);
             SkScalar cacheToSourceScale;
@@ -426,7 +433,7 @@ void SkGlyphRunListPainter::processGlyphRunList(const SkGlyphRunList& glyphRunLi
             int glyphCount = 0;
             const SkPoint* positionCursor = glyphRun.positions().data();
             for (auto glyphID : glyphRun.glyphsIDs()) {
-                SkPoint glyphSourcePosition = origin + *positionCursor++;
+                SkPoint glyphSourcePosition = *positionCursor++;
                 const SkGlyph& glyph = strike->getGlyphMetrics(glyphID, {0, 0});
 
                 if (glyph.isEmpty()) {
@@ -469,6 +476,10 @@ void SkGlyphRunListPainter::processGlyphRunList(const SkGlyphRunList& glyphRunLi
             }
         } else if (SkGlyphRunListPainter::ShouldDrawAsPath(runPaint, runFont, viewMatrix)) {
 
+            // Translate all glyphs to the origin.
+            SkMatrix translate = SkMatrix::MakeTrans(origin.x(), origin.y());
+            translate.mapPoints(fPositions, glyphRun.positions().data(), glyphRun.runSize());
+
             // setup our std runPaint, in hopes of getting hits in the cache
             SkPaint pathPaint{runPaint};
             SkFont pathFont{runFont};
@@ -493,7 +504,7 @@ void SkGlyphRunListPainter::processGlyphRunList(const SkGlyphRunList& glyphRunLi
             int glyphCount = 0;
             const SkPoint* positionCursor = glyphRun.positions().data();
             for (auto glyphID : glyphRun.glyphsIDs()) {
-                SkPoint glyphSourcePosition = origin + *positionCursor++;
+                SkPoint glyphSourcePosition = *positionCursor++;
 
                 // Use outline from {0, 0} because all transforms including subpixel translation
                 // happen during drawing.
