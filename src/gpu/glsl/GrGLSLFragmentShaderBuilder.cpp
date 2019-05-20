@@ -5,14 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "GrGLSLFragmentShaderBuilder.h"
-#include "GrRenderTarget.h"
-#include "GrRenderTargetPriv.h"
-#include "GrShaderCaps.h"
-#include "gl/GrGLGpu.h"
-#include "glsl/GrGLSLProgramBuilder.h"
-#include "glsl/GrGLSLUniformHandler.h"
-#include "glsl/GrGLSLVarying.h"
+#include "include/gpu/GrRenderTarget.h"
+#include "src/gpu/GrRenderTargetPriv.h"
+#include "src/gpu/GrShaderCaps.h"
+#include "src/gpu/gl/GrGLGpu.h"
+#include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
+#include "src/gpu/glsl/GrGLSLProgramBuilder.h"
+#include "src/gpu/glsl/GrGLSLUniformHandler.h"
+#include "src/gpu/glsl/GrGLSLVarying.h"
 
 const char* GrGLSLFragmentShaderBuilder::kDstColorName = "_dstColor";
 
@@ -242,9 +242,12 @@ void GrGLSLFragmentBuilder::declAppendf(const char* fmt, ...) {
 }
 
 const char* GrGLSLFragmentShaderBuilder::getSecondaryColorOutputName() const {
-    const GrShaderCaps& caps = *fProgramBuilder->shaderCaps();
-    return caps.mustDeclareFragmentShaderOutput() ? DeclaredSecondaryColorOutputName()
-                                                  : "gl_SecondaryFragColorEXT";
+    if (this->hasSecondaryOutput()) {
+        return (fProgramBuilder->shaderCaps()->mustDeclareFragmentShaderOutput())
+                ? DeclaredSecondaryColorOutputName()
+                : "gl_SecondaryFragColorEXT";
+    }
+    return nullptr;
 }
 
 GrSurfaceOrigin GrGLSLFragmentShaderBuilder::getSurfaceOrigin() const {
@@ -260,9 +263,8 @@ void GrGLSLFragmentShaderBuilder::onFinalize() {
                      == fUsedProcessorFeaturesAllStages_DebugOnly);
 
     if (CustomFeatures::kSampleLocations & fProgramBuilder->header().processorFeatures()) {
-        const GrPipeline& pipeline = fProgramBuilder->pipeline();
         const SkTArray<SkPoint>& sampleLocations =
-                fProgramBuilder->renderTarget()->renderTargetPriv().getSampleLocations(pipeline);
+                fProgramBuilder->renderTarget()->renderTargetPriv().getSampleLocations();
         this->definitions().append("const float2 _sampleOffsets[] = float2[](");
         for (int i = 0; i < sampleLocations.count(); ++i) {
             SkPoint offset = sampleLocations[i] - SkPoint::Make(.5f, .5f);

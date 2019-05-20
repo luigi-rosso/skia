@@ -6,19 +6,19 @@
  */
 
 #include <algorithm>
-#include "Sk4fLinearGradient.h"
-#include "SkColorSpacePriv.h"
-#include "SkConvertPixels.h"
-#include "SkFloatBits.h"
-#include "SkGradientShaderPriv.h"
-#include "SkHalf.h"
-#include "SkLinearGradient.h"
-#include "SkMallocPixelRef.h"
-#include "SkRadialGradient.h"
-#include "SkReadBuffer.h"
-#include "SkSweepGradient.h"
-#include "SkTwoPointConicalGradient.h"
-#include "SkWriteBuffer.h"
+#include "include/core/SkMallocPixelRef.h"
+#include "include/private/SkFloatBits.h"
+#include "include/private/SkHalf.h"
+#include "src/core/SkColorSpacePriv.h"
+#include "src/core/SkConvertPixels.h"
+#include "src/core/SkReadBuffer.h"
+#include "src/core/SkWriteBuffer.h"
+#include "src/shaders/gradients/Sk4fLinearGradient.h"
+#include "src/shaders/gradients/SkGradientShaderPriv.h"
+#include "src/shaders/gradients/SkLinearGradient.h"
+#include "src/shaders/gradients/SkRadialGradient.h"
+#include "src/shaders/gradients/SkSweepGradient.h"
+#include "src/shaders/gradients/SkTwoPointConicalGradient.h"
 
 enum GradientSerializationFlags {
     // Bits 29:31 used for various boolean flags
@@ -473,11 +473,7 @@ void SkGradientShaderBase::commonAsAGradient(GradientInfo* info) const {
             }
         }
         info->fColorCount = fColorCount;
-#ifdef SK_SUPPORT_LEGACY_TILEMODE_ENUM
-        info->fTileMode = (SkShader::TileMode)fTileMode;
-#else
         info->fTileMode = fTileMode;
-#endif
         info->fGradientFlags = fGradFlags;
     }
 }
@@ -561,18 +557,18 @@ static sk_sp<SkShader> make_degenerate_gradient(const SkColor4f colors[], const 
         case SkTileMode::kDecal:
             // normally this would reject the area outside of the interpolation region, so since
             // inside region is empty when the radii are equal, the entire draw region is empty
-            return SkShader::MakeEmptyShader();
+            return SkShaders::Empty();
         case SkTileMode::kRepeat:
         case SkTileMode::kMirror:
             // repeat and mirror are treated the same: the border colors are never visible,
             // but approximate the final color as infinite repetitions of the colors, so
             // it can be represented as the average color of the gradient.
-            return SkShader::MakeColorShader(
+            return SkShaders::Color(
                     average_gradient_color(colors, pos, colorCount), std::move(colorSpace));
         case SkTileMode::kClamp:
             // Depending on how the gradient shape degenerates, there may be a more specialized
             // fallback representation for the factories to use, but this is a reasonable default.
-            return SkShader::MakeColorShader(colors[colorCount - 1], std::move(colorSpace));
+            return SkShaders::Color(colors[colorCount - 1], std::move(colorSpace));
     }
     SkDEBUGFAIL("Should not be reached");
     return nullptr;
@@ -670,7 +666,7 @@ sk_sp<SkShader> SkGradientShader::MakeLinear(const SkPoint pts[2],
         return nullptr;
     }
     if (1 == colorCount) {
-        return SkShader::MakeColorShader(colors[0], std::move(colorSpace));
+        return SkShaders::Color(colors[0], std::move(colorSpace));
     }
     if (localMatrix && !localMatrix->invert(nullptr)) {
         return nullptr;
@@ -717,7 +713,7 @@ sk_sp<SkShader> SkGradientShader::MakeRadial(const SkPoint& center, SkScalar rad
         return nullptr;
     }
     if (1 == colorCount) {
-        return SkShader::MakeColorShader(colors[0], std::move(colorSpace));
+        return SkShaders::Color(colors[0], std::move(colorSpace));
     }
     if (localMatrix && !localMatrix->invert(nullptr)) {
         return nullptr;
@@ -840,7 +836,7 @@ sk_sp<SkShader> SkGradientShader::MakeSweep(SkScalar cx, SkScalar cy,
         return nullptr;
     }
     if (1 == colorCount) {
-        return SkShader::MakeColorShader(colors[0], std::move(colorSpace));
+        return SkShaders::Color(colors[0], std::move(colorSpace));
     }
     if (!SkScalarIsFinite(startAngle) || !SkScalarIsFinite(endAngle) || startAngle > endAngle) {
         return nullptr;

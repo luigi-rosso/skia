@@ -5,14 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "RandomScalerContext.h"
-#include "SkAdvancedTypefaceMetrics.h"
-#include "SkBitmap.h"
-#include "SkCanvas.h"
-#include "SkGlyph.h"
-#include "SkMakeUnique.h"
-#include "SkPath.h"
-#include "SkRectPriv.h"
+#include "include/core/SkBitmap.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkPath.h"
+#include "src/core/SkAdvancedTypefaceMetrics.h"
+#include "src/core/SkGlyph.h"
+#include "src/core/SkMakeUnique.h"
+#include "src/core/SkRectPriv.h"
+#include "tools/fonts/RandomScalerContext.h"
 
 class SkDescriptor;
 
@@ -25,7 +25,6 @@ public:
 
 protected:
     unsigned generateGlyphCount() override;
-    uint16_t generateCharToGlyph(SkUnichar) override;
     bool     generateAdvance(SkGlyph*) override;
     void     generateMetrics(SkGlyph*) override;
     void     generateImage(const SkGlyph&) override;
@@ -51,10 +50,6 @@ RandomScalerContext::RandomScalerContext(sk_sp<SkRandomTypeface>       face,
 }
 
 unsigned RandomScalerContext::generateGlyphCount() { return fProxy->getGlyphCount(); }
-
-uint16_t RandomScalerContext::generateCharToGlyph(SkUnichar uni) {
-    return fProxy->charToGlyphID(uni);
-}
 
 bool RandomScalerContext::generateAdvance(SkGlyph* glyph) { return fProxy->generateAdvance(glyph); }
 
@@ -157,7 +152,7 @@ SkScalerContext* SkRandomTypeface::onCreateScalerContext(const SkScalerContextEf
 
 void SkRandomTypeface::onFilterRec(SkScalerContextRec* rec) const {
     fProxy->filterRec(rec);
-    rec->setHinting(kNo_SkFontHinting);
+    rec->setHinting(SkFontHinting::kNone);
     rec->fMaskFormat = SkMask::kARGB32_Format;
 }
 
@@ -187,11 +182,8 @@ void SkRandomTypeface::onGetFontDescriptor(SkFontDescriptor* desc, bool* isLocal
     fProxy->getFontDescriptor(desc, isLocal);
 }
 
-int SkRandomTypeface::onCharsToGlyphs(const void* chars,
-                                      Encoding    encoding,
-                                      uint16_t    glyphs[],
-                                      int         glyphCount) const {
-    return fProxy->charsToGlyphs(chars, encoding, glyphs, glyphCount);
+void SkRandomTypeface::onCharsToGlyphs(const SkUnichar* uni, int count, SkGlyphID glyphs[]) const {
+    fProxy->unicharsToGlyphs(uni, count, glyphs);
 }
 
 int SkRandomTypeface::onCountGlyphs() const { return fProxy->countGlyphs(); }
@@ -204,6 +196,10 @@ void SkRandomTypeface::onGetFamilyName(SkString* familyName) const {
 
 SkTypeface::LocalizedStrings* SkRandomTypeface::onCreateFamilyNameIterator() const {
     return fProxy->createFamilyNameIterator();
+}
+
+void SkRandomTypeface::getPostScriptGlyphNames(SkString* names) const {
+    return fProxy->getPostScriptGlyphNames(names);
 }
 
 int SkRandomTypeface::onGetVariationDesignPosition(

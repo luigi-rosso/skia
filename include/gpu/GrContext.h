@@ -8,14 +8,14 @@
 #ifndef GrContext_DEFINED
 #define GrContext_DEFINED
 
-#include "SkMatrix.h"
-#include "SkPathEffect.h"
-#include "SkTypes.h"
-#include "../private/GrRecordingContext.h"
-#include "GrContextOptions.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPathEffect.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GrContextOptions.h"
+#include "include/private/GrRecordingContext.h"
 
 // We shouldn't need this but currently Android is relying on this being include transitively.
-#include "SkUnPreMultiply.h"
+#include "include/core/SkUnPreMultiply.h"
 
 class GrAtlasManager;
 class GrBackendFormat;
@@ -242,34 +242,86 @@ public:
     ///////////////////////////////////////////////////////////////////////////
     // Misc.
 
+
+    /**
+     * Inserts a list of GPU semaphores that the current GPU-backed API must wait on before
+     * executing any more commands on the GPU. Skia will take ownership of the underlying semaphores
+     * and delete them once they have been signaled and waited on. If this call returns false, then
+     * the GPU back-end will not wait on any passed in semaphores, and the client will still own the
+     * semaphores.
+     */
+    bool wait(int numSemaphores, const GrBackendSemaphore* waitSemaphores);
+
     /**
      * Call to ensure all drawing to the context has been issued to the underlying 3D API.
      */
-    void flush();
+    void flush() {
+        this->flush(GrFlushInfo(), GrPrepareForExternalIORequests());
+    }
 
     /**
-     * Call to ensure all drawing to the context has been issued to the underlying 3D API. After
-     * issuing all commands, numSemaphore semaphores will be signaled by the gpu. The client passes
-     * in an array of numSemaphores GrBackendSemaphores. In general these GrBackendSemaphore's can
-     * be either initialized or not. If they are initialized, the backend uses the passed in
-     * semaphore. If it is not initialized, a new semaphore is created and the GrBackendSemaphore
-     * object is initialized with that semaphore.
+     * Call to ensure all drawing to the context has been issued to the underlying 3D API.
      *
-     * The client will own and be responsible for deleting the underlying semaphores that are stored
-     * and returned in initialized GrBackendSemaphore objects. The GrBackendSemaphore objects
-     * themselves can be deleted as soon as this function returns.
-     *
-     * If the backend API is OpenGL only uninitialized GrBackendSemaphores are supported.
-     * If the backend API is Vulkan either initialized or unitialized semaphores are supported.
-     * If unitialized, the semaphores which are created will be valid for use only with the VkDevice
-     * with which they were created.
-     *
-     * If this call returns GrSemaphoresSubmited::kNo, the GPU backend will not have created or
+     * If this call returns GrSemaphoresSubmitted::kNo, the GPU backend will not have created or
      * added any semaphores to signal on the GPU. Thus the client should not have the GPU wait on
-     * any of the semaphores. However, any pending commands to the context will still be flushed.
+     * any of the semaphores passed in with the GrFlushInfo. However, any pending commands to the
+     * context will still be flushed. It should be emphasized that a return value of
+     * GrSemaphoresSubmitted::kNo does not mean the flush did not happen. It simply means there were
+     * no semaphores submitted to the GPU. A caller should only take this as a failure if they
+     * passed in semaphores to be submitted.
+     */
+    GrSemaphoresSubmitted flush(const GrFlushInfo& info) {
+        return this->flush(info, GrPrepareForExternalIORequests());
+    }
+
+    /**
+     * Call to ensure all drawing to the context has been issued to the underlying 3D API.
+     *
+     * If this call returns GrSemaphoresSubmitted::kNo, the GPU backend will not have created or
+     * added any semaphores to signal on the GPU. Thus the client should not have the GPU wait on
+     * any of the semaphores passed in with the GrFlushInfo. However, any pending commands to the
+     * context will still be flushed. It should be emphasized that a return value of
+     * GrSemaphoresSubmitted::kNo does not mean the flush did not happen. It simply means there were
+     * no semaphores submitted to the GPU. A caller should only take this as a failure if they
+     * passed in semaphores to be submitted.
+     *
+     * If the GrPrepareForExternalIORequests contains valid gpu backed SkSurfaces or SkImages, Skia
+     * will put the underlying backend objects into a state that is ready for external uses. See
+     * declaration of GrPreopareForExternalIORequests for more details.
+     */
+    GrSemaphoresSubmitted flush(const GrFlushInfo&, const GrPrepareForExternalIORequests&);
+
+    /**
+     * Deprecated.
+     */
+    GrSemaphoresSubmitted flush(GrFlushFlags flags, int numSemaphores,
+                                GrBackendSemaphore signalSemaphores[],
+                                GrGpuFinishedProc finishedProc = nullptr,
+                                GrGpuFinishedContext finishedContext = nullptr) {
+        GrFlushInfo info;
+        info.fFlags = flags;
+        info.fNumSemaphores = numSemaphores;
+        info.fSignalSemaphores = signalSemaphores;
+        info.fFinishedProc = finishedProc;
+        info.fFinishedContext = finishedContext;
+        return this->flush(info);
+    }
+
+    /**
+     * Deprecated.
      */
     GrSemaphoresSubmitted flushAndSignalSemaphores(int numSemaphores,
-                                                   GrBackendSemaphore signalSemaphores[]);
+                                                   GrBackendSemaphore signalSemaphores[]) {
+        GrFlushInfo info;
+        info.fNumSemaphores = numSemaphores;
+        info.fSignalSemaphores = signalSemaphores;
+        return this->flush(info);
+    }
+
+    /**
+     * Checks whether any asynchronous work is complete and if so calls related callbacks.
+     */
+    void checkAsyncWorkCompletion();
 
     // Provides access to functions that aren't part of the public API.
     GrContextPriv priv();
@@ -285,6 +337,36 @@ public:
 
     static size_t ComputeTextureSize(SkColorType type, int width, int height, GrMipMapped,
                                      bool useNextPow2 = false);
+
+   /*
+    * The explicitly allocated backend texture API allows clients to use Skia to create backend
+    * objects outside of Skia proper (i.e., Skia's caching system will not know about them.)
+    *
+    * It is the client's responsibility to delete all these objects (using deleteBackendTexture)
+    * before deleting the GrContext used to create them. Additionally, clients should only
+    * delete these objects on the thread for which that GrContext is active.
+    *
+    * Additionally, the client is responsible for ensuring synchronization between different uses
+    * of the backend object.
+    */
+
+    // If possible, create an uninitialized backend texture. The client should ensure that the
+    // returned backend texture is valid.
+    GrBackendTexture createBackendTexture(int width, int height,
+                                          GrBackendFormat,
+                                          GrMipMapped,
+                                          GrRenderable);
+
+    // If possible, create an uninitialized backend texture. The client should ensure that the
+    // returned backend texture is valid.
+    // If successful, the created backend texture will be compatible with the provided
+    // SkColorType.
+    GrBackendTexture createBackendTexture(int width, int height,
+                                          SkColorType,
+                                          GrMipMapped,
+                                          GrRenderable);
+
+    void deleteBackendTexture(GrBackendTexture);
 
 protected:
     GrContext(GrBackendApi, const GrContextOptions&, int32_t contextID = SK_InvalidGenID);
@@ -312,6 +394,7 @@ private:
     bool                                    fPMUPMConversionsRoundTrip;
 
     GrContextOptions::PersistentCache*      fPersistentCache;
+    GrContextOptions::ShaderErrorHandler*   fShaderErrorHandler;
 
     // TODO: have the GrClipStackClip use renderTargetContexts and rm this friending
     friend class GrContextPriv;

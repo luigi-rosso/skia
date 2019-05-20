@@ -5,34 +5,25 @@
  * found in the LICENSE file.
  */
 
-#include "SkArenaAlloc.h"
-#include "SkBitmapProcShader.h"
-#include "SkColorShader.h"
-#include "SkColorSpacePriv.h"
-#include "SkColorSpaceXformSteps.h"
-#include "SkEmptyShader.h"
-#include "SkMallocPixelRef.h"
-#include "SkPaint.h"
-#include "SkPicture.h"
-#include "SkPictureShader.h"
-#include "SkRasterPipeline.h"
-#include "SkReadBuffer.h"
-#include "SkScalar.h"
-#include "SkShaderBase.h"
-#include "SkTLazy.h"
-#include "SkWriteBuffer.h"
+#include "include/core/SkMallocPixelRef.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPicture.h"
+#include "include/core/SkScalar.h"
+#include "src/core/SkArenaAlloc.h"
+#include "src/core/SkColorSpacePriv.h"
+#include "src/core/SkColorSpaceXformSteps.h"
+#include "src/core/SkRasterPipeline.h"
+#include "src/core/SkReadBuffer.h"
+#include "src/core/SkTLazy.h"
+#include "src/core/SkWriteBuffer.h"
+#include "src/shaders/SkBitmapProcShader.h"
+#include "src/shaders/SkColorShader.h"
+#include "src/shaders/SkEmptyShader.h"
+#include "src/shaders/SkPictureShader.h"
+#include "src/shaders/SkShaderBase.h"
 
 #if SK_SUPPORT_GPU
-#include "GrFragmentProcessor.h"
-#endif
-
-#ifdef SK_SUPPORT_LEGACY_SHADER_LOCALMATRIX
-SkMatrix SkShader::getLocalMatrix() const {
-    return as_SB(this)->getLocalMatrix();
-}
-sk_sp<SkShader> SkShader::makeAsALocalMatrixShader(SkMatrix* localMatrix) const {
-    return as_SB(this)->makeAsALocalMatrixShader(localMatrix);
-}
+#include "src/gpu/GrFragmentProcessor.h"
 #endif
 
 SkShaderBase::SkShaderBase(const SkMatrix* localMatrix)
@@ -141,19 +132,8 @@ sk_sp<SkShader> SkShaderBase::makeAsALocalMatrixShader(SkMatrix*) const {
     return nullptr;
 }
 
-sk_sp<SkShader> SkShader::MakeEmptyShader() { return sk_make_sp<SkEmptyShader>(); }
-
-sk_sp<SkShader> SkShader::MakeColorShader(SkColor color) { return sk_make_sp<SkColorShader>(color); }
-
-#ifdef SK_SUPPORT_LEGACY_BITMAPSHADER_FACTORY
-sk_sp<SkShader> SkShader::MakeBitmapShader(const SkBitmap& src, SkTileMode tmx, SkTileMode tmy,
-                                           const SkMatrix* localMatrix) {
-    if (localMatrix && !localMatrix->invert(nullptr)) {
-        return nullptr;
-    }
-    return SkMakeBitmapShader(src, tmx, tmy, localMatrix, kIfMutable_SkCopyPixelsMode);
-}
-#endif
+sk_sp<SkShader> SkShaders::Empty() { return sk_make_sp<SkEmptyShader>(); }
+sk_sp<SkShader> SkShaders::Color(SkColor color) { return sk_make_sp<SkColorShader>(color); }
 
 sk_sp<SkShader> SkBitmap::makeShader(SkTileMode tmx, SkTileMode tmy, const SkMatrix* lm) const {
     if (lm && !lm->invert(nullptr)) {
@@ -165,14 +145,6 @@ sk_sp<SkShader> SkBitmap::makeShader(SkTileMode tmx, SkTileMode tmy, const SkMat
 sk_sp<SkShader> SkBitmap::makeShader(const SkMatrix* lm) const {
     return this->makeShader(SkTileMode::kClamp, SkTileMode::kClamp, lm);
 }
-
-#ifdef SK_SUPPORT_LEGACY_TILEMODE_ENUM
-sk_sp<SkShader> SkShader::MakePictureShader(sk_sp<SkPicture> src, TileMode tmx, TileMode tmy,
-                                            const SkMatrix* localMatrix, const SkRect* tile) {
-    return src ? src->makeShader((SkTileMode)tmx, (SkTileMode)tmy, localMatrix, tile)
-               : MakeEmptyShader();
-}
-#endif
 
 bool SkShaderBase::appendStages(const SkStageRec& rec) const {
     return this->onAppendStages(rec);
@@ -223,5 +195,5 @@ bool SkShaderBase::onAppendStages(const SkStageRec& rec) const {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 sk_sp<SkFlattenable> SkEmptyShader::CreateProc(SkReadBuffer&) {
-    return SkShader::MakeEmptyShader();
+    return SkShaders::Empty();
 }

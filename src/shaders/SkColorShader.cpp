@@ -5,14 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "SkArenaAlloc.h"
-#include "SkColorShader.h"
-#include "SkColorSpace.h"
-#include "SkColorSpacePriv.h"
-#include "SkColorSpaceXformSteps.h"
-#include "SkRasterPipeline.h"
-#include "SkReadBuffer.h"
-#include "SkUtils.h"
+#include "include/core/SkColorSpace.h"
+#include "src/core/SkArenaAlloc.h"
+#include "src/core/SkColorSpacePriv.h"
+#include "src/core/SkColorSpaceXformSteps.h"
+#include "src/core/SkRasterPipeline.h"
+#include "src/core/SkReadBuffer.h"
+#include "src/core/SkUtils.h"
+#include "src/shaders/SkColorShader.h"
 
 SkColorShader::SkColorShader(SkColor c) : fColor(c) {}
 
@@ -34,11 +34,7 @@ SkShader::GradientType SkColorShader::asAGradient(GradientInfo* info) const {
             info->fColors[0] = fColor;
         }
         info->fColorCount = 1;
-#ifdef SK_SUPPORT_LEGACY_TILEMODE_ENUM
-        info->fTileMode = SkShader::kRepeat_TileMode;
-#else
         info->fTileMode = SkTileMode::kRepeat;
-#endif
     }
     return kColor_GradientType;
 }
@@ -56,7 +52,7 @@ sk_sp<SkFlattenable> SkColor4Shader::CreateProc(SkReadBuffer& buffer) {
         sk_sp<SkData> data = buffer.readByteArrayAsData();
         colorSpace = data ? SkColorSpace::Deserialize(data->data(), data->size()) : nullptr;
     }
-    return SkShader::MakeColorShader(color, std::move(colorSpace));
+    return SkShaders::Color(color, std::move(colorSpace));
 }
 
 void SkColor4Shader::flatten(SkWriteBuffer& buffer) const {
@@ -71,7 +67,7 @@ void SkColor4Shader::flatten(SkWriteBuffer& buffer) const {
 }
 
 
-sk_sp<SkShader> SkShader::MakeColorShader(const SkColor4f& color, sk_sp<SkColorSpace> space) {
+sk_sp<SkShader> SkShaders::Color(const SkColor4f& color, sk_sp<SkColorSpace> space) {
     if (!SkScalarsAreFinite(color.vec(), 4)) {
         return nullptr;
     }
@@ -96,10 +92,10 @@ bool SkColor4Shader::onAppendStages(const SkStageRec& rec) const {
 
 #if SK_SUPPORT_GPU
 
-#include "GrColorSpaceInfo.h"
-#include "GrColorSpaceXform.h"
-#include "SkGr.h"
-#include "effects/GrConstColorProcessor.h"
+#include "src/gpu/GrColorSpaceInfo.h"
+#include "src/gpu/GrColorSpaceXform.h"
+#include "src/gpu/SkGr.h"
+#include "src/gpu/effects/generated/GrConstColorProcessor.h"
 
 std::unique_ptr<GrFragmentProcessor> SkColorShader::asFragmentProcessor(
         const GrFPArgs& args) const {

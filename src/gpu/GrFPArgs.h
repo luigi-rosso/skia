@@ -8,8 +8,8 @@
 #ifndef GrFPArgs_DEFINED
 #define GrFPArgs_DEFINED
 
-#include "SkFilterQuality.h"
-#include "SkMatrix.h"
+#include "include/core/SkFilterQuality.h"
+#include "include/core/SkMatrix.h"
 
 class GrColorSpaceInfo;
 class GrRecordingContext;
@@ -41,6 +41,9 @@ struct GrFPArgs {
     //
     const SkMatrix* fPreLocalMatrix  = nullptr;
     const SkMatrix* fPostLocalMatrix = nullptr;
+
+    // Make this SkAlphaType?
+    bool fInputColorIsOpaque = false;
 
     SkFilterQuality fFilterQuality;
     const GrColorSpaceInfo* fDstColorSpaceInfo;

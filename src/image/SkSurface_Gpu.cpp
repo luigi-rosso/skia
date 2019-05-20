@@ -5,26 +5,26 @@
  * found in the LICENSE file.
  */
 
-#include "SkSurface_Gpu.h"
-#include "GrAHardwareBufferUtils.h"
-#include "GrBackendSurface.h"
-#include "GrCaps.h"
-#include "GrContextPriv.h"
-#include "GrContextThreadSafeProxyPriv.h"
-#include "GrRecordingContext.h"
-#include "GrRecordingContextPriv.h"
-#include "GrRenderTarget.h"
-#include "GrRenderTargetContextPriv.h"
-#include "GrRenderTargetProxyPriv.h"
-#include "GrTexture.h"
-#include "SkCanvas.h"
-#include "SkDeferredDisplayList.h"
-#include "SkGpuDevice.h"
-#include "SkImagePriv.h"
-#include "SkImage_Base.h"
-#include "SkImage_Gpu.h"
-#include "SkSurfaceCharacterization.h"
-#include "SkSurface_Base.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkSurfaceCharacterization.h"
+#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/GrRenderTarget.h"
+#include "include/gpu/GrTexture.h"
+#include "include/private/GrRecordingContext.h"
+#include "include/private/SkDeferredDisplayList.h"
+#include "src/core/SkImagePriv.h"
+#include "src/gpu/GrAHardwareBufferUtils.h"
+#include "src/gpu/GrCaps.h"
+#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrContextThreadSafeProxyPriv.h"
+#include "src/gpu/GrRecordingContextPriv.h"
+#include "src/gpu/GrRenderTargetContextPriv.h"
+#include "src/gpu/GrRenderTargetProxyPriv.h"
+#include "src/gpu/SkGpuDevice.h"
+#include "src/image/SkImage_Base.h"
+#include "src/image/SkImage_Gpu.h"
+#include "src/image/SkSurface_Base.h"
+#include "src/image/SkSurface_Gpu.h"
 
 #if SK_SUPPORT_GPU
 
@@ -50,8 +50,7 @@ static GrRenderTarget* prepare_rt_for_external_access(SkSurface_Gpu* surface,
     }
 
     // Grab the render target *after* firing notifications, as it may get switched if CoW kicks in.
-    surface->getDevice()->flushAndSignalSemaphores(SkSurface::BackendSurfaceAccess::kNoAccess,
-                                                   SkSurface::kNone_FlushFlags, 0, nullptr);
+    surface->getDevice()->flush(SkSurface::BackendSurfaceAccess::kNoAccess, GrFlushInfo());
     GrRenderTargetContext* rtc = surface->getDevice()->accessRenderTargetContext();
     return rtc->accessRenderTarget();
 }
@@ -133,6 +132,18 @@ void SkSurface_Gpu::onWritePixels(const SkPixmap& src, int x, int y) {
     fDevice->writePixels(src, x, y);
 }
 
+void SkSurface_Gpu::onAsyncReadPixels(const SkImageInfo& info, int srcX, int srcY,
+                                      ReadPixelsCallback callback, ReadPixelsContext context) {
+    SkASSERT(SkIRect::MakeWH(this->width(), this->height())
+                     .contains(SkIRect::MakeXYWH(srcX, srcY, info.width(), info.height())));
+    auto* rtc = fDevice->accessRenderTargetContext();
+    if (!rtc->caps()->transferBufferSupport() ||
+        !rtc->asyncReadPixels(info, srcX, srcY, callback, context)) {
+        INHERITED::onAsyncReadPixels(info, srcX, srcY, callback, context);
+        return;
+    }
+}
+
 // Create a new render target and, if necessary, copy the contents of the old
 // render target into it. Note that this flushes the SkGpuDevice but
 // doesn't force an OpenGL flush.
@@ -158,10 +169,9 @@ void SkSurface_Gpu::onDiscard() {
     fDevice->accessRenderTargetContext()->discard();
 }
 
-GrSemaphoresSubmitted SkSurface_Gpu::onFlush(BackendSurfaceAccess access, FlushFlags flags,
-                                             int numSemaphores,
-                                             GrBackendSemaphore signalSemaphores[]) {
-    return fDevice->flushAndSignalSemaphores(access, flags, numSemaphores, signalSemaphores);
+GrSemaphoresSubmitted SkSurface_Gpu::onFlush(BackendSurfaceAccess access,
+                                             const GrFlushInfo& info) {
+    return fDevice->flush(access, info);
 }
 
 bool SkSurface_Gpu::onWait(int numSemaphores, const GrBackendSemaphore* waitSemaphores) {

@@ -5,16 +5,29 @@
  * found in the LICENSE file.
  */
 
-#include "gm.h"
+#include "gm/gm.h"
+#include "include/core/SkBitmap.h"
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorPriv.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkShader.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTileMode.h"
+#include "include/core/SkTypes.h"
+#include "include/effects/SkGradientShader.h"
+#include "include/private/SkTDArray.h"
 
-#include "SkColorPriv.h"
-#include "SkCanvas.h"
-#include "SkGradientShader.h"
-#include "SkGraphics.h"
-#include "SkImage.h"
-#include "SkShader.h"
-#include "SkString.h"
-#include "SkTDArray.h"
+#include <utility>
 
 static sk_sp<SkShader> make_shader(SkBlendMode mode) {
     SkPoint pts[2];
@@ -32,7 +45,7 @@ static sk_sp<SkShader> make_shader(SkBlendMode mode) {
     colors[1] = SkColorSetARGB(0x80, 0, 0, 0);
     auto shaderB = SkGradientShader::MakeLinear(pts, colors, nullptr, 2, SkTileMode::kClamp);
 
-    return SkShader::MakeComposeShader(std::move(shaderA), std::move(shaderB), mode);
+    return SkShaders::Blend(mode, std::move(shaderA), std::move(shaderB));
 }
 
 class ComposeShaderGM : public skiagm::GM {
@@ -180,9 +193,9 @@ protected:
 
         sk_sp<SkShader> shaders[] = {
             // gradient should appear over color bitmap
-            SkShader::MakeComposeShader(fLinearGradientShader, fColorBitmapShader, mode),
+            SkShaders::Blend(mode, fLinearGradientShader, fColorBitmapShader),
             // gradient should appear over alpha8 bitmap colorized by the paint color
-            SkShader::MakeComposeShader(fLinearGradientShader, fAlpha8BitmapShader, mode),
+            SkShaders::Blend(mode, fLinearGradientShader, fAlpha8BitmapShader),
         };
 
         SkPaint paint;
@@ -252,8 +265,7 @@ DEF_SIMPLE_GM(composeshader_bitmap2, canvas, 200, 200) {
     sk_sp<SkImage> skSrc = SkImage::MakeFromBitmap(skBitmap);
     sk_sp<SkImage> skMaskImage = SkImage::MakeFromBitmap(skMask);
     paint.setShader(
-        SkShader::MakeComposeShader(skMaskImage->makeShader(), skSrc->makeShader(),
-                                    SkBlendMode::kSrcIn));
+        SkShaders::Blend(SkBlendMode::kSrcIn, skMaskImage->makeShader(), skSrc->makeShader()));
     canvas->drawRect(r, paint);
 }
 
@@ -296,7 +308,7 @@ static void draw_composed(SkCanvas* canvas, sk_sp<SkShader> src, sk_sp<SkShader>
                           SkBlendMode mode, SkAlpha alpha) {
     SkPaint p;
     p.setAlpha(alpha);
-    p.setShader(SkShader::MakeBlend(mode, dst, src));
+    p.setShader(SkShaders::Blend(mode, dst, src));
     canvas->drawRect(SkRect::MakeWH(gCellSize, gCellSize), p);
 }
 

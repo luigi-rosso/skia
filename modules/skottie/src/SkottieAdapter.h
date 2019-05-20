@@ -8,10 +8,10 @@
 #ifndef SkottieAdapter_DEFINED
 #define SkottieAdapter_DEFINED
 
-#include "SkPoint.h"
-#include "SkRefCnt.h"
-#include "SkSize.h"
-#include "SkottieValue.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSize.h"
+#include "modules/skottie/src/SkottieValue.h"
 
 namespace sksg {
 
@@ -19,6 +19,7 @@ class BlurImageFilter;
 class Color;
 class Draw;
 class DropShadowImageFilter;
+class ExternalColorFilter;
 class Gradient;
 class Group;
 class LinearGradient;
@@ -29,7 +30,6 @@ class RadialGradient;
 class RenderNode;
 class RRect;
 class ShaderEffect;
-class TextBlob;
 class Transform;
 class TransformEffect;
 class TrimEffect;
@@ -329,30 +329,29 @@ private:
     const sk_sp<sksg::BlurImageFilter> fBlur;
 };
 
-class TextAdapter final : public SkNVRefCnt<TextAdapter> {
+class LevelsEffectAdapter final : public SkNVRefCnt<LevelsEffectAdapter> {
 public:
-    explicit TextAdapter(sk_sp<sksg::Group> root);
-    ~TextAdapter();
+    explicit LevelsEffectAdapter(sk_sp<sksg::RenderNode> child);
+    ~LevelsEffectAdapter();
 
-    ADAPTER_PROPERTY(Text, TextValue, TextValue())
+    // 1: RGB, 2: R, 3: G, 4: B, 5: A
+    ADAPTER_PROPERTY(  Channel, SkScalar, 1)
+    ADAPTER_PROPERTY(  InBlack, SkScalar, 0)
+    ADAPTER_PROPERTY(  InWhite, SkScalar, 1)
+    ADAPTER_PROPERTY( OutBlack, SkScalar, 0)
+    ADAPTER_PROPERTY( OutWhite, SkScalar, 1)
+    ADAPTER_PROPERTY(    Gamma, SkScalar, 1)
+    // 1: clip, 2,3: don't clip
+    ADAPTER_PROPERTY(ClipBlack, SkScalar, 1)
+    ADAPTER_PROPERTY(ClipWhite, SkScalar, 1)
 
-    const sk_sp<sksg::Group>& root() const { return fRoot; }
+    const sk_sp<sksg::ExternalColorFilter>& root() const { return fEffect; }
 
 private:
     void apply();
 
-    sk_sp<sksg::Group>     fRoot;
-    sk_sp<sksg::TextBlob>  fTextNode;
-    sk_sp<sksg::Color>     fFillColor,
-                           fStrokeColor;
-    sk_sp<sksg::Draw>      fFillNode,
-                           fStrokeNode;
-
-    bool                   fHadFill   : 1, //  - state cached from the prev apply()
-                           fHadStroke : 1; //  /
+    sk_sp<sksg::ExternalColorFilter> fEffect;
 };
-
-#undef ADAPTER_PROPERTY
 
 } // namespace skottie
 

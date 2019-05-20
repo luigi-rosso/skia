@@ -5,28 +5,28 @@
  * found in the LICENSE file.
  */
 
-#include "GrGradientShader.h"
+#include "src/gpu/gradients/GrGradientShader.h"
 
-#include "GrClampedGradientEffect.h"
-#include "GrTiledGradientEffect.h"
+#include "src/gpu/gradients/generated/GrClampedGradientEffect.h"
+#include "src/gpu/gradients/generated/GrTiledGradientEffect.h"
 
-#include "GrLinearGradientLayout.h"
-#include "GrRadialGradientLayout.h"
-#include "GrSweepGradientLayout.h"
-#include "GrTwoPointConicalGradientLayout.h"
+#include "src/gpu/gradients/generated/GrLinearGradientLayout.h"
+#include "src/gpu/gradients/generated/GrRadialGradientLayout.h"
+#include "src/gpu/gradients/generated/GrSweepGradientLayout.h"
+#include "src/gpu/gradients/generated/GrTwoPointConicalGradientLayout.h"
 
-#include "GrDualIntervalGradientColorizer.h"
-#include "GrSingleIntervalGradientColorizer.h"
-#include "GrTextureGradientColorizer.h"
-#include "GrUnrolledBinaryGradientColorizer.h"
-#include "GrGradientBitmapCache.h"
+#include "src/gpu/gradients/GrGradientBitmapCache.h"
+#include "src/gpu/gradients/generated/GrDualIntervalGradientColorizer.h"
+#include "src/gpu/gradients/generated/GrSingleIntervalGradientColorizer.h"
+#include "src/gpu/gradients/generated/GrTextureGradientColorizer.h"
+#include "src/gpu/gradients/generated/GrUnrolledBinaryGradientColorizer.h"
 
-#include "GrCaps.h"
-#include "GrColor.h"
-#include "GrColorSpaceInfo.h"
-#include "GrRecordingContext.h"
-#include "GrRecordingContextPriv.h"
-#include "SkGr.h"
+#include "include/private/GrColor.h"
+#include "include/private/GrRecordingContext.h"
+#include "src/gpu/GrCaps.h"
+#include "src/gpu/GrColorSpaceInfo.h"
+#include "src/gpu/GrRecordingContextPriv.h"
+#include "src/gpu/SkGr.h"
 
 // Intervals smaller than this (that aren't hard stops) on low-precision-only devices force us to
 // use the textured gradient
@@ -236,7 +236,9 @@ static std::unique_ptr<GrFragmentProcessor> make_gradient(const SkGradientShader
         // Unexpected tile mode
         return nullptr;
     }
-
+    if (args.fInputColorIsOpaque) {
+        return GrFragmentProcessor::OverrideInput(std::move(master), SK_PMColor4fWHITE, false);
+    }
     return GrFragmentProcessor::MulChildByInputAlpha(std::move(master));
 }
 

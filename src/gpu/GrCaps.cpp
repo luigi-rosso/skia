@@ -5,14 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "GrCaps.h"
-#include "GrBackendSurface.h"
-#include "GrContextOptions.h"
-#include "GrSurface.h"
-#include "GrSurfaceProxy.h"
-#include "GrTypesPriv.h"
-#include "GrWindowRectangles.h"
-#include "SkJSONWriter.h"
+#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/GrContextOptions.h"
+#include "include/gpu/GrSurface.h"
+#include "include/private/GrSurfaceProxy.h"
+#include "include/private/GrTypesPriv.h"
+#include "src/gpu/GrCaps.h"
+#include "src/gpu/GrWindowRectangles.h"
+#include "src/utils/SkJSONWriter.h"
 
 GrCaps::GrCaps(const GrContextOptions& options) {
     fMipMapSupport = false;
@@ -36,6 +36,7 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fShouldInitializeTextures = false;
     fSupportsAHardwareBufferImages = false;
     fFenceSyncSupport = false;
+    fSemaphoreSupport = false;
     fCrossContextTextureSupport = false;
     fHalfFloatVertexAttributeSupport = false;
     fDynamicStateArrayGeometryProcessorTextureSupport = false;
@@ -175,6 +176,12 @@ static SkString map_flags_to_string(uint32_t flags) {
             str.append(" full");
         }
         SkDEBUGCODE(flags &= ~GrCaps::kSubset_MapFlag);
+        if (GrCaps::kAsyncRead_MapFlag & flags) {
+            str.append(" async_read");
+        } else {
+            str.append(" sync_read");
+        }
+        SkDEBUGCODE(flags &= ~GrCaps::kAsyncRead_MapFlag);
     }
     SkASSERT(0 == flags); // Make sure we handled all the flags.
     return str;
@@ -204,6 +211,7 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Should initialize textures", fShouldInitializeTextures);
     writer->appendBool("Supports importing AHardwareBuffers", fSupportsAHardwareBufferImages);
     writer->appendBool("Fence sync support", fFenceSyncSupport);
+    writer->appendBool("Semaphore support", fSemaphoreSupport);
     writer->appendBool("Cross context texture support", fCrossContextTextureSupport);
     writer->appendBool("Half float vertex attribute support", fHalfFloatVertexAttributeSupport);
     writer->appendBool("Specify GeometryProcessor textures as a dynamic state array",
@@ -277,13 +285,30 @@ bool GrCaps::surfaceSupportsWritePixels(const GrSurface* surface) const {
     return surface->readOnly() ? false : this->onSurfaceSupportsWritePixels(surface);
 }
 
-bool GrCaps::transferFromBufferRequirements(GrColorType bufferColorType, int width,
-                                            size_t* rowBytes, size_t* offsetAlignment) const {
+size_t GrCaps::transferFromOffsetAlignment(GrColorType bufferColorType) const {
     if (!this->transferBufferSupport()) {
-        return false;
+        return 0;
     }
-    return this->onTransferFromBufferRequirements(bufferColorType, width, rowBytes,
-                                                  offsetAlignment);
+    size_t result = this->onTransferFromOffsetAlignment(bufferColorType);
+    if (!result) {
+        return 0;
+    }
+    // It's very convenient to access 1 byte-per-channel 32 bitvRGB/RGBA color types as uint32_t.
+    // Make those aligned reads out of the buffer even if the underlying API doesn't require it.
+    auto componentFlags = GrColorTypeComponentFlags(bufferColorType);
+    if ((componentFlags == kRGBA_SkColorTypeComponentFlags ||
+         componentFlags == kRGB_SkColorTypeComponentFlags) &&
+        GrColorTypeBytesPerPixel(bufferColorType) == 4) {
+        switch (result & 0b11) {
+            // offset alignment already a multiple of 4
+            case 0:     return result;
+            // offset alignment is a multiple of 2 but not 4.
+            case 2:     return 2 * result;
+            // offset alignment is not a multiple of 2.
+            default:    return 4 * result;
+        }
+    }
+    return result;
 }
 
 bool GrCaps::canCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
@@ -328,13 +353,4 @@ bool GrCaps::validateSurfaceDesc(const GrSurfaceDesc& desc, GrMipMapped mipped) 
 
 GrBackendFormat GrCaps::getBackendFormatFromColorType(SkColorType ct) const {
     return this->getBackendFormatFromGrColorType(SkColorTypeToGrColorType(ct), GrSRGBEncoded::kNo);
-}
-
-bool GrCaps::onTransferFromBufferRequirements(GrColorType bufferColorType, int width,
-                                              size_t* rowBytes, size_t* offsetAlignment) const {
-    // TODO(bsalomon): Provide backend-specific overrides of this the return the true requirements.
-    // Currently assuming tight row bytes rounded up to a multiple of 4 and 4 byte offset alignment.
-    *rowBytes = GrSizeAlignUp(GrColorTypeBytesPerPixel(bufferColorType) * width, 4);
-    *offsetAlignment = 4;
-    return true;
 }

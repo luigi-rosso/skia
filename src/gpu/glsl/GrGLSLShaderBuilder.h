@@ -8,10 +8,11 @@
 #ifndef GrGLSLShaderBuilder_DEFINED
 #define GrGLSLShaderBuilder_DEFINED
 
-#include "GrAllocator.h"
-#include "GrShaderVar.h"
-#include "glsl/GrGLSLUniformHandler.h"
-#include "SkTDArray.h"
+#include "include/private/SkTDArray.h"
+#include "src/gpu/GrAllocator.h"
+#include "src/gpu/GrShaderVar.h"
+#include "src/gpu/glsl/GrGLSLUniformHandler.h"
+#include "src/sksl/SkSLString.h"
 
 #include <stdarg.h>
 
@@ -194,8 +195,6 @@ protected:
 
     void nextStage() {
         fShaderStrings.push_back();
-        fCompilerStrings.push_back(this->code().c_str());
-        fCompilerStringLengths.push_back((int)this->code().size());
         fCodeIndex++;
     }
 
@@ -230,8 +229,7 @@ protected:
     };
 
     GrGLSLProgramBuilder* fProgramBuilder;
-    SkSTArray<kPrealloc, const char*, true> fCompilerStrings;
-    SkSTArray<kPrealloc, int, true> fCompilerStringLengths;
+    SkSL::String fCompilerString;
     SkSTArray<kPrealloc, SkString> fShaderStrings;
     SkString fCode;
     SkString fFunctions;

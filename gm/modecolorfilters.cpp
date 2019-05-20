@@ -5,10 +5,24 @@
  * found in the LICENSE file.
  */
 
-#include "SkColorFilter.h"
-#include "SkGradientShader.h"
-#include "ToolUtils.h"
-#include "gm.h"
+#include "gm/gm.h"
+#include "include/core/SkBitmap.h"
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkShader.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTileMode.h"
+#include "include/core/SkTypes.h"
+#include "include/effects/SkGradientShader.h"
+#include "tools/ToolUtils.h"
 
 #define WIDTH 512
 #define HEIGHT 1024
@@ -122,7 +136,7 @@ protected:
         const int kRectsPerRow = SkMax32(this->getISize().fWidth / kRectWidth, 1);
         for (size_t cfm = 0; cfm < SK_ARRAY_COUNT(modes); ++cfm) {
             for (size_t cfc = 0; cfc < SK_ARRAY_COUNT(colors); ++cfc) {
-                paint.setColorFilter(SkColorFilter::MakeModeFilter(colors[cfc], modes[cfm]));
+                paint.setColorFilter(SkColorFilters::Blend(colors[cfc], modes[cfm]));
                 for (size_t s = 0; s < SK_ARRAY_COUNT(shaders); ++s) {
                     paint.setShader(shaders[s]);
                     bool hasShader = nullptr == paint.getShader();

@@ -5,21 +5,21 @@
  * found in the LICENSE file.
  */
 
-#include "GrFillRectOp.h"
+#include "src/gpu/ops/GrFillRectOp.h"
 
-#include "GrCaps.h"
-#include "GrGeometryProcessor.h"
-#include "GrMeshDrawOp.h"
-#include "GrPaint.h"
-#include "GrQuad.h"
-#include "GrQuadPerEdgeAA.h"
-#include "GrSimpleMeshDrawOpHelper.h"
-#include "SkGr.h"
-#include "SkMatrix.h"
-#include "SkRect.h"
-#include "glsl/GrGLSLColorSpaceXformHelper.h"
-#include "glsl/GrGLSLGeometryProcessor.h"
-#include "glsl/GrGLSLVarying.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkRect.h"
+#include "src/gpu/GrCaps.h"
+#include "src/gpu/GrGeometryProcessor.h"
+#include "src/gpu/GrPaint.h"
+#include "src/gpu/GrQuad.h"
+#include "src/gpu/SkGr.h"
+#include "src/gpu/glsl/GrGLSLColorSpaceXformHelper.h"
+#include "src/gpu/glsl/GrGLSLGeometryProcessor.h"
+#include "src/gpu/glsl/GrGLSLVarying.h"
+#include "src/gpu/ops/GrMeshDrawOp.h"
+#include "src/gpu/ops/GrQuadPerEdgeAA.h"
+#include "src/gpu/ops/GrSimpleMeshDrawOpHelper.h"
 
 namespace {
 
@@ -299,8 +299,6 @@ private:
     void addQuad(const GrPerspQuad& deviceQuad, const GrPerspQuad& localQuad,
                  GrQuadType localQuadType, const SkPMColor4f& color, GrQuadAAFlags edgeAA,
                  GrAAType aaType) {
-        SkASSERT(deviceQuad.quadType() <= fDeviceQuads.quadType());
-
         // The new quad's aa type should be the same as the first quad's or none, except when the
         // first quad's aa type was already downgraded to none, in which case the stored type must
         // be lifted to back to the requested type.
@@ -401,15 +399,12 @@ std::unique_ptr<GrDrawOp> MakePerEdgeQuad(GrRecordingContext* context,
                                           const SkPoint quad[4],
                                           const SkPoint localQuad[4],
                                           const GrUserStencilSettings* stencilSettings) {
-    // With arbitrary quads, the quad types are limited to kStandard or kPerspective (unless we
-    // analyzed the points, but callers have more knowledge and should've just use the appropriate
-    // factory, so assume they can't be rectilinear or simpler)
-    GrQuadType deviceType = viewMatrix.hasPerspective() ? GrQuadType::kPerspective
-                                                        : GrQuadType::kStandard;
+    GrQuadType deviceType = GrQuadTypeForPoints(quad, viewMatrix);
+    GrQuadType localType = GrQuadTypeForPoints(localQuad ? localQuad : quad, SkMatrix::I());
     return FillRectOp::Make(context, std::move(paint), aaType, edgeAA, stencilSettings,
                             GrPerspQuad::MakeFromSkQuad(quad, viewMatrix), deviceType,
                             GrPerspQuad::MakeFromSkQuad(localQuad ? localQuad : quad,
-                                                        SkMatrix::I()), GrQuadType::kStandard);
+                                                        SkMatrix::I()), localType);
 }
 
 std::unique_ptr<GrDrawOp> MakeSet(GrRecordingContext* context,
@@ -488,8 +483,8 @@ std::unique_ptr<GrDrawOp> MakeWithLocalRect(GrRecordingContext* context,
 
 #if GR_TEST_UTILS
 
-#include "GrDrawOpTest.h"
-#include "SkGr.h"
+#include "src/gpu/GrDrawOpTest.h"
+#include "src/gpu/SkGr.h"
 
 GR_DRAW_OP_TEST_DEFINE(FillRectOp) {
     SkMatrix viewMatrix = GrTest::TestMatrixInvertible(random);

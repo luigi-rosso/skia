@@ -5,15 +5,15 @@
  * found in the LICENSE file.
  */
 
-#include "Test.h"
-#include "SkBitmap.h"
-#include "SkCanvas.h"
-#include "SkImage.h"
-#include "SkPerlinNoiseShader.h"
-#include "SkRRect.h"
-#include "SkShader.h"
-#include "SkSurface.h"
-#include "SkData.h"
+#include "include/core/SkBitmap.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkData.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkRRect.h"
+#include "include/core/SkShader.h"
+#include "include/core/SkSurface.h"
+#include "include/effects/SkPerlinNoiseShader.h"
+#include "tests/Test.h"
 
 static void check_isaimage(skiatest::Reporter* reporter, SkShader* shader,
                            int expectedW, int expectedH,
@@ -60,10 +60,9 @@ DEF_TEST(ComposeShaderSingle, reporter) {
     SkCanvas canvas(srcBitmap);
     SkPaint p;
     p.setShader(
-        SkShader::MakeComposeShader(
-        SkShader::MakeEmptyShader(),
-        SkPerlinNoiseShader::MakeFractalNoise(1.0f, 1.0f, 2, 0.0f),
-        SkBlendMode::kClear));
+        SkShaders::Blend(SkBlendMode::kClear,
+        SkShaders::Empty(),
+        SkPerlinNoiseShader::MakeFractalNoise(1.0f, 1.0f, 2, 0.0f)));
     SkRRect rr;
     SkVector rd[] = {{0, 0}, {0, 0}, {0, 0}, {0, 0}};
     rr.setRectRadii({0, 0, 0, 0}, rd);

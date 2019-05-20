@@ -5,26 +5,26 @@
  * found in the LICENSE file.
  */
 
-#include "TestTypeface.h"
-#include "SkAdvancedTypefaceMetrics.h"
-#include "SkBitmap.h"
-#include "SkCanvas.h"
-#include "SkFontDescriptor.h"
-#include "SkFontMetrics.h"
-#include "SkFontPriv.h"
-#include "SkGlyph.h"
-#include "SkImageInfo.h"
-#include "SkMatrix.h"
-#include "SkOTUtils.h"
-#include "SkPaintPriv.h"
-#include "SkPath.h"
-#include "SkPoint.h"
-#include "SkRect.h"
-#include "SkScalerContext.h"
-#include "SkString.h"
-#include "SkTDArray.h"
-#include "SkTo.h"
-#include "SkUtils.h"
+#include "include/core/SkBitmap.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkFontMetrics.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkString.h"
+#include "include/private/SkTDArray.h"
+#include "include/private/SkTo.h"
+#include "src/core/SkAdvancedTypefaceMetrics.h"
+#include "src/core/SkFontDescriptor.h"
+#include "src/core/SkFontPriv.h"
+#include "src/core/SkGlyph.h"
+#include "src/core/SkPaintPriv.h"
+#include "src/core/SkScalerContext.h"
+#include "src/core/SkUtils.h"
+#include "src/sfnt/SkOTUtils.h"
+#include "tools/fonts/TestTypeface.h"
 
 #include <utility>
 
@@ -110,7 +110,7 @@ void TestTypeface::getPath(SkGlyphID glyphID, SkPath* path) {
 }
 
 void TestTypeface::onFilterRec(SkScalerContextRec* rec) const {
-    rec->setHinting(kNo_SkFontHinting);
+    rec->setHinting(SkFontHinting::kNone);
 }
 
 void TestTypeface::getGlyphToUnicodeMap(SkUnichar* glyphToUnicode) const {
@@ -132,26 +132,10 @@ void TestTypeface::onGetFontDescriptor(SkFontDescriptor* desc, bool* isLocal) co
     *isLocal = false;
 }
 
-int TestTypeface::onCharsToGlyphs(const void* chars,
-                                  Encoding    encoding,
-                                  SkGlyphID   glyphs[],
-                                  int         glyphCount) const {
-    auto utf8  = (const char*)chars;
-    auto utf16 = (const uint16_t*)chars;
-    auto utf32 = (const SkUnichar*)chars;
-
-    for (int i = 0; i < glyphCount; ++i) {
-        SkUnichar ch;
-        switch (encoding) {
-            case kUTF8_Encoding: ch = SkUTF8_NextUnichar(&utf8); break;
-            case kUTF16_Encoding: ch = SkUTF16_NextUnichar(&utf16); break;
-            case kUTF32_Encoding: ch = *utf32++; break;
-        }
-        if (glyphs) {
-            glyphs[i] = fTestFont->glyphForUnichar(ch);
-        }
+void TestTypeface::onCharsToGlyphs(const SkUnichar uni[], int count, SkGlyphID glyphs[]) const {
+    for (int i = 0; i < count; ++i) {
+        glyphs[i] = fTestFont->glyphForUnichar(uni[i]);
     }
-    return glyphCount;
 }
 
 void TestTypeface::onGetFamilyName(SkString* familyName) const { *familyName = fTestFont->fName; }
@@ -178,13 +162,6 @@ protected:
     }
 
     unsigned generateGlyphCount() override { return this->getTestTypeface()->onCountGlyphs(); }
-
-    uint16_t generateCharToGlyph(SkUnichar uni) override {
-        uint16_t glyph;
-        (void)this->getTestTypeface()->onCharsToGlyphs(
-                (const void*)&uni, SkTypeface::kUTF32_Encoding, &glyph, 1);
-        return glyph;
-    }
 
     bool generateAdvance(SkGlyph* glyph) override {
         this->getTestTypeface()->getAdvance(glyph);

@@ -5,26 +5,26 @@
  * found in the LICENSE file.
  */
 
-#include "SkGpuDevice.h"
+#include "src/gpu/SkGpuDevice.h"
 
-#include "GrBitmapTextureMaker.h"
-#include "GrBlurUtils.h"
-#include "GrCaps.h"
-#include "GrColorSpaceXform.h"
-#include "GrImageTextureMaker.h"
-#include "GrRenderTargetContext.h"
-#include "GrShape.h"
-#include "GrStyle.h"
-#include "GrTextureAdjuster.h"
-#include "GrTextureMaker.h"
-#include "SkDraw.h"
-#include "SkGr.h"
-#include "SkImage_Base.h"
-#include "SkMaskFilterBase.h"
-#include "SkYUVAIndex.h"
-#include "effects/GrBicubicEffect.h"
-#include "effects/GrSimpleTextureEffect.h"
-#include "effects/GrTextureDomain.h"
+#include "include/core/SkYUVAIndex.h"
+#include "src/core/SkDraw.h"
+#include "src/core/SkMaskFilterBase.h"
+#include "src/gpu/GrBitmapTextureMaker.h"
+#include "src/gpu/GrBlurUtils.h"
+#include "src/gpu/GrCaps.h"
+#include "src/gpu/GrColorSpaceXform.h"
+#include "src/gpu/GrImageTextureMaker.h"
+#include "src/gpu/GrRenderTargetContext.h"
+#include "src/gpu/GrShape.h"
+#include "src/gpu/GrStyle.h"
+#include "src/gpu/GrTextureAdjuster.h"
+#include "src/gpu/GrTextureMaker.h"
+#include "src/gpu/SkGr.h"
+#include "src/gpu/effects/GrBicubicEffect.h"
+#include "src/gpu/effects/GrTextureDomain.h"
+#include "src/gpu/effects/generated/GrSimpleTextureEffect.h"
+#include "src/image/SkImage_Base.h"
 
 namespace {
 
@@ -284,7 +284,8 @@ static void draw_texture_producer(GrContext* context, GrRenderTargetContext* rtc
 
     // Check for optimization to drop the src rect constraint when on bilerp.
     if (filterMode && GrSamplerState::Filter::kBilerp == *filterMode &&
-        GrTextureAdjuster::kYes_FilterConstraint == constraintMode && coordsAllInsideSrcRect) {
+        GrTextureAdjuster::kYes_FilterConstraint == constraintMode && coordsAllInsideSrcRect &&
+        !producer->hasMixedResolutions()) {
         SkMatrix combinedMatrix;
         combinedMatrix.setConcat(ctm, srcToDst);
         if (can_ignore_bilerp_constraint(*producer, src, combinedMatrix, rtc->fsaaType())) {

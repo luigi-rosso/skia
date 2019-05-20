@@ -5,17 +5,17 @@
  * found in the LICENSE file.
  */
 
-#include "DMJsonWriter.h"
+#include "dm/DMJsonWriter.h"
 
-#include "ProcStats.h"
-#include "SkData.h"
-#include "SkJSON.h"
-#include "SkJSONWriter.h"
-#include "SkMutex.h"
-#include "SkOSFile.h"
-#include "SkOSPath.h"
-#include "SkStream.h"
-#include "SkTArray.h"
+#include "include/core/SkData.h"
+#include "include/core/SkStream.h"
+#include "include/private/SkMutex.h"
+#include "include/private/SkTArray.h"
+#include "src/core/SkOSFile.h"
+#include "src/utils/SkJSON.h"
+#include "src/utils/SkJSONWriter.h"
+#include "src/utils/SkOSPath.h"
+#include "tools/ProcStats.h"
 
 namespace DM {
 
@@ -25,14 +25,6 @@ SK_DECLARE_STATIC_MUTEX(gBitmapResultLock);
 void JsonWriter::AddBitmapResult(const BitmapResult& result) {
     SkAutoMutexAcquire lock(&gBitmapResultLock);
     gBitmapResults.push_back(result);
-}
-
-SkTArray<skiatest::Failure> gFailures;
-SK_DECLARE_STATIC_MUTEX(gFailureLock);
-
-void JsonWriter::AddTestFailure(const skiatest::Failure& failure) {
-    SkAutoMutexAcquire lock(gFailureLock);
-    gFailures.push_back(failure);
 }
 
 void JsonWriter::DumpJson(const char* dir,
@@ -96,24 +88,6 @@ void JsonWriter::DumpJson(const char* dir,
             writer.endObject(); // 1 result
         }
         writer.endArray(); // results
-    }
-
-    {
-        SkAutoMutexAcquire lock(gFailureLock);
-        if (gFailures.count() > 0) {
-            writer.beginObject("test_results");
-            writer.beginArray("failures");
-            for (int i = 0; i < gFailures.count(); i++) {
-                writer.beginObject();
-                writer.appendString("file_name", gFailures[i].fileName);
-                writer.appendS32   ("line_no"  , gFailures[i].lineNo);
-                writer.appendString("condition", gFailures[i].condition);
-                writer.appendString("message"  , gFailures[i].message.c_str());
-                writer.endObject(); // 1 failure
-            }
-            writer.endArray(); // failures
-            writer.endObject(); // test_results
-        }
     }
 
     writer.endObject(); // root

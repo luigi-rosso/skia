@@ -5,8 +5,27 @@
  * found in the LICENSE file.
  */
 
-#include "gm.h"
-#include "SkGradientShader.h"
+#include "gm/gm.h"
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPicture.h"
+#include "include/core/SkPictureRecorder.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkShader.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTileMode.h"
+#include "include/core/SkTypes.h"
+#include "include/effects/SkGradientShader.h"
+
+#include <math.h>
 
 namespace skiagm {
 
@@ -914,8 +933,6 @@ DEF_SIMPLE_GM(gradient_many_stops, canvas, 500, 500) {
     draw_many_stops(canvas);
 }
 
-#include "SkPictureRecorder.h"
-
 static void draw_circle_shader(SkCanvas* canvas, SkScalar cx, SkScalar cy, SkScalar r,
                                sk_sp<SkShader> (*shaderFunc)()) {
     SkPaint p;
@@ -1004,19 +1021,18 @@ DEF_SIMPLE_GM(fancy_gradients, canvas, 800, 300) {
         sk_sp<SkShader> sweep2 = SkGradientShader::MakeSweep(center.x(), center.y(), colors, pos,
                                                              SK_ARRAY_COUNT(colors), 0, &m);
 
-        sk_sp<SkShader> sweep(SkShader::MakeComposeShader(sweep1, sweep2, SkBlendMode::kExclusion));
+        sk_sp<SkShader> sweep(SkShaders::Blend(SkBlendMode::kExclusion, sweep1, sweep2));
 
         SkScalar radialPos[] = { 0, .02f, .02f, .04f, .04f, .08f, .08f, .16f, .16f, .31f, .31f,
                                  .62f, .62f, 1, 1, 1 };
         static_assert(SK_ARRAY_COUNT(colors) == SK_ARRAY_COUNT(radialPos),
                       "color/pos size mismatch");
 
-        return SkShader::MakeComposeShader(sweep,
-                                           SkGradientShader::MakeRadial(center, 100, colors,
-                                                                        radialPos,
-                                                                        SK_ARRAY_COUNT(radialPos),
-                                                                        SkTileMode::kClamp),
-                                           SkBlendMode::kExclusion);
+        return SkShaders::Blend(SkBlendMode::kExclusion, sweep,
+                                SkGradientShader::MakeRadial(center, 100, colors,
+                                                             radialPos,
+                                                             SK_ARRAY_COUNT(radialPos),
+                                                             SkTileMode::kClamp));
     });
 }
 

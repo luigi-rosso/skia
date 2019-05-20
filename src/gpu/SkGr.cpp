@@ -5,42 +5,42 @@
  * found in the LICENSE file.
  */
 
-#include "SkGr.h"
-#include "GrBitmapTextureMaker.h"
-#include "GrCaps.h"
-#include "GrColorSpaceXform.h"
-#include "GrContext.h"
-#include "GrContextPriv.h"
-#include "GrGpuResourcePriv.h"
-#include "GrPaint.h"
-#include "GrProxyProvider.h"
-#include "GrRecordingContext.h"
-#include "GrRecordingContextPriv.h"
-#include "GrTextureProxy.h"
-#include "GrTypes.h"
-#include "GrXferProcessor.h"
-#include "SkAutoMalloc.h"
-#include "SkBlendModePriv.h"
-#include "SkCanvas.h"
-#include "SkColorFilter.h"
-#include "SkData.h"
-#include "SkImage_Base.h"
-#include "SkImageInfoPriv.h"
-#include "SkImagePriv.h"
-#include "SkMaskFilterBase.h"
-#include "SkMessageBus.h"
-#include "SkMipMap.h"
-#include "SkPaintPriv.h"
-#include "SkPixelRef.h"
-#include "SkResourceCache.h"
-#include "SkShaderBase.h"
-#include "SkTemplates.h"
-#include "SkTraceEvent.h"
-#include "effects/GrBicubicEffect.h"
-#include "effects/GrConstColorProcessor.h"
-#include "effects/GrPorterDuffXferProcessor.h"
-#include "effects/GrXfermodeFragmentProcessor.h"
-#include "effects/GrSkSLFP.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkData.h"
+#include "include/core/SkPixelRef.h"
+#include "include/gpu/GrContext.h"
+#include "include/gpu/GrTypes.h"
+#include "include/private/GrRecordingContext.h"
+#include "include/private/GrTextureProxy.h"
+#include "include/private/SkImageInfoPriv.h"
+#include "include/private/SkTemplates.h"
+#include "src/core/SkAutoMalloc.h"
+#include "src/core/SkBlendModePriv.h"
+#include "src/core/SkImagePriv.h"
+#include "src/core/SkMaskFilterBase.h"
+#include "src/core/SkMessageBus.h"
+#include "src/core/SkMipMap.h"
+#include "src/core/SkPaintPriv.h"
+#include "src/core/SkResourceCache.h"
+#include "src/core/SkTraceEvent.h"
+#include "src/gpu/GrBitmapTextureMaker.h"
+#include "src/gpu/GrCaps.h"
+#include "src/gpu/GrColorSpaceXform.h"
+#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrGpuResourcePriv.h"
+#include "src/gpu/GrPaint.h"
+#include "src/gpu/GrProxyProvider.h"
+#include "src/gpu/GrRecordingContextPriv.h"
+#include "src/gpu/GrXferProcessor.h"
+#include "src/gpu/SkGr.h"
+#include "src/gpu/effects/GrBicubicEffect.h"
+#include "src/gpu/effects/GrPorterDuffXferProcessor.h"
+#include "src/gpu/effects/GrSkSLFP.h"
+#include "src/gpu/effects/GrXfermodeFragmentProcessor.h"
+#include "src/gpu/effects/generated/GrConstColorProcessor.h"
+#include "src/image/SkImage_Base.h"
+#include "src/shaders/SkShaderBase.h"
 
 #if SK_SUPPORT_GPU
 GR_FP_SRC_STRING SKSL_DITHER_SRC = R"(
@@ -355,12 +355,13 @@ static inline bool skpaint_to_grpaint_impl(GrRecordingContext* context,
     // Convert SkPaint color to 4f format in the destination color space
     SkColor4f origColor = SkColor4fPrepForDst(skPaint.getColor4f(), colorSpaceInfo);
 
-    const GrFPArgs fpArgs(context, &viewM, skPaint.getFilterQuality(), &colorSpaceInfo);
+    GrFPArgs fpArgs(context, &viewM, skPaint.getFilterQuality(), &colorSpaceInfo);
 
     // Setup the initial color considering the shader, the SkPaint color, and the presence or not
     // of per-vertex colors.
     std::unique_ptr<GrFragmentProcessor> shaderFP;
     if (!primColorMode || blend_requires_shader(*primColorMode)) {
+        fpArgs.fInputColorIsOpaque = origColor.isOpaque();
         if (shaderProcessor) {
             shaderFP = std::move(*shaderProcessor);
         } else if (const auto* shader = as_SB(skPaint.getShader())) {
@@ -457,6 +458,8 @@ static inline bool skpaint_to_grpaint_impl(GrRecordingContext* context,
 
     SkMaskFilterBase* maskFilter = as_MFB(skPaint.getMaskFilter());
     if (maskFilter) {
+        // We may have set this before passing to the SkShader.
+        fpArgs.fInputColorIsOpaque = false;
         if (auto mfFP = maskFilter->asFragmentProcessor(fpArgs)) {
             grPaint->addCoverageFragmentProcessor(std::move(mfFP));
         }
@@ -551,7 +554,11 @@ bool SkPaintToGrPaintWithTexture(GrRecordingContext* context,
             shaderFP = GrFragmentProcessor::MakeInputPremulAndMulByOutput(std::move(fp));
         }
     } else {
-        shaderFP = GrFragmentProcessor::MulChildByInputAlpha(std::move(fp));
+        if (paint.getColor4f().isOpaque()) {
+            shaderFP = GrFragmentProcessor::OverrideInput(std::move(fp), SK_PMColor4fWHITE, false);
+        } else {
+            shaderFP = GrFragmentProcessor::MulChildByInputAlpha(std::move(fp));
+        }
     }
 
     return SkPaintToGrPaintReplaceShader(context, colorSpaceInfo, paint, std::move(shaderFP),

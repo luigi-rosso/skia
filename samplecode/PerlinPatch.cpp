@@ -5,12 +5,12 @@
  * found in the LICENSE file.
  */
 
-#include "AnimTimer.h"
-#include "Sample.h"
-#include "SkCanvas.h"
-#include "SkGradientShader.h"
-#include "SkPatchUtils.h"
-#include "SkPerlinNoiseShader.h"
+#include "include/core/SkCanvas.h"
+#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkPerlinNoiseShader.h"
+#include "samplecode/Sample.h"
+#include "src/utils/SkPatchUtils.h"
+#include "tools/timer/AnimTimer.h"
 
 static void draw_control_points(SkCanvas* canvas, const SkPoint cubics[12]) {
     //draw control points
@@ -149,7 +149,7 @@ protected:
         SkScalar scaleFreq = 2.0;
         fShader1 = SkPerlinNoiseShader::MakeImprovedNoise(fXFreq/scaleFreq, fYFreq/scaleFreq, 4,
                                                              fSeed);
-        fShaderCompose = SkShader::MakeComposeShader(fShader0, fShader1, SkBlendMode::kSrcOver);
+        fShaderCompose = SkShaders::Blend(SkBlendMode::kSrcOver, fShader0, fShader1);
 
         paint.setShader(fShaderCompose);
 

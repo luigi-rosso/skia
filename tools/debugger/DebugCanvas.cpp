@@ -5,20 +5,20 @@
  * found in the LICENSE file.
  */
 
-#include "DebugCanvas.h"
-#include "DrawCommand.h"
-#include "SkCanvasPriv.h"
-#include "SkClipOpPriv.h"
-#include "SkJSONWriter.h"
-#include "SkPaintFilterCanvas.h"
-#include "SkPicture.h"
-#include "SkRectPriv.h"
-#include "SkTextBlob.h"
+#include "include/core/SkPicture.h"
+#include "include/core/SkTextBlob.h"
+#include "include/utils/SkPaintFilterCanvas.h"
+#include "src/core/SkCanvasPriv.h"
+#include "src/core/SkClipOpPriv.h"
+#include "src/core/SkRectPriv.h"
+#include "src/utils/SkJSONWriter.h"
+#include "tools/debugger/DebugCanvas.h"
+#include "tools/debugger/DrawCommand.h"
 
-#include "GrAuditTrail.h"
-#include "GrContext.h"
-#include "GrContextPriv.h"
-#include "GrRenderTargetContext.h"
+#include "include/gpu/GrContext.h"
+#include "include/private/GrAuditTrail.h"
+#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrRenderTargetContext.h"
 
 #define SKDEBUGCANVAS_VERSION 1
 #define SKDEBUGCANVAS_ATTRIBUTE_VERSION "version"
@@ -31,13 +31,11 @@ public:
             : INHERITED(canvas), fOverdrawViz(overdrawViz) {}
 
 protected:
-    bool onFilter(SkTCopyOnFirstWrite<SkPaint>* paint, Type) const override {
-        if (*paint) {
-            if (fOverdrawViz) {
-                paint->writable()->setColor(SK_ColorRED);
-                paint->writable()->setAlpha(0x08);
-                paint->writable()->setBlendMode(SkBlendMode::kSrcOver);
-            }
+    bool onFilter(SkPaint& paint) const override {
+        if (fOverdrawViz) {
+            paint.setColor(SK_ColorRED);
+            paint.setAlpha(0x08);
+            paint.setBlendMode(SkBlendMode::kSrcOver);
         }
         return true;
     }
@@ -386,6 +384,10 @@ void DebugCanvas::onDrawArc(const SkRect&  oval,
 
 void DebugCanvas::onDrawPaint(const SkPaint& paint) {
     this->addDrawCommand(new DrawPaintCommand(paint));
+}
+
+void DebugCanvas::onDrawBehind(const SkPaint& paint) {
+    this->addDrawCommand(new DrawBehindCommand(paint));
 }
 
 void DebugCanvas::onDrawPath(const SkPath& path, const SkPaint& paint) {

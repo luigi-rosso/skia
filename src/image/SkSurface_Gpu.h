@@ -8,8 +8,8 @@
 #ifndef SkSurface_Gpu_DEFINED
 #define SkSurface_Gpu_DEFINED
 
-#include "GrTypesPriv.h"
-#include "SkSurface_Base.h"
+#include "include/private/GrTypesPriv.h"
+#include "src/image/SkSurface_Base.h"
 
 #if SK_SUPPORT_GPU
 
@@ -30,10 +30,12 @@ public:
     sk_sp<SkSurface> onNewSurface(const SkImageInfo&) override;
     sk_sp<SkImage> onNewImageSnapshot(const SkIRect* subset) override;
     void onWritePixels(const SkPixmap&, int x, int y) override;
+    void onAsyncReadPixels(const SkImageInfo& info, int srcX, int srcY, ReadPixelsCallback,
+                           ReadPixelsContext) override;
+
     void onCopyOnWrite(ContentChangeMode) override;
     void onDiscard() override;
-    GrSemaphoresSubmitted onFlush(BackendSurfaceAccess access, FlushFlags flags, int numSemaphores,
-                                  GrBackendSemaphore signalSemaphores[]) override;
+    GrSemaphoresSubmitted onFlush(BackendSurfaceAccess access, const GrFlushInfo& info) override;
     bool onWait(int numSemaphores, const GrBackendSemaphore* waitSemaphores) override;
     bool onCharacterize(SkSurfaceCharacterization*) const override;
     void onDraw(SkCanvas* canvas, SkScalar x, SkScalar y, const SkPaint* paint) override;

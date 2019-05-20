@@ -5,24 +5,24 @@
 * found in the LICENSE file.
 */
 
-#include "GrVkCommandBuffer.h"
+#include "src/gpu/vk/GrVkCommandBuffer.h"
 
-#include "GrVkCommandPool.h"
-#include "GrVkGpu.h"
-#include "GrVkFramebuffer.h"
-#include "GrVkImage.h"
-#include "GrVkImageView.h"
-#include "GrVkIndexBuffer.h"
-#include "GrVkPipeline.h"
-#include "GrVkPipelineState.h"
-#include "GrVkRenderPass.h"
-#include "GrVkRenderTarget.h"
-#include "GrVkPipelineLayout.h"
-#include "GrVkPipelineState.h"
-#include "GrVkTransferBuffer.h"
-#include "GrVkUtil.h"
-#include "GrVkVertexBuffer.h"
-#include "SkRect.h"
+#include "include/core/SkRect.h"
+#include "src/gpu/vk/GrVkCommandPool.h"
+#include "src/gpu/vk/GrVkFramebuffer.h"
+#include "src/gpu/vk/GrVkGpu.h"
+#include "src/gpu/vk/GrVkImage.h"
+#include "src/gpu/vk/GrVkImageView.h"
+#include "src/gpu/vk/GrVkIndexBuffer.h"
+#include "src/gpu/vk/GrVkPipeline.h"
+#include "src/gpu/vk/GrVkPipelineLayout.h"
+#include "src/gpu/vk/GrVkPipelineState.h"
+#include "src/gpu/vk/GrVkPipelineState.h"
+#include "src/gpu/vk/GrVkRenderPass.h"
+#include "src/gpu/vk/GrVkRenderTarget.h"
+#include "src/gpu/vk/GrVkTransferBuffer.h"
+#include "src/gpu/vk/GrVkUtil.h"
+#include "src/gpu/vk/GrVkVertexBuffer.h"
 
 void GrVkCommandBuffer::invalidateState() {
     for (auto& boundInputBuffer : fBoundInputBuffers) {
@@ -148,6 +148,30 @@ void GrVkCommandBuffer::pipelineBarrier(const GrVkGpu* gpu,
     } else {
         SkASSERT(barrierType == kImageMemory_BarrierType);
         const VkImageMemoryBarrier* barrierPtr = reinterpret_cast<VkImageMemoryBarrier*>(barrier);
+        // We need to check if we are adding a pipeline barrier that covers part of the same
+        // subresource range as a barrier that is already in current batch. If it does, then we must
+        // submit the first batch because the vulkan spec does not define a specific ordering for
+        // barriers submitted in the same batch.
+        // TODO: Look if we can gain anything by merging barriers together instead of submitting
+        // the old ones.
+        for (int i = 0; i < fImageBarriers.count(); ++i) {
+            VkImageMemoryBarrier& currentBarrier = fImageBarriers[i];
+            if (barrierPtr->image == currentBarrier.image) {
+                const VkImageSubresourceRange newRange = barrierPtr->subresourceRange;
+                const VkImageSubresourceRange oldRange = currentBarrier.subresourceRange;
+                SkASSERT(newRange.aspectMask == oldRange.aspectMask);
+                SkASSERT(newRange.baseArrayLayer == oldRange.baseArrayLayer);
+                SkASSERT(newRange.layerCount == oldRange.layerCount);
+                uint32_t newStart = newRange.baseMipLevel;
+                uint32_t newEnd = newRange.baseMipLevel + newRange.levelCount - 1;
+                uint32_t oldStart = oldRange.baseMipLevel;
+                uint32_t oldEnd = oldRange.baseMipLevel + oldRange.levelCount - 1;
+                if (SkTMax(newStart, oldStart) <= SkTMin(newEnd, oldEnd)) {
+                    this->submitPipelineBarriers(gpu);
+                    break;
+                }
+            }
+        }
         fImageBarriers.push_back(*barrierPtr);
     }
     fBarriersByRegion |= byRegion;
@@ -561,8 +585,6 @@ void GrVkPrimaryCommandBuffer::submitToQueue(
         submit_to_queue(gpu->vkInterface(), queue, fSubmitFence, 0, nullptr, nullptr,
                         1, &fCmdBuffer, 0, nullptr);
     } else {
-        GrVkSemaphore::Resource::AcquireMutex();
-
         SkTArray<VkSemaphore> vkSignalSems(signalCount);
         for (int i = 0; i < signalCount; ++i) {
             if (signalSemaphores[i]->shouldSignal()) {
@@ -584,19 +606,13 @@ void GrVkPrimaryCommandBuffer::submitToQueue(
                         vkWaitSems.count(), vkWaitSems.begin(), vkWaitStages.begin(),
                         1, &fCmdBuffer,
                         vkSignalSems.count(), vkSignalSems.begin());
-        // Since shouldSignal/Wait do not require a mutex to be held, we must make sure that we mark
-        // the semaphores after we've submitted. Thus in the worst case another submit grabs the
-        // mutex and then realizes it doesn't need to submit the semaphore. We will never end up
-        // where a semaphore doesn't think it needs to be submitted (cause of querying
-        // shouldSignal/Wait), but it should need to.
+
         for (int i = 0; i < signalCount; ++i) {
             signalSemaphores[i]->markAsSignaled();
         }
         for (int i = 0; i < waitCount; ++i) {
             waitSemaphores[i]->markAsWaited();
         }
-
-        GrVkSemaphore::Resource::ReleaseMutex();
     }
 
     if (GrVkGpu::kForce_SyncQueue == sync) {
@@ -608,13 +624,15 @@ void GrVkPrimaryCommandBuffer::submitToQueue(
         }
         SkASSERT(!err);
 
+        fFinishedProcs.reset();
+
         // Destroy the fence
         GR_VK_CALL(gpu->vkInterface(), DestroyFence(gpu->device(), fSubmitFence, nullptr));
         fSubmitFence = VK_NULL_HANDLE;
     }
 }
 
-bool GrVkPrimaryCommandBuffer::finished(const GrVkGpu* gpu) const {
+bool GrVkPrimaryCommandBuffer::finished(const GrVkGpu* gpu) {
     SkASSERT(!fIsActive);
     if (VK_NULL_HANDLE == fSubmitFence) {
         return true;
@@ -637,10 +655,15 @@ bool GrVkPrimaryCommandBuffer::finished(const GrVkGpu* gpu) const {
     return false;
 }
 
+void GrVkPrimaryCommandBuffer::addFinishedProc(sk_sp<GrRefCntedCallback> finishedProc) {
+    fFinishedProcs.push_back(std::move(finishedProc));
+}
+
 void GrVkPrimaryCommandBuffer::onReleaseResources(GrVkGpu* gpu) {
     for (int i = 0; i < fSecondaryCommandBuffers.count(); ++i) {
         fSecondaryCommandBuffers[i]->releaseResources(gpu);
     }
+    fFinishedProcs.reset();
 }
 
 void GrVkPrimaryCommandBuffer::recycleSecondaryCommandBuffers() {

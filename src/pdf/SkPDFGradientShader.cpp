@@ -5,16 +5,16 @@
  * found in the LICENSE file.
  */
 
-#include "SkPDFGradientShader.h"
+#include "src/pdf/SkPDFGradientShader.h"
 
-#include "SkOpts.h"
-#include "SkPDFDocument.h"
-#include "SkPDFDocumentPriv.h"
-#include "SkPDFFormXObject.h"
-#include "SkPDFGraphicState.h"
-#include "SkPDFResourceDict.h"
-#include "SkPDFTypes.h"
-#include "SkPDFUtils.h"
+#include "include/docs/SkPDFDocument.h"
+#include "src/core/SkOpts.h"
+#include "src/pdf/SkPDFDocumentPriv.h"
+#include "src/pdf/SkPDFFormXObject.h"
+#include "src/pdf/SkPDFGraphicState.h"
+#include "src/pdf/SkPDFResourceDict.h"
+#include "src/pdf/SkPDFTypes.h"
+#include "src/pdf/SkPDFUtils.h"
 
 static uint32_t hash(const SkShader::GradientInfo& v) {
     uint32_t buffer[] = {
@@ -873,13 +873,7 @@ static SkPDFGradientShader::Key make_key(const SkShader* shader,
                                          const SkIRect& bbox) {
     SkPDFGradientShader::Key key = {
          SkShader::kNone_GradientType,
-         {0, nullptr, nullptr, {{0, 0}, {0, 0}}, {0, 0},
-#ifdef SK_SUPPORT_LEGACY_TILEMODE_ENUM
-             SkShader::kClamp_TileMode,
-#else
-             SkTileMode::kClamp,
-#endif
-             0},
+         {0, nullptr, nullptr, {{0, 0}, {0, 0}}, {0, 0}, SkTileMode::kClamp, 0},
          nullptr,
          nullptr,
          canvasTransform,

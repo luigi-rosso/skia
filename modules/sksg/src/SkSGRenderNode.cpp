@@ -5,11 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "SkSGRenderNode.h"
+#include "modules/sksg/include/SkSGRenderNode.h"
 
-#include "SkCanvas.h"
-#include "SkImageFilter.h"
-#include "SkPaint.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkImageFilter.h"
+#include "include/core/SkPaint.h"
 
 namespace sksg {
 
@@ -39,8 +39,7 @@ bool RenderNode::RenderContext::requiresIsolation() const {
 
 void RenderNode::RenderContext::modulatePaint(const SkMatrix& ctm, SkPaint* paint) const {
     paint->setAlpha(ScaleAlpha(paint->getAlpha(), fOpacity));
-    paint->setColorFilter(SkColorFilter::MakeComposeFilter(fColorFilter,
-                                                               paint->refColorFilter()));
+    paint->setColorFilter(SkColorFilters::Compose(fColorFilter, paint->refColorFilter()));
     if (fShader) {
         if (fShaderCTM != ctm) {
             // The shader is declared to operate under a specific transform, but due to the
@@ -88,8 +87,7 @@ RenderNode::ScopedRenderContext::modulateOpacity(float opacity) {
 
 RenderNode::ScopedRenderContext&&
 RenderNode::ScopedRenderContext::modulateColorFilter(sk_sp<SkColorFilter> cf) {
-    fCtx.fColorFilter = SkColorFilter::MakeComposeFilter(std::move(fCtx.fColorFilter),
-                                                         std::move(cf));
+    fCtx.fColorFilter = SkColorFilters::Compose(std::move(fCtx.fColorFilter), std::move(cf));
     return std::move(*this);
 }
 

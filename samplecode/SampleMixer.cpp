@@ -5,18 +5,18 @@
  * found in the LICENSE file.
  */
 
-#include "Sample.h"
-#include "SkCanvas.h"
-#include "SkColorFilter.h"
-#include "SkGradientShader.h"
-#include "SkImage.h"
-#include "SkPath.h"
-#include "SkRegion.h"
-#include "SkShader.h"
-#include "SkUtils.h"
-#include "Resources.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkRegion.h"
+#include "include/core/SkShader.h"
+#include "include/effects/SkGradientShader.h"
+#include "samplecode/Sample.h"
+#include "src/core/SkUtils.h"
+#include "tools/Resources.h"
 
-const SkScalar gMat[] = {
+const float gMat[] = {
     .3f, .6f, .1f, 0, 0,
     .3f, .6f, .1f, 0, 0,
     .3f, .6f, .1f, 0, 0,
@@ -48,7 +48,7 @@ protected:
         paint.setColorFilter(cf0);
         canvas->drawImage(fImg, 0, 0, &paint);
 
-        paint.setColorFilter(SkColorFilter::MakeLerp(cf0, cf1, fWeight));
+        paint.setColorFilter(SkColorFilters::Lerp(fWeight, cf0, cf1));
         canvas->drawImage(fImg, fImg->width() + gap * fWeight, 0, &paint);
 
         paint.setColorFilter(cf1);
@@ -58,8 +58,8 @@ protected:
     void onDrawContent(SkCanvas* canvas) override {
         if (!fImg) {
             fImg = GetResourceAsImage("images/mandrill_256.png");
-            fCF0 = SkColorFilter::MakeMatrixFilterRowMajor255(gMat);
-            fCF1 = SkColorFilter::MakeModeFilter(0xFF44CC88, SkBlendMode::kScreen);
+            fCF0 = SkColorFilters::Matrix(gMat);
+            fCF1 = SkColorFilters::Blend(0xFF44CC88, SkBlendMode::kScreen);
         }
 
         float gap = fImg->width() * 3;
@@ -97,9 +97,8 @@ DEF_SAMPLE( return new MixerView; )
 
 //////////////////////////////////////////////////////////////////////////////
 
-#include "SkMaskFilter.h"
-#include "SkMixer.h"
-#include "SkSurface.h"
+#include "include/core/SkMaskFilter.h"
+#include "include/core/SkSurface.h"
 
 static sk_sp<SkShader> make_resource_shader(const char path[], int size) {
     auto img = GetResourceAsImage(path);
@@ -159,12 +158,11 @@ protected:
         canvas->translate(0, SIZE + 10.f);
 
         auto sh = fSurface->makeImageSnapshot()->makeShader();
-        auto mx = SkMixer::MakeShaderLerp(sh);
 
         canvas->save();
         paint.setShader(sh); canvas->drawRect(r, paint);
         canvas->translate(SIZE + 10.f, 0);
-        paint.setShader(SkShader::MakeMixer(fSH0, fSH1, mx)); canvas->drawRect(r, paint);
+        paint.setShader(SkShaders::Lerp(sh, fSH0, fSH1)); canvas->drawRect(r, paint);
         canvas->restore();
     }
 

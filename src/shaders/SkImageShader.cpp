@@ -5,18 +5,18 @@
  * found in the LICENSE file.
  */
 
-#include "SkArenaAlloc.h"
-#include "SkBitmapController.h"
-#include "SkBitmapProcShader.h"
-#include "SkBitmapProvider.h"
-#include "SkColorSpacePriv.h"
-#include "SkColorSpaceXformSteps.h"
-#include "SkEmptyShader.h"
-#include "SkImage_Base.h"
-#include "SkImageShader.h"
-#include "SkRasterPipeline.h"
-#include "SkReadBuffer.h"
-#include "SkWriteBuffer.h"
+#include "src/core/SkArenaAlloc.h"
+#include "src/core/SkBitmapController.h"
+#include "src/core/SkBitmapProvider.h"
+#include "src/core/SkColorSpacePriv.h"
+#include "src/core/SkColorSpaceXformSteps.h"
+#include "src/core/SkRasterPipeline.h"
+#include "src/core/SkReadBuffer.h"
+#include "src/core/SkWriteBuffer.h"
+#include "src/image/SkImage_Base.h"
+#include "src/shaders/SkBitmapProcShader.h"
+#include "src/shaders/SkEmptyShader.h"
+#include "src/shaders/SkImageShader.h"
 
 /**
  *  We are faster in clamp, so always use that tiling when we can.
@@ -164,13 +164,13 @@ sk_sp<SkShader> SkImageShader::Make(sk_sp<SkImage> image,
 
 #if SK_SUPPORT_GPU
 
-#include "GrCaps.h"
-#include "GrColorSpaceInfo.h"
-#include "GrRecordingContext.h"
-#include "GrRecordingContextPriv.h"
-#include "SkGr.h"
-#include "effects/GrBicubicEffect.h"
-#include "effects/GrSimpleTextureEffect.h"
+#include "include/private/GrRecordingContext.h"
+#include "src/gpu/GrCaps.h"
+#include "src/gpu/GrColorSpaceInfo.h"
+#include "src/gpu/GrRecordingContextPriv.h"
+#include "src/gpu/SkGr.h"
+#include "src/gpu/effects/GrBicubicEffect.h"
+#include "src/gpu/effects/generated/GrSimpleTextureEffect.h"
 
 static GrSamplerState::WrapMode tile_mode_to_wrap_mode(const SkTileMode tileMode) {
     switch (tileMode) {
@@ -257,6 +257,8 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
                                           args.fDstColorSpaceInfo->colorSpace());
     if (isAlphaOnly) {
         return inner;
+    } else if (args.fInputColorIsOpaque) {
+        return GrFragmentProcessor::OverrideInput(std::move(inner), SK_PMColor4fWHITE, false);
     }
     return GrFragmentProcessor::MulChildByInputAlpha(std::move(inner));
 }
@@ -264,7 +266,7 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-#include "SkImagePriv.h"
+#include "src/core/SkImagePriv.h"
 
 sk_sp<SkShader> SkMakeBitmapShader(const SkBitmap& src, SkTileMode tmx, SkTileMode tmy,
                                    const SkMatrix* localMatrix, SkCopyPixelsMode cpm) {
@@ -283,7 +285,7 @@ sk_sp<SkShader> SkMakeBitmapShaderForPaint(const SkPaint& paint, const SkBitmap&
         // Compose the image shader with the paint's shader. Alpha images+shaders should output the
         // texture's alpha multiplied by the shader's color. DstIn (d*sa) will achieve this with
         // the source image and dst shader (MakeBlend takes dst first, src second).
-        s = SkShader::MakeBlend(SkBlendMode::kDstIn, paint.refShader(), std::move(s));
+        s = SkShaders::Blend(SkBlendMode::kDstIn, paint.refShader(), std::move(s));
     }
     return s;
 }

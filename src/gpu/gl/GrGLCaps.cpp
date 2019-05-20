@@ -5,19 +5,19 @@
  * found in the LICENSE file.
  */
 
-#include "GrGLCaps.h"
-#include "GrContextOptions.h"
-#include "GrGLContext.h"
-#include "GrGLRenderTarget.h"
-#include "GrGLTexture.h"
-#include "GrRenderTargetProxyPriv.h"
-#include "GrShaderCaps.h"
-#include "GrSurfaceProxyPriv.h"
-#include "GrTextureProxyPriv.h"
-#include "SkJSONWriter.h"
-#include "SkGr.h"
-#include "SkTSearch.h"
-#include "SkTSort.h"
+#include "include/gpu/GrContextOptions.h"
+#include "src/core/SkTSearch.h"
+#include "src/core/SkTSort.h"
+#include "src/gpu/GrRenderTargetProxyPriv.h"
+#include "src/gpu/GrShaderCaps.h"
+#include "src/gpu/GrSurfaceProxyPriv.h"
+#include "src/gpu/GrTextureProxyPriv.h"
+#include "src/gpu/SkGr.h"
+#include "src/gpu/gl/GrGLCaps.h"
+#include "src/gpu/gl/GrGLContext.h"
+#include "src/gpu/gl/GrGLRenderTarget.h"
+#include "src/gpu/gl/GrGLTexture.h"
+#include "src/utils/SkJSONWriter.h"
 
 GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
                    const GrGLContextInfo& ctxInfo,
@@ -241,9 +241,10 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
             fRectangleTextureSupport = true;
         }
     } else if (GR_IS_GR_GL_ES(standard)) {
-        // Command buffer exposes this in GL ES context for Chromium reasons,
-        // but it should not be used. Also, at the time of writing command buffer
-        // lacks TexImage2D support and ANGLE lacks GL ES 3.0 support.
+        // ANGLE will advertise the extension in ES2 contexts but actually using the texture in
+        // a shader requires ES3 shading language.
+        fRectangleTextureSupport = ctxInfo.hasExtension("GL_ANGLE_texture_rectangle") &&
+                                   ctxInfo.glslGeneration() >= k330_GrGLSLGeneration;
     } // no WebGL support
 
     // GrCaps defaults fClampToBorderSupport to true, so disable when unsupported
@@ -627,9 +628,12 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
         // Only in WebGL 2.0
         fFenceSyncSupport = version >= GR_GL_VER(2, 0);
     }
+    // The same objects (GL sync objects) are used to implement GPU/CPU fence syncs and GPU/GPU
+    // semaphores.
+    fSemaphoreSupport = fFenceSyncSupport;
 
-    // Safely moving textures between contexts requires fences.
-    fCrossContextTextureSupport = fFenceSyncSupport;
+    // Safely moving textures between contexts requires semaphores.
+    fCrossContextTextureSupport = fSemaphoreSupport;
 
     // Half float vertex attributes requires GL3 or ES3
     // It can also work with OES_VERTEX_HALF_FLOAT, but that requires a different enum.
@@ -827,11 +831,13 @@ void GrGLCaps::initGLSL(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli
             shaderCaps->fSampleVariablesExtensionString = "GL_OES_sample_variables";
         }
     }
+    shaderCaps->fSampleVariablesStencilSupport = shaderCaps->fSampleVariablesSupport;
 
-    // FIXME: The sample mask round rect op draws nothing on several Adreno and Radeon bots.
-    // Temporarily disable while we investigate.
-    // http://skbug.com/8921
     if (kQualcomm_GrGLVendor == ctxInfo.vendor() || kATI_GrGLVendor == ctxInfo.vendor()) {
+        // FIXME: The sample mask round rect op draws nothing on several Adreno and Radeon bots.
+        // Other ops that use sample mask while rendering to stencil seem to work fine. Temporarily
+        // disable sample mask on color buffers while we investigate.
+        // http://skbug.com/8921
         shaderCaps->fSampleVariablesSupport = false;
     }
 
@@ -1619,7 +1625,7 @@ void GrGLCaps::initConfigTable(const GrContextOptions& contextOptions,
     } else {
         fConfigTable[kRG_88_GrPixelConfig].fFlags = 0;
     }
-    fConfigTable[kRG_88_GrPixelConfig].fSwizzle = GrSwizzle::RGRG();
+    fConfigTable[kRG_88_GrPixelConfig].fSwizzle = GrSwizzle::RGBA();
 
     fConfigTable[kBGRA_8888_GrPixelConfig].fFormats.fExternalFormat[kReadPixels_ExternalFormatUsage] =
         GR_GL_BGRA;
@@ -2649,14 +2655,6 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         fTransferBufferType = kNone_TransferBufferType;
     }
 
-    // Unit test for TransferPixelsFromTest fails on Shield with X1. Unclear whether this is a
-    // driver bug or a bug in our implementation. It passes on desktop NVIDIA GPUs, so perhaps
-    // something related to OpenGL ES?
-    if (kTegra_GrGLRenderer == ctxInfo.renderer()) {
-        fTransferBufferSupport = false;
-        fTransferBufferType = kNone_TransferBufferType;
-    }
-
     // Using MIPs on this GPU seems to be a source of trouble.
     if (kPowerVR54x_GrGLRenderer == ctxInfo.renderer()) {
         fMipMapSupport = false;
@@ -3017,6 +3015,11 @@ void GrGLCaps::onApplyOptionsOverrides(const GrContextOptions& options) {
     if (options.fDisallowGLSLBinaryCaching) {
         fProgramBinarySupport = false;
     }
+#if GR_TEST_UTILS
+    if (options.fCacheSKSL) {
+        fProgramBinarySupport = false;
+    }
+#endif
 }
 
 bool GrGLCaps::onSurfaceSupportsWritePixels(const GrSurface* surface) const {
@@ -3195,7 +3198,7 @@ GrPixelConfig validate_sized_format(GrGLenum format, SkColorType ct, GrGLStandar
             }
             break;
     }
-    SkDebugf("Unknown pixel config %d\n", format);
+    SkDebugf("Unknown pixel config 0x%x\n", format);
     return kUnknown_GrPixelConfig;
 }
 
@@ -3242,6 +3245,9 @@ static GrPixelConfig get_yuva_config(GrGLenum format) {
         case GR_GL_RGB10_A2:
             config = kRGBA_1010102_GrPixelConfig;
             break;
+        case GR_GL_R16F:
+            config = kAlpha_half_as_Red_GrPixelConfig;
+            break;
     }
 
     return config;
@@ -3264,3 +3270,140 @@ GrBackendFormat GrGLCaps::getBackendFormatFromGrColorType(GrColorType ct,
     return GrBackendFormat::MakeGL(this->configSizedInternalFormat(config), GR_GL_TEXTURE_2D);
 }
 
+#ifdef SK_DEBUG
+static bool format_color_type_valid_pair(GrGLenum format, GrColorType colorType) {
+    switch (colorType) {
+        case GrColorType::kUnknown:
+            return false;
+        case GrColorType::kAlpha_8:
+            return GR_GL_ALPHA8 == format || GR_GL_R8 == format;
+        case GrColorType::kRGB_565:
+            return GR_GL_RGB565 == format;
+        case GrColorType::kABGR_4444:
+            return GR_GL_RGBA4 == format;
+        case GrColorType::kRGBA_8888:
+            return GR_GL_RGBA8 == format || GR_GL_SRGB8_ALPHA8 == format;
+        case GrColorType::kRGB_888x:
+            return GR_GL_RGB8 == format || GR_GL_RGBA8 == format;
+        case GrColorType::kRG_88:
+            return GR_GL_RG8 == format;
+        case GrColorType::kBGRA_8888:
+            return GR_GL_RGBA8 == format || GR_GL_BGRA8 == format || GR_GL_SRGB8_ALPHA8 == format;
+        case GrColorType::kRGBA_1010102:
+            return GR_GL_RGB10_A2 == format;
+        case GrColorType::kGray_8:
+            return GR_GL_LUMINANCE8 == format || GR_GL_R8 == format;
+        case GrColorType::kAlpha_F16:
+            return GR_GL_R16F == format;
+        case GrColorType::kRGBA_F16:
+            return GR_GL_RGBA16F == format;
+        case GrColorType::kRGBA_F16_Clamped:
+            return GR_GL_RGBA16F == format;
+        case GrColorType::kRG_F32:
+            return GR_GL_RG32F == format;
+        case GrColorType::kRGBA_F32:
+            return GR_GL_RGBA32F == format;
+        case GrColorType::kRGB_ETC1:
+            return GR_GL_COMPRESSED_RGB8_ETC2 == format || GR_GL_COMPRESSED_ETC1_RGB8 == format;
+    }
+    SK_ABORT("Unknown color type");
+    return false;
+}
+#endif
+
+static GrSwizzle get_swizzle(const GrBackendFormat& format, GrColorType colorType,
+                             bool forOutput) {
+    SkASSERT(format.getGLFormat());
+    GrGLenum glFormat = *format.getGLFormat();
+
+    SkASSERT(format_color_type_valid_pair(glFormat, colorType));
+
+    // When picking a swizzle for output, we will pick to use RGBA if possible so that it creates
+    // less variations of shaders and those shaders can be used by different configs.
+    switch (colorType) {
+        case GrColorType::kAlpha_8:
+            if (glFormat == GR_GL_ALPHA8) {
+                if (!forOutput) {
+                    return GrSwizzle::AAAA();
+                }
+            } else {
+                SkASSERT(glFormat == GR_GL_R8);
+                if (forOutput) {
+                    return GrSwizzle::AAAA();
+                } else {
+                    return GrSwizzle::RRRR();
+                }
+            }
+            break;
+        case GrColorType::kAlpha_F16:
+            SkASSERT(glFormat == GR_GL_R16F);
+            if (forOutput) {
+                return GrSwizzle::AAAA();
+            } else {
+                return GrSwizzle::RRRR();
+            }
+        case GrColorType::kGray_8:
+            if (glFormat == GR_GL_R8) {
+                if (!forOutput) {
+                    return GrSwizzle::RRRA();
+                }
+            }
+            break;
+        case GrColorType::kRGB_888x:
+            if (!forOutput) {
+                return GrSwizzle::RGB1();
+            }
+        default:
+            return GrSwizzle::RGBA();
+    }
+    return GrSwizzle::RGBA();
+}
+
+GrSwizzle GrGLCaps::getTextureSwizzle(const GrBackendFormat& format, GrColorType colorType) const {
+    return get_swizzle(format, colorType, false);
+}
+GrSwizzle GrGLCaps::getOutputSwizzle(const GrBackendFormat& format, GrColorType colorType) const {
+    return get_swizzle(format, colorType, true);
+}
+
+size_t GrGLCaps::onTransferFromOffsetAlignment(GrColorType bufferColorType) const {
+    // This implementation is highly coupled with decisions made in initConfigTable and GrGLGpu's
+    // read pixels implementation and may not be correct for all types. TODO(bsalomon): This will be
+    // cleaned up/unified as part of removing GrPixelConfig.
+    // There are known problems with 24 vs 32 bit BPP with this color type. Just fail for now.
+    if (GrColorType::kRGB_888x == bufferColorType) {
+        return 0;
+    }
+    auto config = GrColorTypeToPixelConfig(bufferColorType, GrSRGBEncoded::kNo);
+    // This switch is derived from a table titled "Pixel data type parameter values and the
+    // corresponding GL data types" in the OpenGL spec (Table 8.2 in OpenGL 4.5).
+    switch (fConfigTable[config].fFormats.fExternalType) {
+        case GR_GL_UNSIGNED_BYTE:                   return sizeof(GrGLubyte);
+        case GR_GL_BYTE:                            return sizeof(GrGLbyte);
+        case GR_GL_UNSIGNED_SHORT:                  return sizeof(GrGLushort);
+        case GR_GL_SHORT:                           return sizeof(GrGLshort);
+        case GR_GL_UNSIGNED_INT:                    return sizeof(GrGLuint);
+        case GR_GL_INT:                             return sizeof(GrGLint);
+        case GR_GL_HALF_FLOAT:                      return sizeof(GrGLhalf);
+        case GR_GL_FLOAT:                           return sizeof(GrGLfloat);
+        case GR_GL_UNSIGNED_SHORT_5_6_5:            return sizeof(GrGLushort);
+        case GR_GL_UNSIGNED_SHORT_4_4_4_4:          return sizeof(GrGLushort);
+        case GR_GL_UNSIGNED_SHORT_5_5_5_1:          return sizeof(GrGLushort);
+        case GR_GL_UNSIGNED_INT_2_10_10_10_REV:     return sizeof(GrGLuint);
+#if 0  // GL types we currently don't use. Here for future reference.
+        case GR_GL_UNSIGNED_BYTE_3_3_2:             return sizeof(GrGLubyte);
+        case GR_GL_UNSIGNED_BYTE_2_3_3_REV:         return sizeof(GrGLubyte);
+        case GR_GL_UNSIGNED_SHORT_5_6_5_REV:        return sizeof(GrGLushort);
+        case GR_GL_UNSIGNED_SHORT_4_4_4_4_REV:      return sizeof(GrGLushort);
+        case GR_GL_UNSIGNED_SHORT_1_5_5_5_REV:      return sizeof(GrGLushort);
+        case GR_GL_UNSIGNED_INT_8_8_8_8:            return sizeof(GrGLuint);
+        case GR_GL_UNSIGNED_INT_8_8_8_8_REV:        return sizeof(GrGLuint);
+        case GR_GL_UNSIGNED_INT_10_10_10_2:         return sizeof(GrGLuint);
+        case GR_GL_UNSIGNED_INT_24_8:               return sizeof(GrGLuint);
+        case GR_GL_UNSIGNED_INT_10F_11F_11F_REV:    return sizeof(GrGLuint);
+        case GR_GL_UNSIGNED_INT_5_9_9_9_REV:        return sizeof(GrGLuint);
+        case GR_GL_FLOAT_32_UNSIGNED_INT_24_8_REV:  return sizeof(GrGLuint);
+#endif
+        default:                                    return 0;
+    }
+}

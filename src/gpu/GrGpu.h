@@ -8,18 +8,18 @@
 #ifndef GrGpu_DEFINED
 #define GrGpu_DEFINED
 
-#include "GrCaps.h"
-#include "GrGpuCommandBuffer.h"
-#include "GrProgramDesc.h"
-#include "GrSamplePatternDictionary.h"
-#include "GrSwizzle.h"
-#include "GrAllocator.h"
-#include "GrTextureProducer.h"
-#include "GrTypes.h"
-#include "GrXferProcessor.h"
-#include "SkPath.h"
-#include "SkSurface.h"
-#include "SkTArray.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkSurface.h"
+#include "include/gpu/GrTypes.h"
+#include "include/private/SkTArray.h"
+#include "src/gpu/GrAllocator.h"
+#include "src/gpu/GrCaps.h"
+#include "src/gpu/GrGpuCommandBuffer.h"
+#include "src/gpu/GrProgramDesc.h"
+#include "src/gpu/GrSamplePatternDictionary.h"
+#include "src/gpu/GrSwizzle.h"
+#include "src/gpu/GrTextureProducer.h"
+#include "src/gpu/GrXferProcessor.h"
 #include <map>
 
 class GrBackendRenderTarget;
@@ -227,10 +227,14 @@ public:
 
     /**
      * Reads the pixels from a rectangle of a surface into a buffer. Use
-     * GrCaps::transferFromBufferRequirements to determine the requirements for the buffer size
-     * and offset alignment. If the surface is a MIP mapped texture, the base level is read.
+     * GrCaps::transferFromOffsetAlignment to determine the requirements for the buffer offset
+     * alignment. If the surface is a MIP mapped texture, the base level is read.
      *
-     * Returns the number of bytes per row in the buffer or zero on failure.
+     * If successful the row bytes in the buffer is always:
+     *   GrColorTypeBytesPerPixel(bufferColorType) * width
+     *
+     * Asserts that the caller has passed a properly aligned offset and that the buffer is
+     * large enough to hold the result
      *
      * @param surface          The surface to read from.
      * @param left             left edge of the rectangle to read (inclusive)
@@ -241,9 +245,9 @@ public:
      * @param transferBuffer   GrBuffer to write pixels to (type must be "kXferGpuToCpu")
      * @param offset           offset from the start of the buffer
      */
-    size_t transferPixelsFrom(GrSurface* surface, int left, int top, int width, int height,
-                              GrColorType bufferColorType, GrGpuBuffer* transferBuffer,
-                              size_t offset);
+    bool transferPixelsFrom(GrSurface* surface, int left, int top, int width, int height,
+                            GrColorType bufferColorType, GrGpuBuffer* transferBuffer,
+                            size_t offset);
 
     // After the client interacts directly with the 3D context state the GrGpu
     // must resync its internal state and assumptions about 3D context state.
@@ -274,10 +278,7 @@ public:
     // Queries the per-pixel HW sample locations for the given render target, and then finds or
     // assigns a key that uniquely identifies the sample pattern. The actual sample locations can be
     // retrieved with retrieveSampleLocations().
-    //
-    // NOTE: The pipeline argument is required in order for us to flush draw state prior to querying
-    // multisample info. The pipeline itself is not expected to affect sample locations.
-    int findOrAssignSamplePatternKey(GrRenderTarget*, const GrPipeline&);
+    int findOrAssignSamplePatternKey(GrRenderTarget*);
 
     // Retrieves the per-pixel HW sample locations for the given sample pattern key, and, as a
     // by-product, the actual number of samples in use. (This may differ from the number of samples
@@ -302,9 +303,9 @@ public:
     // Provides a hook for post-flush actions (e.g. Vulkan command buffer submits). This will also
     // insert any numSemaphore semaphores on the gpu and set the backendSemaphores to match the
     // inserted semaphores.
-    GrSemaphoresSubmitted finishFlush(GrSurfaceProxy*, SkSurface::BackendSurfaceAccess access,
-                                      SkSurface::FlushFlags flags, int numSemaphores,
-                                      GrBackendSemaphore backendSemaphores[]);
+    GrSemaphoresSubmitted finishFlush(GrSurfaceProxy*[], int n,
+                                      SkSurface::BackendSurfaceAccess access, const GrFlushInfo&,
+                                      const GrPrepareForExternalIORequests&);
 
     virtual void submit(GrGpuCommandBuffer*) = 0;
 
@@ -318,6 +319,8 @@ public:
                                                     GrWrapOwnership ownership) = 0;
     virtual void insertSemaphore(sk_sp<GrSemaphore> semaphore) = 0;
     virtual void waitSemaphore(sk_sp<GrSemaphore> semaphore) = 0;
+
+    virtual void checkFinishProcs() = 0;
 
     /**
      *  Put this texture in a safe and known state for use across multiple GrContexts. Depending on
@@ -391,25 +394,28 @@ public:
     Stats* stats() { return &fStats; }
     void dumpJSON(SkJSONWriter*) const;
 
-#if GR_TEST_UTILS
-    GrBackendTexture createTestingOnlyBackendTexture(const void* pixels, int w, int h,
-                                                     SkColorType, bool isRenderTarget,
-                                                     GrMipMapped, size_t rowBytes = 0);
+    GrBackendTexture createTestingOnlyBackendTexture(int w, int h, SkColorType,
+                                                     GrMipMapped, GrRenderable,
+                                                     const void* pixels = nullptr,
+                                                     size_t rowBytes = 0);
 
     /** Creates a texture directly in the backend API without wrapping it in a GrTexture. This is
         only to be used for testing (particularly for testing the methods that import an externally
         created texture into Skia. Must be matched with a call to deleteTestingOnlyTexture(). */
-    virtual GrBackendTexture createTestingOnlyBackendTexture(const void* pixels, int w, int h,
-                                                             GrColorType, bool isRenderTarget,
-                                                             GrMipMapped, size_t rowBytes = 0) = 0;
+    virtual GrBackendTexture createTestingOnlyBackendTexture(int w, int h, const GrBackendFormat&,
+                                                             GrMipMapped, GrRenderable,
+                                                             const void* pixels = nullptr,
+                                                             size_t rowBytes = 0) = 0;
 
-    /** Check a handle represents an actual texture in the backend API that has not been freed. */
-    virtual bool isTestingOnlyBackendTexture(const GrBackendTexture&) const = 0;
     /**
      * Frees a texture created by createTestingOnlyBackendTexture(). If ownership of the backend
      * texture has been transferred to a GrContext using adopt semantics this should not be called.
      */
     virtual void deleteTestingOnlyBackendTexture(const GrBackendTexture&) = 0;
+
+#if GR_TEST_UTILS
+    /** Check a handle represents an actual texture in the backend API that has not been freed. */
+    virtual bool isTestingOnlyBackendTexture(const GrBackendTexture&) const = 0;
 
     virtual GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h,
                                                                        GrColorType) = 0;
@@ -492,8 +498,7 @@ private:
 
     // Queries the effective number of samples in use by the hardware for the given render target,
     // and queries the individual sample locations.
-    virtual void querySampleLocations(
-            GrRenderTarget*, const GrStencilSettings&, SkTArray<SkPoint>*) = 0;
+    virtual void querySampleLocations(GrRenderTarget*, SkTArray<SkPoint>*) = 0;
 
     // Called before certain draws in order to guarantee coherent results from dst reads.
     virtual void xferBarrier(GrRenderTarget*, GrXferBarrierType) = 0;
@@ -530,9 +535,9 @@ private:
                                     GrColorType colorType, GrGpuBuffer* transferBuffer,
                                     size_t offset, size_t rowBytes) = 0;
     // overridden by backend-specific derived class to perform the surface transfer
-    virtual size_t onTransferPixelsFrom(GrSurface*, int left, int top, int width, int height,
-                                        GrColorType colorType, GrGpuBuffer* transferBuffer,
-                                        size_t offset) = 0;
+    virtual bool onTransferPixelsFrom(GrSurface*, int left, int top, int width, int height,
+                                      GrColorType colorType, GrGpuBuffer* transferBuffer,
+                                      size_t offset) = 0;
 
     // overridden by backend-specific derived class to perform the resolve
     virtual void onResolveRenderTarget(GrRenderTarget* target) = 0;
@@ -546,8 +551,8 @@ private:
                                const SkIRect& srcRect, const SkIPoint& dstPoint,
                                bool canDiscardOutsideDstRect) = 0;
 
-    virtual void onFinishFlush(GrSurfaceProxy*, SkSurface::BackendSurfaceAccess access,
-                               SkSurface::FlushFlags flags, bool insertedSemaphores) = 0;
+    virtual void onFinishFlush(GrSurfaceProxy*[], int n, SkSurface::BackendSurfaceAccess access,
+                               const GrFlushInfo&, const GrPrepareForExternalIORequests&) = 0;
 
 #ifdef SK_ENABLE_DUMP_GPU
     virtual void onDumpJSON(SkJSONWriter*) const {}

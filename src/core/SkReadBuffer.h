@@ -8,21 +8,20 @@
 #ifndef SkReadBuffer_DEFINED
 #define SkReadBuffer_DEFINED
 
-#include "SkColorFilter.h"
-#include "SkSerialProcs.h"
-#include "SkDrawLooper.h"
-#include "SkFont.h"
-#include "SkImageFilter.h"
-#include "SkMaskFilterBase.h"
-#include "SkMixerBase.h"
-#include "SkPaintPriv.h"
-#include "SkPath.h"
-#include "SkPathEffect.h"
-#include "SkPicture.h"
-#include "SkReader32.h"
-#include "SkRefCnt.h"
-#include "SkShaderBase.h"
-#include "SkWriteBuffer.h"
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkDrawLooper.h"
+#include "include/core/SkFont.h"
+#include "include/core/SkImageFilter.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPathEffect.h"
+#include "include/core/SkPicture.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSerialProcs.h"
+#include "src/core/SkMaskFilterBase.h"
+#include "src/core/SkPaintPriv.h"
+#include "src/core/SkReader32.h"
+#include "src/core/SkWriteBuffer.h"
+#include "src/shaders/SkShaderBase.h"
 
 class SkData;
 class SkImage;
@@ -128,7 +127,6 @@ public:
     sk_sp<SkMaskFilter> readMaskFilter() { return this->readFlattenable<SkMaskFilterBase>(); }
     sk_sp<SkPathEffect> readPathEffect() { return this->readFlattenable<SkPathEffect>(); }
     sk_sp<SkShader> readShader() { return this->readFlattenable<SkShaderBase>(); }
-    sk_sp<SkMixer> readMixer() { return this->readFlattenable<SkMixerBase>(); }
 
     // Reads SkAlign4(bytes), but will only copy bytes into the buffer.
     bool readPad32(void* buffer, size_t bytes);
@@ -314,7 +312,6 @@ public:
     sk_sp<SkMaskFilter>  readMaskFilter()  { return nullptr; }
     sk_sp<SkPathEffect>  readPathEffect()  { return nullptr; }
     sk_sp<SkShader>      readShader()      { return nullptr; }
-    sk_sp<SkMixer>       readMixer()       { return nullptr; }
 
     bool readPad32       (void*,      size_t) { return false; }
     bool readByteArray   (void*,      size_t) { return false; }

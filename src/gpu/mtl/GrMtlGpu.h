@@ -8,15 +8,15 @@
 #ifndef GrMtlGpu_DEFINED
 #define GrMtlGpu_DEFINED
 
-#include "GrGpu.h"
-#include "GrRenderTarget.h"
-#include "GrSemaphore.h"
-#include "GrTexture.h"
+#include "include/gpu/GrRenderTarget.h"
+#include "include/gpu/GrTexture.h"
+#include "src/gpu/GrGpu.h"
+#include "src/gpu/GrSemaphore.h"
 
-#include "GrMtlCaps.h"
-#include "GrMtlCopyManager.h"
-#include "GrMtlResourceProvider.h"
-#include "GrMtlStencilAttachment.h"
+#include "src/gpu/mtl/GrMtlCaps.h"
+#include "src/gpu/mtl/GrMtlCopyManager.h"
+#include "src/gpu/mtl/GrMtlResourceProvider.h"
+#include "src/gpu/mtl/GrMtlStencilAttachment.h"
 
 #import <Metal/Metal.h>
 
@@ -24,6 +24,7 @@ class GrMtlGpuRTCommandBuffer;
 class GrMtlTexture;
 class GrSemaphore;
 struct GrMtlBackendContext;
+class GrMtlCommandBuffer;
 
 namespace SkSL {
     class Compiler;
@@ -37,8 +38,9 @@ class GrMtlGpu : public GrGpu {
 public:
     static sk_sp<GrGpu> Make(GrContext* context, const GrContextOptions& options,
                              id<MTLDevice> device, id<MTLCommandQueue> queue);
+    ~GrMtlGpu() override;
 
-    ~GrMtlGpu() override = default;
+    void disconnect(DisconnectType) override;
 
     const GrMtlCaps& mtlCaps() const { return *fMtlCaps.get(); }
 
@@ -46,7 +48,7 @@ public:
 
     GrMtlResourceProvider& resourceProvider() { return fResourceProvider; }
 
-    id<MTLCommandBuffer> commandBuffer();
+    GrMtlCommandBuffer* commandBuffer();
 
     enum SyncQueue {
         kForce_SyncQueue,
@@ -58,17 +60,19 @@ public:
     // command buffer to finish before creating a new buffer and returning.
     void submitCommandBuffer(SyncQueue sync);
 
-#if GR_TEST_UTILS
-    GrBackendTexture createTestingOnlyBackendTexture(const void* pixels, int w, int h,
-                                                     GrColorType colorType, bool isRT,
-                                                     GrMipMapped, size_t rowBytes = 0) override;
-
-    bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
+    GrBackendTexture createTestingOnlyBackendTexture(int w, int h,
+                                                     const GrBackendFormat& format,
+                                                     GrMipMapped mipMapped,
+                                                     GrRenderable renderable,
+                                                     const void* pixels = nullptr,
+                                                     size_t rowBytes = 0) override;
 
     void deleteTestingOnlyBackendTexture(const GrBackendTexture&) override;
 
-    GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h, GrColorType) override;
+#if GR_TEST_UTILS
+    bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
 
+    GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h, GrColorType) override;
     void deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget&) override;
 
     void testingOnly_flushGpuAndSync() override;
@@ -114,6 +118,8 @@ public:
                                             GrWrapOwnership ownership) override { return nullptr; }
     void insertSemaphore(sk_sp<GrSemaphore> semaphore) override {}
     void waitSemaphore(sk_sp<GrSemaphore> semaphore) override {}
+    // We currently call finish procs immediately in onFinishFlush().
+    void checkFinishProcs() override {}
     sk_sp<GrSemaphore> prepareTextureForCrossContextUsage(GrTexture*) override { return nullptr; }
 
     // When the Metal backend actually uses indirect command buffers, this function will actually do
@@ -129,10 +135,11 @@ private:
     GrMtlGpu(GrContext* context, const GrContextOptions& options,
              id<MTLDevice> device, id<MTLCommandQueue> queue, MTLFeatureSet featureSet);
 
+    void destroyResources();
+
     void onResetContext(uint32_t resetBits) override {}
 
-    void querySampleLocations(
-            GrRenderTarget*, const GrStencilSettings&, SkTArray<SkPoint>*) override {
+    void querySampleLocations(GrRenderTarget*, SkTArray<SkPoint>*) override {
         SkASSERT(!this->caps()->sampleLocationsSupport());
         SK_ABORT("Sample locations not yet implemented for Metal.");
     }
@@ -169,24 +176,30 @@ private:
         // TODO: not sure this is worth the work since nobody uses it
         return false;
     }
-    size_t onTransferPixelsFrom(GrSurface*,
-                                int left, int top, int width, int height,
-                                GrColorType, GrGpuBuffer*,
-                                size_t offset) override {
+    bool onTransferPixelsFrom(GrSurface*, int left, int top, int width, int height, GrColorType,
+                              GrGpuBuffer*, size_t offset) override {
         // TODO: Will need to implement this to support async read backs.
-        return 0;
+        return false;
     }
 
     bool onRegenerateMipMapLevels(GrTexture*) override;
 
     void onResolveRenderTarget(GrRenderTarget* target) override { return; }
 
-    void onFinishFlush(GrSurfaceProxy*, SkSurface::BackendSurfaceAccess access,
-                       SkSurface::FlushFlags flags, bool insertedSemaphores) override {
-        if (flags & SkSurface::kSyncCpu_FlushFlag) {
+    void onFinishFlush(GrSurfaceProxy*[], int n, SkSurface::BackendSurfaceAccess access,
+                       const GrFlushInfo& info, const GrPrepareForExternalIORequests&) override {
+        if (info.fFlags & kSyncCpu_GrFlushFlag) {
             this->submitCommandBuffer(kForce_SyncQueue);
+            if (info.fFinishedProc) {
+                info.fFinishedProc(info.fFinishedContext);
+            }
         } else {
             this->submitCommandBuffer(kSkip_SyncQueue);
+            // TODO: support finishedProc to actually be called when the GPU is done with the work
+            // and not immediately.
+            if (info.fFinishedProc) {
+                info.fFinishedProc(info.fFinishedContext);
+            }
         }
     }
 
@@ -200,23 +213,25 @@ private:
                                                                 int width,
                                                                 int height) override;
 
-#if GR_TEST_UTILS
-    bool createTestingOnlyMtlTextureInfo(GrColorType colorType, int w, int h, bool texturable,
+    bool createTestingOnlyMtlTextureInfo(GrPixelConfig, MTLPixelFormat,
+                                         int w, int h, bool texturable,
                                          bool renderable, GrMipMapped mipMapped,
                                          const void* srcData, size_t rowBytes,
                                          GrMtlTextureInfo* info);
-#endif
 
     sk_sp<GrMtlCaps> fMtlCaps;
 
     id<MTLDevice> fDevice;
     id<MTLCommandQueue> fQueue;
 
-    id<MTLCommandBuffer> fCmdBuffer;
+    GrMtlCommandBuffer* fCmdBuffer;
 
     std::unique_ptr<SkSL::Compiler> fCompiler;
-    GrMtlCopyManager fCopyManager;
+
+    GrMtlCopyManager      fCopyManager;
     GrMtlResourceProvider fResourceProvider;
+
+    bool fDisconnected;
 
     typedef GrGpu INHERITED;
 };

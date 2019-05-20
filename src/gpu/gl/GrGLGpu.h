@@ -8,21 +8,22 @@
 #ifndef GrGLGpu_DEFINED
 #define GrGLGpu_DEFINED
 
-#include "GrGLContext.h"
-#include "GrGLIRect.h"
-#include "GrGLPathRendering.h"
-#include "GrGLProgram.h"
-#include "GrGLRenderTarget.h"
-#include "GrGLStencilAttachment.h"
-#include "GrGLTexture.h"
-#include "GrGLVertexArray.h"
-#include "GrGpu.h"
-#include "GrMesh.h"
-#include "GrWindowRectsState.h"
-#include "GrXferProcessor.h"
-#include "SkLRUCache.h"
-#include "SkTArray.h"
-#include "SkTypes.h"
+#include <list>
+#include "include/core/SkTypes.h"
+#include "include/private/SkTArray.h"
+#include "src/core/SkLRUCache.h"
+#include "src/gpu/GrGpu.h"
+#include "src/gpu/GrMesh.h"
+#include "src/gpu/GrWindowRectsState.h"
+#include "src/gpu/GrXferProcessor.h"
+#include "src/gpu/gl/GrGLContext.h"
+#include "src/gpu/gl/GrGLIRect.h"
+#include "src/gpu/gl/GrGLPathRendering.h"
+#include "src/gpu/gl/GrGLProgram.h"
+#include "src/gpu/gl/GrGLRenderTarget.h"
+#include "src/gpu/gl/GrGLStencilAttachment.h"
+#include "src/gpu/gl/GrGLTexture.h"
+#include "src/gpu/gl/GrGLVertexArray.h"
 
 class GrGLBuffer;
 class GrGLGpuRTCommandBuffer;
@@ -135,21 +136,21 @@ public:
     GrStencilAttachment* createStencilAttachmentForRenderTarget(const GrRenderTarget* rt,
                                                                 int width,
                                                                 int height) override;
-#if GR_TEST_UTILS
-    GrBackendTexture createTestingOnlyBackendTexture(const void* pixels, int w, int h,
-                                                     GrColorType colorType, bool isRenderTarget,
-                                                     GrMipMapped mipMapped,
+    GrBackendTexture createTestingOnlyBackendTexture(int w, int h, const GrBackendFormat&,
+                                                     GrMipMapped, GrRenderable,
+                                                     const void* pixels = nullptr,
                                                      size_t rowBytes = 0) override;
-    bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
     void deleteTestingOnlyBackendTexture(const GrBackendTexture&) override;
 
-    GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h, GrColorType) override;
+#if GR_TEST_UTILS
+    bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
 
+    GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h, GrColorType) override;
     void deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget&) override;
 
     const GrGLContext* glContextForTesting() const override { return &this->glContext(); }
 
-    void resetShaderCacheForTesting() const override { fProgramCache->abandon(); }
+    void resetShaderCacheForTesting() const override { fProgramCache->reset(); }
 
     void testingOnly_flushGpuAndSync() override;
 #endif
@@ -166,6 +167,8 @@ public:
                                             GrWrapOwnership ownership) override;
     void insertSemaphore(sk_sp<GrSemaphore> semaphore) override;
     void waitSemaphore(sk_sp<GrSemaphore> semaphore) override;
+
+    void checkFinishProcs() override;
 
     sk_sp<GrSemaphore> prepareTextureForCrossContextUsage(GrTexture*) override;
 
@@ -184,8 +187,7 @@ private:
 
     void onResetTextureBindings() override;
 
-    void querySampleLocations(
-            GrRenderTarget*, const GrStencilSettings&, SkTArray<SkPoint>*) override;
+    void querySampleLocations(GrRenderTarget*, SkTArray<SkPoint>*) override;
 
     void xferBarrier(GrRenderTarget*, GrXferBarrierType) override;
 
@@ -239,10 +241,10 @@ private:
 
     bool onTransferPixelsTo(GrTexture*, int left, int top, int width, int height, GrColorType,
                             GrGpuBuffer* transferBuffer, size_t offset, size_t rowBytes) override;
-    size_t onTransferPixelsFrom(GrSurface*, int left, int top, int width, int height, GrColorType,
-                                GrGpuBuffer* transferBuffer, size_t offset) override;
+    bool onTransferPixelsFrom(GrSurface*, int left, int top, int width, int height, GrColorType,
+                              GrGpuBuffer* transferBuffer, size_t offset) override;
     bool readOrTransferPixelsFrom(GrSurface*, int left, int top, int width, int height, GrColorType,
-                                  void* offsetOrPtr, size_t rowBytes);
+                                  void* offsetOrPtr, int rowWidthInPixels);
 
     // Before calling any variation of TexImage, TexSubImage, etc..., call this to ensure that the
     // PIXEL_UNPACK_BUFFER is unbound.
@@ -293,8 +295,10 @@ private:
 
     void flushBlend(const GrXferProcessor::BlendInfo& blendInfo, const GrSwizzle&);
 
-    void onFinishFlush(GrSurfaceProxy*, SkSurface::BackendSurfaceAccess access,
-                       SkSurface::FlushFlags flags, bool insertedSemaphores) override;
+    void onFinishFlush(GrSurfaceProxy*[], int n, SkSurface::BackendSurfaceAccess access,
+                       const GrFlushInfo&, const GrPrepareForExternalIORequests&) override;
+
+    bool waitSync(GrGLsync, uint64_t timeout, bool flush);
 
     bool copySurfaceAsDraw(GrSurface* dst, GrSurfaceOrigin dstOrigin,
                            GrSurface* src, GrSurfaceOrigin srcOrigin,
@@ -314,6 +318,7 @@ private:
         ~ProgramCache();
 
         void abandon();
+        void reset();
         GrGLProgram* refProgram(GrGLGpu*, GrRenderTarget*, GrSurfaceOrigin,
                                 const GrPrimitiveProcessor&,
                                 const GrTextureProxy* const primProcProxies[],
@@ -380,7 +385,7 @@ private:
     // Need not be called if flushRenderTarget is used.
     void flushViewport(const GrGLIRect&);
 
-    void flushStencil(const GrStencilSettings&);
+    void flushStencil(const GrStencilSettings&, GrSurfaceOrigin);
     void disableStencil();
 
     // rt is used only if useHWAA is true.
@@ -599,6 +604,7 @@ private:
     TriState                                fMSAAEnabled;
 
     GrStencilSettings                       fHWStencilSettings;
+    GrSurfaceOrigin                         fHWStencilOrigin;
     TriState                                fHWStencilTestEnabled;
 
 
@@ -664,6 +670,12 @@ private:
     std::unique_ptr<GrGLGpuRTCommandBuffer>      fCachedRTCommandBuffer;
     std::unique_ptr<GrGLGpuTextureCommandBuffer> fCachedTexCommandBuffer;
 
+    struct FinishCallback {
+        GrGpuFinishedProc fCallback;
+        GrGpuFinishedContext fContext;
+        GrGLsync fSync;
+    };
+    std::list<FinishCallback> fFinishCallbacks;
     friend class GrGLPathRendering; // For accessing setTextureUnit.
 
     typedef GrGpu INHERITED;

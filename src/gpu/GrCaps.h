@@ -8,13 +8,13 @@
 #ifndef GrCaps_DEFINED
 #define GrCaps_DEFINED
 
-#include "../private/GrTypesPriv.h"
-#include "GrBlend.h"
-#include "GrDriverBugWorkarounds.h"
-#include "GrShaderCaps.h"
-#include "SkImageInfo.h"
-#include "SkRefCnt.h"
-#include "SkString.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkString.h"
+#include "include/gpu/GrBlend.h"
+#include "include/gpu/GrDriverBugWorkarounds.h"
+#include "include/private/GrTypesPriv.h"
+#include "src/gpu/GrShaderCaps.h"
 
 class GrBackendFormat;
 class GrBackendRenderTarget;
@@ -114,11 +114,13 @@ public:
      * textures allows partial mappings or full mappings.
      */
     enum MapFlags {
-        kNone_MapFlags   = 0x0,       //<! Cannot map the resource.
+        kNone_MapFlags      = 0x0,   //<! Cannot map the resource.
 
-        kCanMap_MapFlag  = 0x1,       //<! The resource can be mapped. Must be set for any of
-                                      //   the other flags to have meaning.
-        kSubset_MapFlag  = 0x2,       //<! The resource can be partially mapped.
+        kCanMap_MapFlag     = 0x1,   //<! The resource can be mapped. Must be set for any of
+                                     //   the other flags to have meaning.
+        kSubset_MapFlag     = 0x2,   //<! The resource can be partially mapped.
+        kAsyncRead_MapFlag  = 0x4,   //<! Are maps for reading asynchronous WRT GrGpuCommandBuffers
+                                     //   submitted to GrGpu.
     };
 
     uint32_t mapBufferFlags() const { return fMapBufferFlags; }
@@ -224,21 +226,16 @@ public:
     bool transferBufferSupport() const { return fTransferBufferSupport; }
 
     /**
-     * Gets the requirements to use GrGpu::transferPixelsFrom for a given GrColorType. To check
-     * whether a pixels as GrColorType can be read for a given surface see
-     * supportedReadPixelsColorType() and surfaceSupportsReadPixels().
+     * Gets the alignment requirement for the buffer offset used with GrGpu::transferPixelsFrom for
+     * a given GrColorType. To check whether a pixels as GrColorType can be read for a given surface
+     * see supportedReadPixelsColorType() and surfaceSupportsReadPixels().
      *
      * @param bufferColorType The color type of the pixel data that will be stored in the transfer
      *                        buffer.
-     * @param width  The number of color values per row that will be stored in the buffer.
-     * @param rowBytes The number of bytes per row that will be used in the transfer buffer.
-     * @param alignment The required alignment of the offset into the transfer buffer passed
-     *                         to GrGpu::transferPixelsFrom.
-     * @return true if transferPixelFrom is supported, false otherwise. If false then rowBytes and
-     * alignment are not updated.
+     * @return minimum required alignment for the buffer offset or zero if reading to the color type
+     *         is not supported.
      */
-    bool transferFromBufferRequirements(GrColorType bufferColorType, int width, size_t* rowBytes,
-                                        size_t* offsetAlignment) const;
+    size_t transferFromOffsetAlignment(GrColorType bufferColorType) const;
 
     bool suppressPrints() const { return fSuppressPrints; }
 
@@ -266,7 +263,12 @@ public:
 
     bool wireframeMode() const { return fWireframeMode; }
 
+    /** Supports using GrFence. */
     bool fenceSyncSupport() const { return fFenceSyncSupport; }
+
+    /** Supports using GrSemaphore. */
+    bool semaphoreSupport() const { return fSemaphoreSupport; }
+
     bool crossContextTextureSupport() const { return fCrossContextTextureSupport; }
     /**
      * Returns whether or not we will be able to do a copy given the passed in params
@@ -344,6 +346,18 @@ public:
      */
     bool clampToBorderSupport() const { return fClampToBorderSupport; }
 
+    /**
+     * Returns the GrSwizzle to use when sampling from a texture with the passed in GrBackendFormat
+     * and GrColorType.
+     */
+    virtual GrSwizzle getTextureSwizzle(const GrBackendFormat&, GrColorType) const = 0;
+
+    /**
+     * Returns the GrSwizzle to use when outputting to a render target with the passed in
+     * GrBackendFormat and GrColorType.
+     */
+    virtual GrSwizzle getOutputSwizzle(const GrBackendFormat&, GrColorType) const = 0;
+
     const GrDriverBugWorkarounds& workarounds() const { return fDriverBugWorkarounds; }
 
 protected:
@@ -394,8 +408,8 @@ protected:
     // On some platforms it's better to make more triangles than to use the sample mask (MSAA only).
     bool fPreferTrianglesOverSampleMask              : 1;
 
-    // TODO: this may need to be an enum to support different fence types
     bool fFenceSyncSupport                           : 1;
+    bool fSemaphoreSupport                           : 1;
 
     // Requires fence sync support in GL.
     bool fCrossContextTextureSupport                 : 1;
@@ -426,8 +440,7 @@ private:
     virtual bool onSurfaceSupportsWritePixels(const GrSurface*) const = 0;
     virtual bool onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
                                   const SkIRect& srcRect, const SkIPoint& dstPoint) const = 0;
-    virtual bool onTransferFromBufferRequirements(GrColorType bufferColorType, int width,
-                                                  size_t* rowBytes, size_t* offsetAlignment) const;
+    virtual size_t onTransferFromOffsetAlignment(GrColorType bufferColorType) const = 0;
 
     // Backends should implement this if they have any extra requirements for use of window
     // rectangles for a specific GrBackendRenderTarget outside of basic support.

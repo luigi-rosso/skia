@@ -8,7 +8,7 @@
 #ifndef TestEmptyTypeface_DEFINED
 #define TestEmptyTypeface_DEFINED
 
-#include "SkTypeface.h"
+#include "include/core/SkTypeface.h"
 
 class TestEmptyTypeface : public SkTypeface {
 public:
@@ -30,16 +30,12 @@ protected:
         return nullptr;
     }
     void        onGetFontDescriptor(SkFontDescriptor*, bool*) const override {}
-    virtual int onCharsToGlyphs(const void* chars,
-                                Encoding    encoding,
-                                uint16_t    glyphs[],
-                                int         glyphCount) const override {
-        if (glyphs && glyphCount > 0) {
-            sk_bzero(glyphs, glyphCount * sizeof(glyphs[0]));
-        }
-        return 0;
+    void onCharsToGlyphs(const SkUnichar* chars, int count, SkGlyphID glyphs[]) const override {
+        sk_bzero(glyphs, count * sizeof(glyphs[0]));
     }
     int onCountGlyphs() const override { return 0; }
+    void getPostScriptGlyphNames(SkString*) const override {}
+    void getGlyphToUnicodeMap(SkUnichar*) const override {}
     int onGetUPEM() const override { return 0; }
     class EmptyLocalizedStrings : public SkTypeface::LocalizedStrings {
     public:

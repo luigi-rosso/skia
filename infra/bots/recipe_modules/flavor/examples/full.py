@@ -5,6 +5,7 @@
 
 DEPS = [
   'flavor',
+  'recipe_engine/platform',
   'recipe_engine/properties',
   'recipe_engine/raw_io',
   'run',
@@ -72,6 +73,7 @@ TEST_BUILDERS = [
   'Perf-Chromecast-Clang-Chorizo-CPU-Cortex_A7-arm-Release-All',
   'Perf-Debian9-Clang-GCE-CPU-AVX2-x86_64-Debug-All-MSAN',
   'Perf-Debian9-Clang-GCE-CPU-AVX2-x86_64-Release-All-ASAN',
+  'Perf-Win2016-Clang-GCE-CPU-AVX2-x86_64-Debug-All-UBSAN',
   'Test-Android-Clang-AndroidOne-GPU-Mali400MP2-arm-Release-All-Android',
   'Test-Android-Clang-GalaxyS7_G930FD-GPU-MaliT880-arm64-Debug-All-Android',
   'Test-Android-Clang-Nexus5x-GPU-Adreno418-arm64-Debug-All-Android',
@@ -87,6 +89,7 @@ TEST_BUILDERS = [
   ('Test-Ubuntu17-GCC-Golo-GPU-QuadroP400-x86_64-Release-All'
    '-Valgrind_AbandonGpuContext_SK_CPU_LIMIT_SSE41'),
   'Test-Win10-Clang-Golo-GPU-QuadroP400-x86_64-Release-All-Vulkan_ProcDump',
+  'Test-Win10-MSVC-LenovoYogaC630-GPU-Adreno630-arm64-Debug-All-ANGLE',
 ]
 
 # Default properties used for TEST_BUILDERS.
@@ -105,10 +108,8 @@ def GenTests(api):
       api.test(buildername) +
       api.properties(**defaultProps(buildername))
     )
-    if 'Chromebook' in buildername and not 'Build' in buildername:
-      test += api.step_data(
-          'read chromeos ip',
-          stdout=api.raw_io.output('{"user_ip":"foo@127.0.0.1"}'))
+    if 'Win' in buildername and not 'LenovoYogaC630' in buildername:
+      test += api.platform('win', 64)
     if 'Chromecast' in buildername:
       test += api.step_data(
           'read chromecast ip',

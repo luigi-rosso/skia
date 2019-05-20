@@ -8,11 +8,11 @@
 #ifndef GrMockGpu_DEFINED
 #define GrMockGpu_DEFINED
 
-#include "GrGpu.h"
-#include "GrRenderTarget.h"
-#include "GrSemaphore.h"
-#include "GrTexture.h"
-#include "SkTHash.h"
+#include "include/gpu/GrRenderTarget.h"
+#include "include/gpu/GrTexture.h"
+#include "include/private/SkTHash.h"
+#include "src/gpu/GrGpu.h"
+#include "src/gpu/GrSemaphore.h"
 
 class GrMockGpuRTCommandBuffer;
 struct GrMockOptions;
@@ -47,6 +47,8 @@ public:
 
     void submit(GrGpuCommandBuffer* buffer) override;
 
+    void checkFinishProcs() override {}
+
 private:
     GrMockGpu(GrContext* context, const GrMockOptions&, const GrContextOptions&);
 
@@ -54,8 +56,7 @@ private:
 
     void onResetContext(uint32_t resetBits) override {}
 
-    void querySampleLocations(
-            GrRenderTarget*, const GrStencilSettings&, SkTArray<SkPoint>*) override {
+    void querySampleLocations(GrRenderTarget*, SkTArray<SkPoint>*) override {
         SkASSERT(!this->caps()->sampleLocationsSupport());
         SK_ABORT("Sample locations not implemented for mock GPU.");
     }
@@ -96,8 +97,8 @@ private:
                             size_t rowBytes) override {
         return true;
     }
-    size_t onTransferPixelsFrom(GrSurface* surface, int left, int top, int width, int height,
-                                GrColorType, GrGpuBuffer* transferBuffer, size_t offset) override {
+    bool onTransferPixelsFrom(GrSurface* surface, int left, int top, int width, int height,
+                              GrColorType, GrGpuBuffer* transferBuffer, size_t offset) override {
         return true;
     }
     bool onCopySurface(GrSurface* dst, GrSurfaceOrigin dstOrigin, GrSurface* src,
@@ -110,18 +111,24 @@ private:
 
     void onResolveRenderTarget(GrRenderTarget* target) override { return; }
 
-    void onFinishFlush(GrSurfaceProxy*, SkSurface::BackendSurfaceAccess access,
-                       SkSurface::FlushFlags flags, bool insertedSemaphores) override {}
+    void onFinishFlush(GrSurfaceProxy*[], int n, SkSurface::BackendSurfaceAccess access,
+                       const GrFlushInfo& info, const GrPrepareForExternalIORequests&) override {
+        if (info.fFinishedProc) {
+            info.fFinishedProc(info.fFinishedContext);
+        }
+    }
 
     GrStencilAttachment* createStencilAttachmentForRenderTarget(const GrRenderTarget*,
                                                                 int width,
                                                                 int height) override;
-#if GR_TEST_UTILS
-    GrBackendTexture createTestingOnlyBackendTexture(const void* pixels, int w, int h,
-                                                     GrColorType, bool isRT,
-                                                     GrMipMapped, size_t rowBytes = 0) override;
-    bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
+    GrBackendTexture createTestingOnlyBackendTexture(int w, int h, const GrBackendFormat&,
+                                                     GrMipMapped, GrRenderable,
+                                                     const void* pixels = nullptr,
+                                                     size_t rowBytes = 0) override;
     void deleteTestingOnlyBackendTexture(const GrBackendTexture&) override;
+
+#if GR_TEST_UTILS
+    bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
 
     GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h, GrColorType) override;
     void deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget&) override;

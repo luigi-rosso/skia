@@ -8,17 +8,17 @@
 #ifndef GrVkGpu_DEFINED
 #define GrVkGpu_DEFINED
 
-#include "GrGpu.h"
-#include "GrVkCaps.h"
-#include "GrVkCopyManager.h"
-#include "GrVkIndexBuffer.h"
-#include "GrVkMemory.h"
-#include "GrVkResourceProvider.h"
-#include "GrVkSemaphore.h"
-#include "GrVkVertexBuffer.h"
-#include "GrVkUtil.h"
-#include "vk/GrVkBackendContext.h"
-#include "vk/GrVkTypes.h"
+#include "include/gpu/vk/GrVkBackendContext.h"
+#include "include/gpu/vk/GrVkTypes.h"
+#include "src/gpu/GrGpu.h"
+#include "src/gpu/vk/GrVkCaps.h"
+#include "src/gpu/vk/GrVkCopyManager.h"
+#include "src/gpu/vk/GrVkIndexBuffer.h"
+#include "src/gpu/vk/GrVkMemory.h"
+#include "src/gpu/vk/GrVkResourceProvider.h"
+#include "src/gpu/vk/GrVkSemaphore.h"
+#include "src/gpu/vk/GrVkUtil.h"
+#include "src/gpu/vk/GrVkVertexBuffer.h"
 
 class GrPipeline;
 
@@ -73,25 +73,29 @@ public:
         kSkip_SyncQueue
     };
 
-    void querySampleLocations(
-            GrRenderTarget*, const GrStencilSettings&, SkTArray<SkPoint>*) override {
+    void querySampleLocations(GrRenderTarget*, SkTArray<SkPoint>*) override {
         SkASSERT(!this->caps()->sampleLocationsSupport());
         SK_ABORT("Sample locations not yet implemented for Vulkan.");
     }
 
     void xferBarrier(GrRenderTarget*, GrXferBarrierType) override {}
 
-#if GR_TEST_UTILS
-    GrBackendTexture createTestingOnlyBackendTexture(const void* pixels, int w, int h,
-                                                     GrColorType colorType, bool isRenderTarget,
-                                                     GrMipMapped, size_t rowBytes = 0) override;
-    bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
+    GrBackendTexture createTestingOnlyBackendTexture(int w, int h, const GrBackendFormat&,
+                                                     GrMipMapped, GrRenderable,
+                                                     const void* pixels = nullptr,
+                                                     size_t rowBytes = 0) override;
     void deleteTestingOnlyBackendTexture(const GrBackendTexture&) override;
+#if GR_TEST_UTILS
+    bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
 
     GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h, GrColorType) override;
     void deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget&) override;
 
     void testingOnly_flushGpuAndSync() override;
+
+    void resetShaderCacheForTesting() const override {
+        fResourceProvider.resetShaderCacheForTesting();
+    }
 #endif
 
     GrStencilAttachment* createStencilAttachmentForRenderTarget(const GrRenderTarget*,
@@ -161,6 +165,8 @@ public:
     // command buffer to the gpu.
     void addDrawable(std::unique_ptr<SkDrawable::GpuDrawHandler> drawable);
 
+    void checkFinishProcs() override { fResourceProvider.checkCommandBuffers(); }
+
     sk_sp<GrSemaphore> prepareTextureForCrossContextUsage(GrTexture*) override;
 
     void copyBuffer(GrVkBuffer* srcBuffer, GrVkBuffer* dstBuffer, VkDeviceSize srcOffset,
@@ -213,18 +219,15 @@ private:
 
     bool onTransferPixelsTo(GrTexture*, int left, int top, int width, int height, GrColorType,
                             GrGpuBuffer* transferBuffer, size_t offset, size_t rowBytes) override;
-    // TODO(bsalomon)
-    size_t onTransferPixelsFrom(GrSurface* surface, int left, int top, int width, int height,
-                                GrColorType, GrGpuBuffer* transferBuffer, size_t offset) override {
-        return 0;
-    }
+    bool onTransferPixelsFrom(GrSurface* surface, int left, int top, int width, int height,
+                              GrColorType, GrGpuBuffer* transferBuffer, size_t offset) override;
 
     bool onCopySurface(GrSurface* dst, GrSurfaceOrigin dstOrigin, GrSurface* src,
                        GrSurfaceOrigin srcOrigin, const SkIRect& srcRect,
                        const SkIPoint& dstPoint, bool canDiscardOutsideDstRect) override;
 
-    void onFinishFlush(GrSurfaceProxy*, SkSurface::BackendSurfaceAccess access,
-                       SkSurface::FlushFlags flags, bool insertedSemaphores) override;
+    void onFinishFlush(GrSurfaceProxy*[], int, SkSurface::BackendSurfaceAccess access,
+                       const GrFlushInfo&, const GrPrepareForExternalIORequests&) override;
 
     // Ends and submits the current command buffer to the queue and then creates a new command
     // buffer and begins it. If sync is set to kForce_SyncQueue, the function will wait for all
@@ -232,7 +235,8 @@ private:
     // fSemaphoreToSignal, we will add those signal semaphores to the submission of this command
     // buffer. If this GrVkGpu object has any semaphores in fSemaphoresToWaitOn, we will add those
     // wait semaphores to the submission of this command buffer.
-    void submitCommandBuffer(SyncQueue sync);
+    void submitCommandBuffer(SyncQueue sync, GrGpuFinishedProc finishedProc = nullptr,
+                             GrGpuFinishedContext finishedContext = nullptr);
 
     void internalResolveRenderTarget(GrRenderTarget*, bool requiresSubmit);
 
@@ -264,11 +268,9 @@ private:
     void resolveImage(GrSurface* dst, GrVkRenderTarget* src, const SkIRect& srcRect,
                       const SkIPoint& dstPoint);
 
-#if GR_TEST_UTILS
     bool createTestingOnlyVkImage(GrPixelConfig config, int w, int h, bool texturable,
                                   bool renderable, GrMipMapped mipMapped, const void* srcData,
                                   size_t srcRowBytes, GrVkImageInfo* info);
-#endif
 
     sk_sp<const GrVkInterface>                            fInterface;
     sk_sp<GrVkMemoryAllocator>                            fMemoryAllocator;

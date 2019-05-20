@@ -9,8 +9,8 @@
 #ifndef GrGLTypes_DEFINED
 #define GrGLTypes_DEFINED
 
-#include "GrGLConfig.h"
-#include "SkRefCnt.h"
+#include "include/core/SkRefCnt.h"
+#include "include/gpu/gl/GrGLConfig.h"
 
 /**
  * Classifies GL contexts by which standard they implement (currently as OpenGL vs. OpenGL ES).
@@ -68,6 +68,7 @@ typedef unsigned char GrGLubyte;
 typedef unsigned short GrGLushort;
 typedef unsigned int GrGLuint;
 typedef uint64_t GrGLuint64;
+typedef unsigned short int GrGLhalf;
 typedef float GrGLfloat;
 typedef float GrGLclampf;
 typedef double GrGLdouble;

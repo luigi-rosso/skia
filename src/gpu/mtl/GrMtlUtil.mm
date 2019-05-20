@@ -5,14 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "GrMtlUtil.h"
+#include "src/gpu/mtl/GrMtlUtil.h"
 
-#include "GrTypesPriv.h"
-#include "GrSurface.h"
-#include "mtl/GrMtlGpu.h"
-#include "mtl/GrMtlTexture.h"
-#include "mtl/GrMtlRenderTarget.h"
-#include "SkSLCompiler.h"
+#include "include/gpu/GrSurface.h"
+#include "include/private/GrTypesPriv.h"
+#include "src/gpu/mtl/GrMtlGpu.h"
+#include "src/gpu/mtl/GrMtlRenderTarget.h"
+#include "src/gpu/mtl/GrMtlTexture.h"
+#include "src/sksl/SkSLCompiler.h"
 
 #import <Metal/Metal.h>
 
@@ -37,8 +37,8 @@ bool GrPixelConfigToMTLFormat(GrPixelConfig config, MTLPixelFormat* format) {
             *format = MTLPixelFormatRGBA8Unorm;
             return true;
         case kRG_88_GrPixelConfig:
-            // TODO: MTLPixelFormatRG8Unorm
-            return false;
+            *format = MTLPixelFormatRG8Unorm;
+            return true;
         case kBGRA_8888_GrPixelConfig:
             *format = MTLPixelFormatBGRA8Unorm;
             return true;

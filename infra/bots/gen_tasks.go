@@ -32,7 +32,6 @@ import (
 const (
 	BUNDLE_RECIPES_NAME        = "Housekeeper-PerCommit-BundleRecipes"
 	ISOLATE_GCLOUD_LINUX_NAME  = "Housekeeper-PerCommit-IsolateGCloudLinux"
-	ISOLATE_GO_DEPS_NAME       = "Housekeeper-PerCommit-IsolateGoDeps"
 	ISOLATE_SKIMAGE_NAME       = "Housekeeper-PerCommit-IsolateSkImage"
 	ISOLATE_SKP_NAME           = "Housekeeper-PerCommit-IsolateSKP"
 	ISOLATE_SVG_NAME           = "Housekeeper-PerCommit-IsolateSVG"
@@ -127,6 +126,10 @@ var (
 		&specs.Cache{
 			Name: "go_cache",
 			Path: "cache/go_cache",
+		},
+		&specs.Cache{
+			Name: "gopath",
+			Path: "cache/gopath",
 		},
 	}
 	CACHES_WORKDIR = []*specs.Cache{
@@ -258,7 +261,7 @@ func kitchenTask(name, recipe, isolate, serviceAccount string, dimensions []stri
 		serviceAccount = alternateServiceAccount(serviceAccount)
 	}
 	cipd := append([]*specs.CipdPackage{}, CIPD_PKGS_KITCHEN...)
-	if strings.Contains(name, "Win") {
+	if strings.Contains(name, "Win") && !strings.Contains(name, "LenovoYogaC630") {
 		cipd = append(cipd, CIPD_PKGS_CPYTHON...)
 	}
 	properties := map[string]string{
@@ -452,7 +455,7 @@ func defaultSwarmDimensions(parts map[string]string) []string {
 			"Mac10.14":   "Mac-10.14.3",
 			"Ubuntu18":   "Ubuntu-18.04",
 			"Win":        DEFAULT_OS_WIN,
-			"Win10":      "Windows-10-17763.379",
+			"Win10":      "Windows-10-17763.437",
 			"Win2016":    DEFAULT_OS_WIN,
 			"Win7":       "Windows-7-SP1",
 			"Win8":       "Windows-8.1-SP0",
@@ -541,6 +544,9 @@ func defaultSwarmDimensions(parts map[string]string) []string {
 				"AVX512": {
 					"GCE": "x86-64-Skylake_GCE",
 				},
+				"Snapdragon850": {
+					"LenovoYogaC630": "arm64-64-Snapdragon850",
+				},
 			}[parts["cpu_or_gpu_value"]]
 			if !ok {
 				glog.Fatalf("Entry %q not found in CPU mapping.", parts["cpu_or_gpu_value"])
@@ -563,6 +569,8 @@ func defaultSwarmDimensions(parts map[string]string) []string {
 				return dockerGceDimensions()
 			} else if strings.Contains(parts["os"], "Win") {
 				gpu, ok := map[string]string{
+					// At some point this might use the device ID, but for now it's like Chromebooks.
+					"Adreno630":     "Adreno630",
 					"GT610":         "10de:104a-23.21.13.9101",
 					"GTX660":        "10de:11c0-25.21.14.1634",
 					"GTX960":        "10de:1401-25.21.14.1634",
@@ -703,10 +711,6 @@ var ISOLATE_ASSET_MAPPING = map[string]isolateAssetCfg{
 		cipdPkg: "gcloud_linux",
 		path:    "gcloud_linux",
 	},
-	ISOLATE_GO_DEPS_NAME: {
-		cipdPkg: "go_deps",
-		path:    "go_deps",
-	},
 	ISOLATE_SKIMAGE_NAME: {
 		cipdPkg: "skimage",
 		path:    "skimage",
@@ -782,11 +786,9 @@ func usesGit(t *specs.TaskSpec, name string) {
 
 // usesGo adds attributes to tasks which use go. Recipes should use
 // "with api.context(env=api.infra.go_env)".
-// (Not needed for tasks that just want to run Go code from the infra repo -- instead use go_deps.)
 func usesGo(b *specs.TasksCfgBuilder, t *specs.TaskSpec) {
 	t.Caches = append(t.Caches, CACHES_GO...)
 	t.CipdPackages = append(t.CipdPackages, b.MustGetCipdPackageFromAsset("go"))
-	t.Dependencies = append(t.Dependencies, isolateCIPDAsset(b, ISOLATE_GO_DEPS_NAME))
 }
 
 // usesDocker adds attributes to tasks which use docker.
@@ -932,18 +934,6 @@ func recreateSKPs(b *specs.TasksCfgBuilder, name string) string {
 	task.CipdPackages = append(task.CipdPackages, CIPD_PKGS_GIT...)
 	usesGo(b, task)
 	timeout(task, 4*time.Hour)
-	b.MustAddTask(name, task)
-	return name
-}
-
-// updateGoDEPS generates an UpdateGoDEPS task. Returns the name of the last
-// task in the generated chain of tasks, which the Job should add as a
-// dependency.
-func updateGoDEPS(b *specs.TasksCfgBuilder, name string) string {
-	dims := linuxGceDimensions(MACHINE_TYPE_LARGE)
-	task := kitchenTask(name, "update_go_deps", "swarm_recipe.isolate", SERVICE_ACCOUNT_UPDATE_GO_DEPS, dims, nil, OUTPUT_NONE)
-	task.CipdPackages = append(task.CipdPackages, CIPD_PKGS_GIT...)
-	usesGo(b, task)
 	b.MustAddTask(name, task)
 	return name
 }
@@ -1274,11 +1264,6 @@ func process(b *specs.TasksCfgBuilder, name string) {
 		deps = append(deps, recreateSKPs(b, name))
 	}
 
-	// Update Go DEPS.
-	if strings.Contains(name, "UpdateGoDEPS") {
-		deps = append(deps, updateGoDEPS(b, name))
-	}
-
 	// Infra tests.
 	if name == "Housekeeper-PerCommit-InfraTests" {
 		deps = append(deps, infra(b, name))
@@ -1308,7 +1293,6 @@ func process(b *specs.TasksCfgBuilder, name string) {
 
 	// These bots do not need a compile task.
 	if parts["role"] != "Build" &&
-		name != "Housekeeper-Nightly-UpdateGoDEPS" &&
 		name != "Housekeeper-PerCommit-BundleRecipes" &&
 		name != "Housekeeper-PerCommit-InfraTests" &&
 		name != "Housekeeper-PerCommit-CheckGeneratedFiles" &&

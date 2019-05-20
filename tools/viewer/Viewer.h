@@ -8,20 +8,24 @@
 #ifndef Viewer_DEFINED
 #define Viewer_DEFINED
 
-#include "AnimTimer.h"
-#include "ImGuiLayer.h"
-#include "SkExecutor.h"
-#include "SkFont.h"
-#include "SkScan.h"
-#include "Slide.h"
-#include "StatsLayer.h"
-#include "TouchGesture.h"
-#include "gm.h"
-#include "sk_app/Application.h"
-#include "sk_app/CommandSet.h"
-#include "sk_app/Window.h"
+#include "gm/gm.h"
+#include "include/core/SkExecutor.h"
+#include "include/core/SkFont.h"
+#include "src/core/SkScan.h"
+#include "src/sksl/SkSLString.h"
+#include "src/sksl/ir/SkSLProgram.h"
+#include "tools/gpu/MemoryCache.h"
+#include "tools/sk_app/Application.h"
+#include "tools/sk_app/CommandSet.h"
+#include "tools/sk_app/Window.h"
+#include "tools/timer/AnimTimer.h"
+#include "tools/viewer/ImGuiLayer.h"
+#include "tools/viewer/Slide.h"
+#include "tools/viewer/StatsLayer.h"
+#include "tools/viewer/TouchGesture.h"
 
 class SkCanvas;
+class SkData;
 
 class Viewer : public sk_app::Application, sk_app::Window::Layer {
 public:
@@ -183,7 +187,20 @@ private:
     SkFont fFont;
     SkFontFields fFontOverrides;
     bool fPixelGeometryOverrides = false;
-};
 
+    struct CachedGLSL {
+        bool                fHovered = false;
+
+        sk_sp<const SkData> fKey;
+        SkString            fKeyString;
+
+        SkFourByteTag         fShaderType;
+        SkSL::String          fShader[kGrShaderTypeCount];
+        SkSL::Program::Inputs fInputs[kGrShaderTypeCount];
+    };
+
+    sk_gpu_test::MemoryCache fPersistentCache;
+    SkTArray<CachedGLSL>     fCachedGLSL;
+};
 
 #endif

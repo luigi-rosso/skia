@@ -5,19 +5,19 @@
  * found in the LICENSE file.
  */
 
-#include "SkDraw.h"
-#include "SkFontPriv.h"
-#include "SkPaint.h"
-#include "SkPaintDefaults.h"
-#include "SkPath.h"
-#include "SkScalerContext.h"
-#include "SkStrike.h"
-#include "SkStrikeCache.h"
-#include "SkTo.h"
-#include "SkTLazy.h"
-#include "SkTypeface.h"
-#include "SkUTF.h"
-#include "SkUtils.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkTypeface.h"
+#include "include/private/SkTo.h"
+#include "src/core/SkDraw.h"
+#include "src/core/SkFontPriv.h"
+#include "src/core/SkPaintDefaults.h"
+#include "src/core/SkScalerContext.h"
+#include "src/core/SkStrike.h"
+#include "src/core/SkStrikeCache.h"
+#include "src/core/SkTLazy.h"
+#include "src/core/SkUtils.h"
+#include "src/utils/SkUTF.h"
 
 #define kDefault_Size       SkPaintDefaults_TextSize
 #define kDefault_Flags      0
@@ -113,19 +113,15 @@ SkFont SkFont::makeWithSize(SkScalar newSize) const {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 SkScalar SkFont::setupForAsPaths(SkPaint* paint) {
-    constexpr uint32_t flagsToIgnore = kLinearMetrics_PrivFlag        |
-                                       kEmbeddedBitmaps_PrivFlag      |
+    constexpr uint32_t flagsToIgnore = kEmbeddedBitmaps_PrivFlag |
                                        kForceAutoHinting_PrivFlag;
 
     fFlags = (fFlags & ~flagsToIgnore) | kSubpixel_PrivFlag;
-    this->setHinting(kNo_SkFontHinting);
+    this->setHinting(SkFontHinting::kNone);
 
     if (this->getEdging() == Edging::kSubpixelAntiAlias) {
         this->setEdging(Edging::kAntiAlias);
     }
-
-    // The sub-pixel position will always happen when transforming to the screen.
-    this->setSubpixel(false);
 
     if (paint) {
         paint->setStyle(SkPaint::kFill_Style);
@@ -148,9 +144,7 @@ public:
         if (paint) {
             fPaint = *paint;
         }
-        if (font.isLinearMetrics() ||
-            SkDraw::ShouldDrawTextAsPaths(font, fPaint, SkMatrix::I()))
-        {
+        if (SkDraw::ShouldDrawTextAsPaths(font, fPaint, SkMatrix::I())) {
             SkFont* f = fLazyFont.set(font);
             fScale = f->setupForAsPaths(nullptr);
             fFont = f;
@@ -173,6 +167,46 @@ SkGlyphID SkFont::unicharToGlyph(SkUnichar uni) const {
     return this->getTypefaceOrDefault()->unicharToGlyph(uni);
 }
 
+void SkFont::unicharsToGlyphs(const SkUnichar uni[], int count, SkGlyphID glyphs[]) const {
+    this->getTypefaceOrDefault()->unicharsToGlyphs(uni, count, glyphs);
+}
+
+class SkConvertToUTF32 {
+public:
+    SkConvertToUTF32() {}
+
+    const SkUnichar* convert(const void* text, size_t byteLength, SkTextEncoding encoding) {
+        const SkUnichar* uni;
+        switch (encoding) {
+            case SkTextEncoding::kUTF8: {
+                uni = fStorage.reset(byteLength);
+                const char* ptr = (const char*)text;
+                const char* end = ptr + byteLength;
+                for (int i = 0; ptr < end; ++i) {
+                    fStorage[i] = SkUTF::NextUTF8(&ptr, end);
+                }
+            } break;
+            case SkTextEncoding::kUTF16: {
+                uni = fStorage.reset(byteLength);
+                const uint16_t* ptr = (const uint16_t*)text;
+                const uint16_t* end = ptr + (byteLength >> 1);
+                for (int i = 0; ptr < end; ++i) {
+                    fStorage[i] = SkUTF::NextUTF16(&ptr, end);
+                }
+            } break;
+            case SkTextEncoding::kUTF32:
+                uni = (const SkUnichar*)text;
+                break;
+            default:
+                SK_ABORT("unexpected enum");
+        }
+        return uni;
+    }
+
+private:
+    SkAutoSTMalloc<256, SkUnichar> fStorage;
+};
+
 int SkFont::textToGlyphs(const void* text, size_t byteLength, SkTextEncoding encoding,
                          SkGlyphID glyphs[], int maxGlyphCount) const {
     if (0 == byteLength) {
@@ -186,26 +220,15 @@ int SkFont::textToGlyphs(const void* text, size_t byteLength, SkTextEncoding enc
         return count;
     }
 
-    // TODO: unify/eliminate SkTypeface::Encoding with SkTextEncoding
-    SkTypeface::Encoding typefaceEncoding;
-    switch (encoding) {
-        case kUTF8_SkTextEncoding:
-            typefaceEncoding = SkTypeface::kUTF8_Encoding;
-            break;
-        case kUTF16_SkTextEncoding:
-            typefaceEncoding = SkTypeface::kUTF16_Encoding;
-            break;
-        case kUTF32_SkTextEncoding:
-            typefaceEncoding = SkTypeface::kUTF32_Encoding;
-            break;
-        default:
-            SkASSERT(kGlyphID_SkTextEncoding == encoding);
-            // we can early exit, since we already have glyphIDs
-            memcpy(glyphs, text, count << 1);
-            return count;
+    if (encoding == SkTextEncoding::kGlyphID) {
+        memcpy(glyphs, text, count << 1);
+        return count;
     }
 
-    (void) this->getTypefaceOrDefault()->charsToGlyphs(text, typefaceEncoding, glyphs,count);
+    SkConvertToUTF32 storage;
+    const SkUnichar* uni = storage.convert(text, byteLength, encoding);
+
+    this->getTypefaceOrDefault()->unicharsToGlyphs(uni, count, glyphs);
     return count;
 }
 
@@ -448,13 +471,13 @@ SkRect SkFontPriv::GetFontBounds(const SkFont& font) {
 
 int SkFontPriv::CountTextElements(const void* text, size_t byteLength, SkTextEncoding encoding) {
     switch (encoding) {
-        case kUTF8_SkTextEncoding:
+        case SkTextEncoding::kUTF8:
             return SkUTF::CountUTF8(reinterpret_cast<const char*>(text), byteLength);
-        case kUTF16_SkTextEncoding:
+        case SkTextEncoding::kUTF16:
             return SkUTF::CountUTF16(reinterpret_cast<const uint16_t*>(text), byteLength);
-        case kUTF32_SkTextEncoding:
+        case SkTextEncoding::kUTF32:
             return byteLength >> 2;
-        case kGlyphID_SkTextEncoding:
+        case SkTextEncoding::kGlyphID:
             return byteLength >> 1;
     }
     SkASSERT(false);
@@ -467,8 +490,8 @@ void SkFontPriv::GlyphsToUnichars(const SkFont& font, const SkGlyphID glyphs[], 
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-#include "SkReadBuffer.h"
-#include "SkWriteBuffer.h"
+#include "src/core/SkReadBuffer.h"
+#include "src/core/SkWriteBuffer.h"
 
 // packed int at the beginning of the serialized font:
 //
@@ -566,7 +589,7 @@ bool SkFontPriv::Unflatten(SkFont* font, SkReadBuffer& buffer) {
     font->fEdging = SkToU8(edging);
 
     unsigned hinting = (packed >> kShift_For_Hinting) & kMask_For_Hinting;
-    if (hinting > (unsigned)kFull_SkFontHinting) {
+    if (hinting > (unsigned)SkFontHinting::kFull) {
         hinting = 0;
     }
     font->fHinting = SkToU8(hinting);
