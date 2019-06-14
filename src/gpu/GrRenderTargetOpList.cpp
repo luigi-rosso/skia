@@ -15,10 +15,10 @@
 #include "src/gpu/GrGpuCommandBuffer.h"
 #include "src/gpu/GrMemoryPool.h"
 #include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/GrRect.h"
 #include "src/gpu/GrRenderTargetContext.h"
 #include "src/gpu/GrRenderTargetOpList.h"
 #include "src/gpu/GrResourceAllocator.h"
+#include "src/gpu/geometry/GrRect.h"
 #include "src/gpu/ops/GrClearOp.h"
 #include "src/gpu/ops/GrCopySurfaceOp.h"
 
@@ -130,16 +130,15 @@ GrRenderTargetOpList::OpChain::OpChain(std::unique_ptr<GrOp> op,
     fBounds = fList.head()->bounds();
 }
 
-void GrRenderTargetOpList::OpChain::visitProxies(const GrOp::VisitProxyFunc& func,
-                                                 GrOp::VisitorType visitor) const {
+void GrRenderTargetOpList::OpChain::visitProxies(const GrOp::VisitProxyFunc& func) const {
     if (fList.empty()) {
         return;
     }
     for (const auto& op : GrOp::ChainRange<>(fList.head())) {
-        op.visitProxies(func, visitor);
+        op.visitProxies(func);
     }
     if (fDstProxy.proxy()) {
-        func(fDstProxy.proxy());
+        func(fDstProxy.proxy(), GrMipMapped::kNo);
     }
     if (fAppliedClip) {
         fAppliedClip->visitProxies(func);
@@ -396,7 +395,7 @@ void GrRenderTargetOpList::dump(bool printDependencies) const {
 
 void GrRenderTargetOpList::visitProxies_debugOnly(const GrOp::VisitProxyFunc& func) const {
     for (const OpChain& chain : fOpChains) {
-        chain.visitProxies(func, GrOp::VisitorType::kOther);
+        chain.visitProxies(func);
     }
 }
 
@@ -594,14 +593,14 @@ bool GrRenderTargetOpList::copySurface(GrRecordingContext* context,
 
 void GrRenderTargetOpList::purgeOpsWithUninstantiatedProxies() {
     bool hasUninstantiatedProxy = false;
-    auto checkInstantiation = [&hasUninstantiatedProxy](GrSurfaceProxy* p) {
+    auto checkInstantiation = [&hasUninstantiatedProxy](GrSurfaceProxy* p, GrMipMapped) {
         if (!p->isInstantiated()) {
             hasUninstantiatedProxy = true;
         }
     };
     for (OpChain& recordedOp : fOpChains) {
         hasUninstantiatedProxy = false;
-        recordedOp.visitProxies(checkInstantiation, GrOp::VisitorType::kOther);
+        recordedOp.visitProxies(checkInstantiation);
         if (hasUninstantiatedProxy) {
             // When instantiation of the proxy fails we drop the Op
             recordedOp.deleteOps(fOpMemoryPool.get());
@@ -612,13 +611,13 @@ void GrRenderTargetOpList::purgeOpsWithUninstantiatedProxies() {
 bool GrRenderTargetOpList::onIsUsed(GrSurfaceProxy* proxyToCheck) const {
     bool used = false;
 
-    auto visit = [ proxyToCheck, &used ] (GrSurfaceProxy* p) {
+    auto visit = [ proxyToCheck, &used ] (GrSurfaceProxy* p, GrMipMapped) {
         if (p == proxyToCheck) {
             used = true;
         }
     };
     for (const OpChain& recordedOp : fOpChains) {
-        recordedOp.visitProxies(visit, GrOp::VisitorType::kOther);
+        recordedOp.visitProxies(visit);
     }
 
     return used;
@@ -651,13 +650,13 @@ void GrRenderTargetOpList::gatherProxyIntervals(GrResourceAllocator* alloc) cons
         alloc->incOps();
     }
 
-    auto gather = [ alloc SkDEBUGCODE(, this) ] (GrSurfaceProxy* p) {
+    auto gather = [ alloc SkDEBUGCODE(, this) ] (GrSurfaceProxy* p, GrMipMapped) {
         alloc->addInterval(p, alloc->curOp(), alloc->curOp(), GrResourceAllocator::ActualUse::kYes
                            SkDEBUGCODE(, fTarget.get() == p));
     };
     for (const OpChain& recordedOp : fOpChains) {
         // only diff from the GrTextureOpList version
-        recordedOp.visitProxies(gather, GrOp::VisitorType::kAllocatorGather);
+        recordedOp.visitProxies(gather);
 
         // Even though the op may have been (re)moved we still need to increment the op count to
         // keep all the math consistent.

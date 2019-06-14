@@ -14,11 +14,11 @@
 #include "src/gpu/GrOnFlushResourceProvider.h"
 #include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrRenderTargetContext.h"
-#include "src/gpu/GrShape.h"
 #include "src/gpu/GrSurfaceContextPriv.h"
 #include "src/gpu/ccpr/GrCCPathCache.h"
 #include "src/gpu/ccpr/GrGSCoverageProcessor.h"
 #include "src/gpu/ccpr/GrVSCoverageProcessor.h"
+#include "src/gpu/geometry/GrShape.h"
 
 using FillBatchID = GrCCFiller::BatchID;
 using StrokeBatchID = GrCCStroker::BatchID;
@@ -72,7 +72,10 @@ public:
     }
 
     const char* name() const override { return "CopyAtlasOp (CCPR)"; }
-    void visitProxies(const VisitProxyFunc& fn, VisitorType) const override { fn(fSrcProxy.get()); }
+
+    void visitProxies(const VisitProxyFunc& fn) const override {
+        fn(fSrcProxy.get(), GrMipMapped::kNo);
+    }
 
     void onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) override {
         SkASSERT(fSrcProxy);

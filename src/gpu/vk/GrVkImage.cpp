@@ -137,8 +137,8 @@ void GrVkImage::setImageLayout(const GrVkGpu* gpu, VkImageLayout newLayout,
     VkImageMemoryBarrier imageMemoryBarrier = {
         VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,          // sType
         nullptr,                                         // pNext
-        srcAccessMask,                                   // outputMask
-        dstAccessMask,                                   // inputMask
+        srcAccessMask,                                   // srcAccessMask
+        dstAccessMask,                                   // dstAccessMask
         currentLayout,                                   // oldLayout
         newLayout,                                       // newLayout
         srcQueueFamilyIndex,                             // srcQueueFamilyIndex
@@ -157,7 +157,7 @@ bool GrVkImage::InitImageInfo(const GrVkGpu* gpu, const ImageDesc& imageDesc, Gr
     if (0 == imageDesc.fWidth || 0 == imageDesc.fHeight) {
         return false;
     }
-    VkImage image = 0;
+    VkImage image = VK_NULL_HANDLE;
     GrVkAlloc alloc;
 
     bool isLinear = VK_IMAGE_TILING_LINEAR == imageDesc.fImageTiling;

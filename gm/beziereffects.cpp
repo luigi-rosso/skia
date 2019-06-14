@@ -34,7 +34,6 @@
 #include "src/gpu/GrMemoryPool.h"
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrPaint.h"
-#include "src/gpu/GrPathUtils.h"
 #include "src/gpu/GrProcessorAnalysis.h"
 #include "src/gpu/GrProcessorSet.h"
 #include "src/gpu/GrRecordingContextPriv.h"
@@ -43,6 +42,7 @@
 #include "src/gpu/GrUserStencilSettings.h"
 #include "src/gpu/effects/GrBezierEffect.h"
 #include "src/gpu/effects/GrPorterDuffXferProcessor.h"
+#include "src/gpu/geometry/GrPathUtils.h"
 #include "src/gpu/ops/GrDrawOp.h"
 #include "src/gpu/ops/GrMeshDrawOp.h"
 #include "src/gpu/ops/GrOp.h"
@@ -65,7 +65,7 @@ public:
                 &GrUserStencilSettings::kUnused, fsaaType, caps, clampType, &fColor);
     }
 
-    void visitProxies(const VisitProxyFunc& func, VisitorType) const override {
+    void visitProxies(const VisitProxyFunc& func) const override {
         fProcessorSet.visitProxies(func);
     }
 

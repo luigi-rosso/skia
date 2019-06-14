@@ -457,6 +457,7 @@ DM_SRCS_ALL = struct(
         "tests/*.cpp",
         "tests/*.h",
         "tools/ios_utils.h",
+        "tools/AutoreleasePool.h",
         "tools/BinaryAsset.h",
         "tools/BigPathBench.inc",
         "tools/CrashHandler.cpp",
@@ -473,6 +474,8 @@ DM_SRCS_ALL = struct(
         "tools/ResourceFactory.h",
         "tools/Resources.cpp",
         "tools/Resources.h",
+        "tools/SkVMBuilders.cpp",
+        "tools/SkVMBuilders.h",
         "tools/UrlDataManager.cpp",
         "tools/UrlDataManager.h",
         "tools/debugger/*.cpp",
@@ -666,6 +669,26 @@ def sksg_lib_srcs():
     return native.glob(["modules/sksg/src/*.cpp"])
 
 ################################################################################
+## skparagraph_lib
+################################################################################
+
+def skparagraph_lib_hdrs():
+    return native.glob(["modules/skparagraph/include/*.h"])
+
+def skparagraph_lib_srcs():
+    return native.glob(["modules/skparagraph/src/*.cpp"])
+
+################################################################################
+## experimental xform
+################################################################################
+
+def exp_xform_lib_hdrs():
+    return native.glob(["experimental/xform/*.h"])
+
+def exp_xform_lib_srcs():
+    return native.glob(["experimental/xform/*.cpp"])
+
+################################################################################
 ## skottie_lib
 ################################################################################
 
@@ -677,6 +700,8 @@ def skottie_lib_srcs():
         [
             "modules/skottie/src/*.cpp",
             "modules/skottie/src/*.h",
+            "modules/skottie/src/effects/*.cpp",
+            "modules/skottie/src/effects/*.h",
             "modules/skottie/src/text/*.cpp",
             "modules/skottie/src/text/*.h",
         ],

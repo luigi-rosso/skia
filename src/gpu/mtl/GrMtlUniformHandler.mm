@@ -10,6 +10,10 @@
 #include "src/gpu/glsl/GrGLSLProgramBuilder.h"
 #include "src/gpu/mtl/GrMtlUniformHandler.h"
 
+#if !__has_feature(objc_arc)
+#error This file must be compiled with Arc. Use -fobjc-arc flag
+#endif
+
 // TODO: this class is basically copy and pasted from GrVklUniformHandler so that we can have
 // some shaders working. The SkSL Metal code generator was written to work with GLSL generated for
 // the Ganesh Vulkan backend, so it should all work. There might be better ways to do things in
@@ -273,6 +277,7 @@ GrGLSLUniformHandler::SamplerHandle GrMtlUniformHandler::addSampler(const GrText
     info.fVariable.addLayoutQualifier(layoutQualifier.c_str());
     info.fVisibility = kFragment_GrShaderFlag;
     info.fUBOffset = 0;
+    SkASSERT(caps->textureSwizzleAppliedInShader());
     fSamplerSwizzles.push_back(swizzle);
     SkASSERT(fSamplerSwizzles.count() == fSamplers.count());
     return GrGLSLUniformHandler::SamplerHandle(fSamplers.count() - 1);

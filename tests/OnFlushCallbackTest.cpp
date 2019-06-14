@@ -7,20 +7,19 @@
 
 #include "tests/Test.h"
 
+#include "include/core/SkBitmap.h"
 #include "include/gpu/GrBackendSemaphore.h"
 #include "include/gpu/GrTexture.h"
+#include "src/core/SkPointPriv.h"
 #include "src/gpu/GrClip.h"
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrDefaultGeoProcFactory.h"
 #include "src/gpu/GrOnFlushResourceProvider.h"
 #include "src/gpu/GrProxyProvider.h"
-#include "src/gpu/GrQuad.h"
 #include "src/gpu/GrRenderTargetContextPriv.h"
 #include "src/gpu/GrResourceProvider.h"
-
-#include "include/core/SkBitmap.h"
-#include "src/core/SkPointPriv.h"
 #include "src/gpu/effects/generated/GrSimpleTextureEffect.h"
+#include "src/gpu/geometry/GrQuad.h"
 #include "src/gpu/ops/GrSimpleMeshDrawOpHelper.h"
 
 namespace {
@@ -66,7 +65,7 @@ public:
 
     const char* name() const override { return "NonAARectOp"; }
 
-    void visitProxies(const VisitProxyFunc& func, VisitorType) const override {
+    void visitProxies(const VisitProxyFunc& func) const override {
         fHelper.visitProxies(func);
     }
 
@@ -352,11 +351,10 @@ public:
             return;
         }
 
-        // At this point all the GrAtlasedOp's should have lined up to read from 'atlasDest' and
-        // there should either be two writes to clear it or no writes.
-        SkASSERT(9 == fAtlasProxy->getPendingReadCnt_TestOnly());
-        SkASSERT(2 == fAtlasProxy->getPendingWriteCnt_TestOnly() ||
-                 0 == fAtlasProxy->getPendingWriteCnt_TestOnly());
+        // At this point 'fAtlasProxy' should be instantiated and have:
+        //    1 ref from the 'fAtlasProxy' sk_sp
+        //    9 refs from the 9 AtlasedRectOps
+        SkASSERT(10 == fAtlasProxy->getBackingRefCnt_TestOnly());
         sk_sp<GrRenderTargetContext> rtc = resourceProvider->makeRenderTargetContext(
                                                                            fAtlasProxy,
                                                                            nullptr, nullptr);

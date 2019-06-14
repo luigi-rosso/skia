@@ -505,6 +505,22 @@ public:
     */
     GrBackendRenderTarget getBackendRenderTarget(BackendHandleAccess backendHandleAccess);
 
+    /** If the surface was made via MakeFromBackendTexture then it's backing texture may be
+        substituted with a different texture. The contents of the previous backing texture are
+        copied into the new texture. SkCanvas state is preserved. The original sample count is
+        used. The GrBackendFormat and dimensions of replacement texture must match that of
+        the original.
+
+        @param backendTexture      the new backing texture for the surface.
+        @param origin              one of: kBottomLeft_GrSurfaceOrigin, kTopLeft_GrSurfaceOrigin
+        @param textureReleaseProc  function called when texture can be released
+        @param releaseContext      state passed to textureReleaseProc
+     */
+    bool replaceBackendTexture(const GrBackendTexture& backendTexture,
+                               GrSurfaceOrigin origin,
+                               TextureReleaseProc textureReleaseProc = nullptr,
+                               ReleaseContext releaseContext = nullptr);
+
     /** Returns SkCanvas that draws into SkSurface. Subsequent calls return the same SkCanvas.
         SkCanvas returned is managed and owned by SkSurface, and is deleted when SkSurface
         is deleted.
@@ -694,6 +710,35 @@ public:
     void asyncRescaleAndReadPixels(const SkImageInfo& info, const SkIRect& srcRect,
                                    RescaleGamma rescaleGamma, SkFilterQuality rescaleQuality,
                                    ReadPixelsCallback callback, ReadPixelsContext context);
+
+    /**
+        Similar to asyncRescaleAndReadPixels but performs an additional conversion to YUV. The
+        RGB->YUV conversion is controlled by 'yuvColorSpace'. The YUV data is returned as three
+        planes ordered y, u, v. The u and v planes are half the width and height of the resized
+        rectangle. Currently this fails if dstW or dstH are not even.
+
+        On failure the callback is called with a null data pointer array. Fails if srcRect is not
+        contained in the surface bounds.
+
+        @param yuvColorSpace  The transformation from RGB to YUV. Applied to the resized image
+                              after it is converted to dstColorSpace.
+        @param dstColorSpace  The color space to convert the resized image to, after rescaling.
+        @param srcRect        The portion of the surface to rescale and convert to YUV planes.
+        @param dstW           The width to rescale srcRect to
+        @param dstH           The height to rescale srcRect to
+        @param rescaleGamma     controls whether rescaling is done in the surface's gamma or whether
+                                the source data is transformed to a linear gamma before rescaling.
+        @param rescaleQuality   controls the quality (and cost) of the rescaling
+        @param callback         function to call with the planar read result
+        @param context          passed to callback
+     */
+    using ReadPixelsCallbackYUV420 = void(ReadPixelsContext, const void* data[3],
+                                          size_t rowBytes[3]);
+    void asyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSpace,
+                                         sk_sp<SkColorSpace> dstColorSpace, const SkIRect& srcRect,
+                                         int dstW, int dstH, RescaleGamma rescaleGamma,
+                                         SkFilterQuality rescaleQuality,
+                                         ReadPixelsCallbackYUV420 callback, ReadPixelsContext);
 
     /** Copies SkRect of pixels from the src SkPixmap to the SkSurface.
 

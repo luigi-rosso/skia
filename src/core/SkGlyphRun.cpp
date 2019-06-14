@@ -15,6 +15,7 @@
 #include "src/core/SkFontPriv.h"
 #include "src/core/SkStrike.h"
 #include "src/core/SkStrikeCache.h"
+#include "src/core/SkStrikeSpec.h"
 #include "src/core/SkTextBlobPriv.h"
 #include "src/core/SkUtils.h"
 
@@ -308,10 +309,9 @@ void SkGlyphRunBuilder::simplifyDrawText(
 
     if (!glyphIDs.empty()) {
         fScratchAdvances.resize(runSize);
-        {
-            auto cache = SkStrikeCache::FindOrCreateStrikeWithNoDeviceExclusive(font);
-            cache->getAdvances(glyphIDs, fScratchAdvances.data());
-        }
+        SkStrikeSpec strikeSpec = SkStrikeSpec::MakeWithNoDevice(font);
+        auto cache = strikeSpec.findOrCreateExclusiveStrike();
+        cache->getAdvances(glyphIDs, fScratchAdvances.data());
 
         SkPoint endOfLastGlyph = origin;
 

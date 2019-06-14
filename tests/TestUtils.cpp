@@ -13,11 +13,11 @@
 #include "include/utils/SkBase64.h"
 #include "src/core/SkUtils.h"
 #include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDrawingManager.h"
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrSurfaceContext.h"
-#include "src/gpu/GrSurfaceContextPriv.h"
+#include "src/gpu/GrTextureContext.h"
 #include "src/gpu/SkGr.h"
-#include "tools/gpu/ProxyUtils.h"
 
 void test_read_pixels(skiatest::Reporter* reporter,
                       GrSurfaceContext* srcContext, uint32_t expectedPixelValues[],
@@ -74,51 +74,16 @@ void test_write_pixels(skiatest::Reporter* reporter,
 
 void test_copy_from_surface(skiatest::Reporter* reporter, GrContext* context,
                             GrSurfaceProxy* proxy, uint32_t expectedPixelValues[],
-                            bool onlyTestRTConfig, const char* testName) {
-    GrSurfaceDesc copyDstDesc;
-    copyDstDesc.fWidth = proxy->width();
-    copyDstDesc.fHeight = proxy->height();
-    copyDstDesc.fConfig = kRGBA_8888_GrPixelConfig;
+                            const char* testName) {
+    sk_sp<GrTextureProxy> dstProxy = GrSurfaceProxy::Copy(context,  proxy, GrMipMapped::kNo,
+                                                          SkBackingFit::kExact, SkBudgeted::kYes);
+    SkASSERT(dstProxy);
 
-    for (auto flags : { kNone_GrSurfaceFlags, kRenderTarget_GrSurfaceFlag }) {
-        if (kNone_GrSurfaceFlags == flags && onlyTestRTConfig) {
-            continue;
-        }
+    sk_sp<GrSurfaceContext> dstContext =
+            context->priv().makeWrappedSurfaceContext(std::move(dstProxy));
+    SkASSERT(dstContext.get());
 
-        copyDstDesc.fFlags = flags;
-        auto origin = (kNone_GrSurfaceFlags == flags) ? kTopLeft_GrSurfaceOrigin
-                                                      : kBottomLeft_GrSurfaceOrigin;
-
-        sk_sp<GrSurfaceContext> dstContext(
-                GrSurfaceProxy::TestCopy(context, copyDstDesc, origin, proxy));
-
-        test_read_pixels(reporter, dstContext.get(), expectedPixelValues, testName);
-    }
-}
-
-void test_copy_to_surface(skiatest::Reporter* reporter,
-                          GrContext* context,
-                          GrSurfaceContext* dstContext,
-                          const char* testName) {
-
-    int pixelCnt = dstContext->width() * dstContext->height();
-    SkAutoTMalloc<uint32_t> pixels(pixelCnt);
-    for (int y = 0; y < dstContext->width(); ++y) {
-        for (int x = 0; x < dstContext->height(); ++x) {
-            pixels.get()[y * dstContext->width() + x] =
-                SkColorToPremulGrColor(SkColorSetARGB(2*y, y, x, x * y));
-        }
-    }
-
-    for (auto renderable : {GrRenderable::kNo, GrRenderable::kYes}) {
-        for (auto origin : {kTopLeft_GrSurfaceOrigin, kBottomLeft_GrSurfaceOrigin}) {
-            auto src = sk_gpu_test::MakeTextureProxyFromData(
-                    context, renderable, dstContext->width(),
-                    dstContext->height(), kRGBA_8888_SkColorType, origin, pixels.get(), 0);
-            dstContext->copy(src.get());
-            test_read_pixels(reporter, dstContext, pixels.get(), testName);
-        }
-    }
+    test_read_pixels(reporter, dstContext.get(), expectedPixelValues, testName);
 }
 
 void fill_pixel_data(int width, int height, GrColor* data) {
@@ -135,36 +100,30 @@ void fill_pixel_data(int width, int height, GrColor* data) {
 bool create_backend_texture(GrContext* context, GrBackendTexture* backendTex,
                             const SkImageInfo& ii, GrMipMapped mipMapped, SkColor color,
                             GrRenderable renderable) {
-    GrGpu* gpu = context->priv().getGpu();
-    if (!gpu) {
-        return false;
-    }
-
     SkBitmap bm;
     bm.allocPixels(ii);
-    // TODO: a SkBitmap::eraseColor would be better here
     sk_memset32(bm.getAddr32(0, 0), color, ii.width() * ii.height());
 
-    *backendTex = gpu->createTestingOnlyBackendTexture(ii.width(), ii.height(), ii.colorType(),
-                                                       mipMapped, renderable,
-                                                       bm.getPixels(), bm.rowBytes());
-    if (!backendTex->isValid() || !gpu->isTestingOnlyBackendTexture(*backendTex)) {
-        return false;
-    }
+    SkASSERT(GrMipMapped::kNo == mipMapped);
+    // TODO: replace w/ the color-init version of createBackendTexture once Metal supports it.
+    *backendTex = context->priv().createBackendTexture(&bm.pixmap(), 1, renderable);
 
-    return true;
+    return backendTex->isValid();
 }
 
 void delete_backend_texture(GrContext* context, const GrBackendTexture& backendTex) {
+    GrFlushInfo flushInfo;
+    flushInfo.fFlags = kSyncCpu_GrFlushFlag;
+    context->flush(flushInfo);
     context->deleteBackendTexture(backendTex);
 }
 
-bool does_full_buffer_contain_correct_color(GrColor* srcBuffer,
-                                            GrColor* dstBuffer,
+bool does_full_buffer_contain_correct_color(const GrColor* srcBuffer,
+                                            const GrColor* dstBuffer,
                                             int width,
                                             int height) {
-    GrColor* srcPtr = srcBuffer;
-    GrColor* dstPtr = dstBuffer;
+    const GrColor* srcPtr = srcBuffer;
+    const GrColor* dstPtr = dstBuffer;
     for (int j = 0; j < height; ++j) {
         for (int i = 0; i < width; ++i) {
             if (srcPtr[i] != dstPtr[i]) {

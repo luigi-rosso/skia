@@ -249,31 +249,15 @@ public:
                             GrColorType bufferColorType, GrGpuBuffer* transferBuffer,
                             size_t offset);
 
-    // After the client interacts directly with the 3D context state the GrGpu
-    // must resync its internal state and assumptions about 3D context state.
-    // Each time this occurs the GrGpu bumps a timestamp.
-    // state of the 3D context
-    // At 10 resets / frame and 60fps a 64bit timestamp will overflow in about
-    // a billion years.
-    typedef uint64_t ResetTimestamp;
-
-    // This timestamp is always older than the current timestamp
-    static const ResetTimestamp kExpiredTimestamp = 0;
-    // Returns a timestamp based on the number of times the context was reset.
-    // This timestamp can be used to lazily detect when cached 3D context state
-    // is dirty.
-    ResetTimestamp getResetTimestamp() const { return fResetTimestamp; }
 
     // Called to perform a surface to surface copy. Fallbacks to issuing a draw from the src to dst
     // take place at the GrOpList level and this function implement faster copy paths. The rect
     // and point are pre-clipped. The src rect and implied dst rect are guaranteed to be within the
-    // src/dst bounds and non-empty. If canDiscardOutsideDstRect is set to true then we don't need
-    // to preserve any data on the dst surface outside of the copy.
-    bool copySurface(GrSurface* dst, GrSurfaceOrigin dstOrigin,
-                     GrSurface* src, GrSurfaceOrigin srcOrigin,
-                     const SkIRect& srcRect,
-                     const SkIPoint& dstPoint,
-                     bool canDiscardOutsideDstRect = false);
+    // src/dst bounds and non-empty. They must also be in their exact device space coords, including
+    // already being transformed for origin if need be. If canDiscardOutsideDstRect is set to true
+    // then we don't need to preserve any data on the dst surface outside of the copy.
+    bool copySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
+                     const SkIPoint& dstPoint, bool canDiscardOutsideDstRect = false);
 
     // Queries the per-pixel HW sample locations for the given render target, and then finds or
     // assigns a key that uniquely identifies the sample pattern. The actual sample locations can be
@@ -394,24 +378,23 @@ public:
     Stats* stats() { return &fStats; }
     void dumpJSON(SkJSONWriter*) const;
 
-    GrBackendTexture createTestingOnlyBackendTexture(int w, int h, SkColorType,
-                                                     GrMipMapped, GrRenderable,
-                                                     const void* pixels = nullptr,
-                                                     size_t rowBytes = 0);
-
-    /** Creates a texture directly in the backend API without wrapping it in a GrTexture. This is
-        only to be used for testing (particularly for testing the methods that import an externally
-        created texture into Skia. Must be matched with a call to deleteTestingOnlyTexture(). */
-    virtual GrBackendTexture createTestingOnlyBackendTexture(int w, int h, const GrBackendFormat&,
-                                                             GrMipMapped, GrRenderable,
-                                                             const void* pixels = nullptr,
-                                                             size_t rowBytes = 0) = 0;
+    /**
+     * Creates a texture directly in the backend API without wrapping it in a GrTexture.
+     * Must be matched with a call to deleteBackendTexture().
+     * Right now, the color is ignored if pixel data is provided.
+     * In the future, if neither a color nor pixels are provided then the backend texture
+     * will be uninitialized.
+     */
+    virtual GrBackendTexture createBackendTexture(int w, int h, const GrBackendFormat&,
+                                                  GrMipMapped, GrRenderable,
+                                                  const void* pixels, size_t rowBytes,
+                                                  const SkColor4f* color) = 0;
 
     /**
-     * Frees a texture created by createTestingOnlyBackendTexture(). If ownership of the backend
+     * Frees a texture created by createBackendTexture(). If ownership of the backend
      * texture has been transferred to a GrContext using adopt semantics this should not be called.
      */
-    virtual void deleteTestingOnlyBackendTexture(const GrBackendTexture&) = 0;
+    virtual void deleteBackendTexture(const GrBackendTexture&) = 0;
 
 #if GR_TEST_UTILS
     /** Check a handle represents an actual texture in the backend API that has not been freed. */
@@ -546,10 +529,8 @@ private:
     virtual bool onRegenerateMipMapLevels(GrTexture*) = 0;
 
     // overridden by backend specific derived class to perform the copy surface
-    virtual bool onCopySurface(GrSurface* dst, GrSurfaceOrigin dstOrigin,
-                               GrSurface* src, GrSurfaceOrigin srcOrigin,
-                               const SkIRect& srcRect, const SkIPoint& dstPoint,
-                               bool canDiscardOutsideDstRect) = 0;
+    virtual bool onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
+                               const SkIPoint& dstPoint, bool canDiscardOutsideDstRect) = 0;
 
     virtual void onFinishFlush(GrSurfaceProxy*[], int n, SkSurface::BackendSurfaceAccess access,
                                const GrFlushInfo&, const GrPrepareForExternalIORequests&) = 0;
@@ -561,10 +542,8 @@ private:
     void resetContext() {
         this->onResetContext(fResetBits);
         fResetBits = 0;
-        ++fResetTimestamp;
     }
 
-    ResetTimestamp fResetTimestamp;
     uint32_t fResetBits;
     // The context owns us, not vice-versa, so this ptr is not ref'ed by Gpu.
     GrContext* fContext;

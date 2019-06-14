@@ -346,12 +346,16 @@ public:
     * before deleting the GrContext used to create them. Additionally, clients should only
     * delete these objects on the thread for which that GrContext is active.
     *
-    * Additionally, the client is responsible for ensuring synchronization between different uses
-    * of the backend object.
+    * The client is responsible for ensuring synchronization between different uses
+    * of the backend object (i.e., wrapping it in a surface, rendering to it, deleting the
+    * surface, rewrapping it in a image and drawing the image will require explicit
+    * sychronization on the client's part).
     */
 
     // If possible, create an uninitialized backend texture. The client should ensure that the
     // returned backend texture is valid.
+    // For the Vulkan backend the layout of the created VkImage will be:
+    //      VK_IMAGE_LAYOUT_UNDEFINED.
     GrBackendTexture createBackendTexture(int width, int height,
                                           GrBackendFormat,
                                           GrMipMapped,
@@ -361,10 +365,30 @@ public:
     // returned backend texture is valid.
     // If successful, the created backend texture will be compatible with the provided
     // SkColorType.
+    // For the Vulkan backend the layout of the created VkImage will be:
+    //      VK_IMAGE_LAYOUT_UNDEFINED.
     GrBackendTexture createBackendTexture(int width, int height,
                                           SkColorType,
                                           GrMipMapped,
                                           GrRenderable);
+
+    // If possible, create a backend texture initialized to a particular color. The client should
+    // ensure that the returned backend texture is valid.
+    // For the Vulkan backend the layout of the created VkImage will be:
+    //      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    GrBackendTexture createBackendTexture(int width, int height,
+                                          GrBackendFormat, const SkColor4f& color,
+                                          GrMipMapped, GrRenderable);
+
+    // If possible, create a backend texture initialized to a particular color. The client should
+    // ensure that the returned backend texture is valid.
+    // If successful, the created backend texture will be compatible with the provided
+    // SkColorType.
+    // For the Vulkan backend the layout of the created VkImage will be:
+    //      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    GrBackendTexture createBackendTexture(int width, int height,
+                                          SkColorType, const SkColor4f& color,
+                                          GrMipMapped, GrRenderable);
 
     void deleteBackendTexture(GrBackendTexture);
 
@@ -405,12 +429,6 @@ private:
      */
     std::unique_ptr<GrFragmentProcessor> createPMToUPMEffect(std::unique_ptr<GrFragmentProcessor>);
     std::unique_ptr<GrFragmentProcessor> createUPMToPMEffect(std::unique_ptr<GrFragmentProcessor>);
-
-    /**
-     * Returns true if createPMToUPMEffect and createUPMToPMEffect will succeed. In other words,
-     * did we find a pair of round-trip preserving conversion effects?
-     */
-    bool validPMUPMConversionExists();
 
     typedef GrRecordingContext INHERITED;
 };

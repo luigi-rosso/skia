@@ -490,10 +490,11 @@ func defaultSwarmDimensions(parts map[string]string) []string {
 				"Nexus5":          {"hammerhead", "M4B30Z_3437181"},
 				"Nexus5x":         {"bullhead", "OPR6.170623.023"},
 				"Nexus7":          {"grouper", "LMY47V_1836172"}, // 2012 Nexus 7
-				"NexusPlayer":     {"fugu", "OPR2.170623.027"},
+				"P30":             {"HWELE", "HUAWEIELE-L29"},
 				"Pixel":           {"sailfish", "PPR1.180610.009"},
 				"Pixel2XL":        {"taimen", "PPR1.180610.009"},
 				"Pixel3":          {"blueline", "PQ1A.190105.004"},
+				"TecnoSpark3Pro":  {"TECNO-KB8", "PPR1.180610.011"},
 			}[parts["model"]]
 			if !ok {
 				glog.Fatalf("Entry %q not found in Android mapping.", parts["model"])
@@ -841,7 +842,7 @@ func compile(b *specs.TasksCfgBuilder, name string, parts map[string]string) str
 			pkg.Path = "n"
 			task.CipdPackages = append(task.CipdPackages, pkg)
 		} else if !strings.Contains(name, "SKQP") {
-			task.Dependencies = append(task.Dependencies, isolateCIPDAsset(b, ISOLATE_NDK_LINUX_NAME))
+			task.CipdPackages = append(task.CipdPackages, b.MustGetCipdPackageFromAsset("android_ndk_linux"))
 		}
 	} else if strings.Contains(name, "Chromecast") {
 		task.CipdPackages = append(task.CipdPackages, b.MustGetCipdPackageFromAsset("cast_toolchain"))
@@ -963,6 +964,16 @@ func housekeeper(b *specs.TasksCfgBuilder, name string) string {
 func androidFrameworkCompile(b *specs.TasksCfgBuilder, name string) string {
 	task := kitchenTask(name, "android_compile", "swarm_recipe.isolate", SERVICE_ACCOUNT_COMPILE, linuxGceDimensions(MACHINE_TYPE_SMALL), nil, OUTPUT_NONE)
 	timeout(task, time.Hour)
+	b.MustAddTask(name, task)
+	return name
+}
+
+// g3FrameworkCompile generates a G3 Framework Compile task. Returns
+// the name of the last task in the generated chain of tasks, which the Job
+// should add as a dependency.
+func g3FrameworkCompile(b *specs.TasksCfgBuilder, name string) string {
+	task := kitchenTask(name, "g3_compile", "swarm_recipe.isolate", SERVICE_ACCOUNT_COMPILE, linuxGceDimensions(MACHINE_TYPE_SMALL), nil, OUTPUT_NONE)
+	timeout(task, 3*time.Hour)
 	b.MustAddTask(name, task)
 	return name
 }
@@ -1274,6 +1285,9 @@ func process(b *specs.TasksCfgBuilder, name string) {
 		if parts["extra_config"] == "Android_Framework" {
 			// Android Framework compile tasks use a different recipe.
 			deps = append(deps, androidFrameworkCompile(b, name))
+		} else if parts["extra_config"] == "G3_Framework" {
+			// G3 compile tasks use a different recipe.
+			deps = append(deps, g3FrameworkCompile(b, name))
 		} else {
 			deps = append(deps, compile(b, name, parts))
 		}
@@ -1299,6 +1313,7 @@ func process(b *specs.TasksCfgBuilder, name string) {
 		name != "Housekeeper-OnDemand-Presubmit" &&
 		name != "Housekeeper-PerCommit" &&
 		!strings.Contains(name, "Android_Framework") &&
+		!strings.Contains(name, "G3_Framework") &&
 		!strings.Contains(name, "RecreateSKPs") &&
 		!strings.Contains(name, "Housekeeper-PerCommit-Isolate") &&
 		!strings.Contains(name, "LottieWeb") {
@@ -1397,7 +1412,7 @@ func process(b *specs.TasksCfgBuilder, name string) {
 		j.Trigger = specs.TRIGGER_WEEKLY
 	} else if strings.Contains(name, "Flutter") || strings.Contains(name, "CommandBuffer") {
 		j.Trigger = specs.TRIGGER_MASTER_ONLY
-	} else if strings.Contains(name, "-OnDemand-") || strings.Contains(name, "Android_Framework") {
+	} else if strings.Contains(name, "-OnDemand-") || strings.Contains(name, "Android_Framework") || strings.Contains(name, "G3_Framework") {
 		j.Trigger = specs.TRIGGER_ON_DEMAND
 	}
 	b.MustAddJob(name, j)

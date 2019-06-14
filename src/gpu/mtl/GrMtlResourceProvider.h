@@ -10,7 +10,6 @@
 
 #include "include/private/SkTArray.h"
 #include "src/core/SkLRUCache.h"
-#include "src/gpu/mtl/GrMtlCopyPipelineState.h"
 #include "src/gpu/mtl/GrMtlDepthStencil.h"
 #include "src/gpu/mtl/GrMtlPipelineStateBuilder.h"
 #include "src/gpu/mtl/GrMtlSampler.h"
@@ -22,11 +21,6 @@ class GrMtlGpu;
 class GrMtlResourceProvider {
 public:
     GrMtlResourceProvider(GrMtlGpu* gpu);
-
-    GrMtlCopyPipelineState* findOrCreateCopyPipelineState(MTLPixelFormat dstPixelFormat,
-                                                          id<MTLFunction> vertexFunction,
-                                                          id<MTLFunction> fragmentFunction,
-                                                          MTLVertexDescriptor* vertexDescriptor);
 
     GrMtlPipelineState* findOrCreateCompatiblePipelineState(
         GrRenderTarget*, GrSurfaceOrigin,
@@ -44,6 +38,9 @@ public:
 
     id<MTLBuffer> getDynamicBuffer(size_t size, size_t* offset);
 
+    // Destroy any cached resources. To be called before releasing the MtlDevice.
+    void destroyResources();
+
 private:
 #ifdef SK_DEBUG
 #define GR_PIPELINE_STATE_CACHE_STATS
@@ -54,6 +51,7 @@ private:
         PipelineStateCache(GrMtlGpu* gpu);
         ~PipelineStateCache();
 
+        void release();
         GrMtlPipelineState* refPipelineState(GrRenderTarget*, GrSurfaceOrigin,
                                              const GrPrimitiveProcessor&,
                                              const GrTextureProxy* const primProcProxies[],
@@ -84,8 +82,6 @@ private:
         int                         fCacheMisses;
 #endif
     };
-
-    SkTArray<std::unique_ptr<GrMtlCopyPipelineState>> fCopyPipelineStateCache;
 
     GrMtlGpu* fGpu;
 

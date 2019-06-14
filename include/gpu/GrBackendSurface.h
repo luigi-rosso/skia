@@ -12,9 +12,11 @@
 #include "include/gpu/gl/GrGLTypes.h"
 #include "include/gpu/mock/GrMockTypes.h"
 #include "include/gpu/vk/GrVkTypes.h"
+#include "include/private/GrGLTypesPriv.h"
 #include "include/private/GrVkTypesPriv.h"
 
 class GrVkImageLayout;
+class GrGLTextureParameters;
 
 #ifdef SK_METAL
 #include "include/gpu/mtl/GrMtlTypes.h"
@@ -171,6 +173,10 @@ public:
     // pointer and returns true. Otherwise returns false if the backend API is not GL.
     bool getGLTextureInfo(GrGLTextureInfo*) const;
 
+    // Call this to indicate that the texture parameters have been modified in the GL context
+    // externally to GrContext.
+    void glTextureParametersModified();
+
     // If the backend API is Vulkan, copies a snapshot of the GrVkImageInfo struct into the passed
     // in pointer and returns true. This snapshot will set the fImageLayout to the current layout
     // state. Otherwise returns false if the backend API is not Vulkan.
@@ -196,6 +202,9 @@ public:
     // Returns true if the backend texture has been initialized.
     bool isValid() const { return fIsValid; }
 
+    // Returns true if both textures are valid and refer to the same API texture.
+    bool isSameTexture(const GrBackendTexture&);
+
 #if GR_TEST_UTILS
     // We can remove the pixelConfig getter and setter once we remove the GrPixelConfig from the
     // GrBackendTexture and plumb the GrPixelconfig manually throughout our code (or remove all use
@@ -214,6 +223,7 @@ private:
     friend class SkImage_GpuYUVA;
     friend class SkPromiseImageHelper;
     friend class SkSurface;
+    friend class SkSurface_Gpu;
     friend class GrAHardwareBufferImageGenerator;
     friend class GrBackendTextureImageGenerator;
     friend class GrProxyProvider;
@@ -225,15 +235,23 @@ private:
 
     GrPixelConfig config() const { return fConfig; }
 
-   // Requires friending of GrVkGpu (done above already)
-   sk_sp<GrVkImageLayout> getGrVkImageLayout() const;
+#ifdef SK_GL
+    friend class GrGLTexture;
+    GrBackendTexture(int width,
+                     int height,
+                     GrMipMapped,
+                     const GrGLTextureInfo,
+                     sk_sp<GrGLTextureParameters>);
+    sk_sp<GrGLTextureParameters> getGLTextureParams() const;
+#endif
 
-   friend class GrVkTexture;
 #ifdef SK_VULKAN
-   GrBackendTexture(int width,
-                    int height,
-                    const GrVkImageInfo& vkInfo,
-                    sk_sp<GrVkImageLayout> layout);
+    friend class GrVkTexture;
+    GrBackendTexture(int width,
+                     int height,
+                     const GrVkImageInfo& vkInfo,
+                     sk_sp<GrVkImageLayout> layout);
+    sk_sp<GrVkImageLayout> getGrVkImageLayout() const;
 #endif
 
     // Free and release and resources being held by the GrBackendTexture.
@@ -247,13 +265,15 @@ private:
     GrBackendApi fBackend;
 
     union {
-        GrGLTextureInfo fGLInfo;
-        GrVkBackendSurfaceInfo fVkInfo;
-#ifdef SK_METAL
-        GrMtlTextureInfo fMtlInfo;
+#ifdef SK_GL
+        GrGLBackendTextureInfo fGLInfo;
 #endif
+        GrVkBackendSurfaceInfo fVkInfo;
         GrMockTextureInfo fMockInfo;
     };
+#ifdef SK_METAL
+    GrMtlTextureInfo fMtlInfo;
+#endif
 };
 
 class SK_API GrBackendRenderTarget {
@@ -372,11 +392,11 @@ private:
     union {
         GrGLFramebufferInfo fGLInfo;
         GrVkBackendSurfaceInfo fVkInfo;
-#ifdef SK_METAL
-        GrMtlTextureInfo fMtlInfo;
-#endif
         GrMockRenderTargetInfo fMockInfo;
     };
+#ifdef SK_METAL
+    GrMtlTextureInfo fMtlInfo;
+#endif
 };
 
 #endif

@@ -19,10 +19,6 @@
 using sk_app::DisplayParams;
 using sk_app::MetalWindowContext;
 
-#ifdef SK_BUILD_FOR_MAC
-#import <QuartzCore/CAConstraintLayoutManager.h>
-#endif
-
 namespace sk_app {
 
 MetalWindowContext::MetalWindowContext(const DisplayParams& params)
@@ -50,17 +46,11 @@ void MetalWindowContext::initializeContext() {
     fMetalLayer = [CAMetalLayer layer];
     fMetalLayer.device = fDevice;
     fMetalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
-#ifdef SK_BUILD_FOR_MAC
-    BOOL useVsync = fDisplayParams.fDisableVsync ? NO : YES;
-    fMetalLayer.displaySyncEnabled = useVsync;  // TODO: need solution for 10.12 or lower
-    fMetalLayer.layoutManager = [CAConstraintLayoutManager layoutManager];
-    fMetalLayer.autoresizingMask = kCALayerHeightSizable | kCALayerWidthSizable;
-    fMetalLayer.contentsGravity = kCAGravityTopLeft;
-#endif
 
     fValid = this->onInitializeContext();
 
-    fContext = GrContext::MakeMetal(fDevice, fQueue, fDisplayParams.fGrContextOptions);
+    fContext = GrContext::MakeMetal((__bridge void*)fDevice, (__bridge void*)fQueue,
+                                    fDisplayParams.fGrContextOptions);
     if (!fContext && fDisplayParams.fMSAASampleCount > 1) {
         fDisplayParams.fMSAASampleCount /= 2;
         this->initializeContext();
@@ -80,9 +70,8 @@ void MetalWindowContext::destroyContext() {
     fMetalLayer = nil;
     fValid = false;
 
-    // TODO: figure out why we can't release these
-    // [fQueue release];
-    // [fDevice release];
+    [fQueue release];
+    [fDevice release];
 }
 
 sk_sp<SkSurface> MetalWindowContext::getBackbufferSurface() {
@@ -95,7 +84,7 @@ sk_sp<SkSurface> MetalWindowContext::getBackbufferSurface() {
         fCurrentDrawable = [fMetalLayer nextDrawable];
 
         GrMtlTextureInfo fbInfo;
-        fbInfo.fTexture = fCurrentDrawable.texture;
+        fbInfo.fTexture.retain((__bridge const void*)(fCurrentDrawable.texture));
 
         GrBackendRenderTarget backendRT(fWidth,
                                         fHeight,

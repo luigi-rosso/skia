@@ -32,11 +32,7 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-GrGpu::GrGpu(GrContext* context)
-    : fResetTimestamp(kExpiredTimestamp+1)
-    , fResetBits(kAll_GrBackendState)
-    , fContext(context) {
-}
+GrGpu::GrGpu(GrContext* context) : fResetBits(kAll_GrBackendState), fContext(context) {}
 
 GrGpu::~GrGpu() {}
 
@@ -226,10 +222,8 @@ sk_sp<GrGpuBuffer> GrGpu::createBuffer(size_t size, GrGpuBufferType intendedType
     return buffer;
 }
 
-bool GrGpu::copySurface(GrSurface* dst, GrSurfaceOrigin dstOrigin,
-                        GrSurface* src, GrSurfaceOrigin srcOrigin,
-                        const SkIRect& srcRect, const SkIPoint& dstPoint,
-                        bool canDiscardOutsideDstRect) {
+bool GrGpu::copySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
+                        const SkIPoint& dstPoint, bool canDiscardOutsideDstRect) {
     GR_CREATE_TRACE_MARKER_CONTEXT("GrGpu", "copySurface", fContext);
     SkASSERT(dst && src);
 
@@ -239,8 +233,7 @@ bool GrGpu::copySurface(GrSurface* dst, GrSurfaceOrigin dstOrigin,
 
     this->handleDirtyContext();
 
-    return this->onCopySurface(dst, dstOrigin, src, srcOrigin, srcRect, dstPoint,
-                               canDiscardOutsideDstRect);
+    return this->onCopySurface(dst, src, srcRect, dstPoint, canDiscardOutsideDstRect);
 }
 
 bool GrGpu::readPixels(GrSurface* surface, int left, int top, int width, int height,
@@ -456,19 +449,6 @@ void GrGpu::dumpJSON(SkJSONWriter* writer) const {
 #else
 void GrGpu::dumpJSON(SkJSONWriter* writer) const { }
 #endif
-
-GrBackendTexture GrGpu::createTestingOnlyBackendTexture(int w, int h, SkColorType colorType,
-                                                        GrMipMapped mipMapped,
-                                                        GrRenderable renderable,
-                                                        const void* pixels, size_t rowBytes) {
-    GrBackendFormat format = this->caps()->getBackendFormatFromColorType(colorType);
-    if (!format.isValid()) {
-        return GrBackendTexture();
-    }
-
-    return this->createTestingOnlyBackendTexture(w, h, format, mipMapped, renderable,
-                                                 pixels, rowBytes);
-}
 
 #if GR_TEST_UTILS
 

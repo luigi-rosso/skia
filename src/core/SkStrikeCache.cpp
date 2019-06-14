@@ -46,16 +46,12 @@ public:
                 glyphIDs, positions, n, maxDimension, detail, results);
     }
 
-    void generatePath(const SkGlyph& glyph) override {
-        fStrike.generatePath(glyph);
+    const SkPath* preparePath(SkGlyph* glyph) override {
+        return fStrike.preparePath(glyph);
     }
 
     const SkDescriptor& getDescriptor() const override {
         return fStrike.getDescriptor();
-    }
-
-    SkStrikeSpec strikeSpec() const override {
-        return fStrike.strikeSpec();
     }
 
     void onAboutToExitScope() override {
@@ -139,10 +135,6 @@ SkStrikeCache::~SkStrikeCache() {
     }
 }
 
-SkExclusiveStrikePtr SkStrikeCache::FindStrikeExclusive(const SkDescriptor& desc) {
-    return GlobalStrikeCache()->findStrikeExclusive(desc);
-}
-
 std::unique_ptr<SkScalerContext> SkStrikeCache::CreateScalerContext(
         const SkDescriptor& desc,
         const SkScalerContextEffects& effects,
@@ -158,12 +150,6 @@ std::unique_ptr<SkScalerContext> SkStrikeCache::CreateScalerContext(
         scaler = typeface.createScalerContext(effects, &desc, false /* must succeed */);
     }
     return scaler;
-}
-
-SkExclusiveStrikePtr SkStrikeCache::FindOrCreateStrikeExclusive(
-        const SkDescriptor& desc, const SkScalerContextEffects& effects, const SkTypeface& typeface)
-{
-    return GlobalStrikeCache()->findOrCreateStrikeExclusive(desc, effects, typeface);
 }
 
 SkExclusiveStrikePtr SkStrikeCache::findOrCreateStrikeExclusive(
@@ -192,51 +178,6 @@ SkScopedStrike SkStrikeCache::findOrCreateScopedStrike(const SkDescriptor& desc,
         node = this->createStrike(desc, std::move(scaler));
     }
     return SkScopedStrike{node};
-}
-
-SkExclusiveStrikePtr SkStrikeCache::FindOrCreateStrikeExclusive(
-        const SkFont& font,
-        const SkPaint& paint,
-        const SkSurfaceProps& surfaceProps,
-        SkScalerContextFlags scalerContextFlags,
-        const SkMatrix& deviceMatrix)
-{
-    return SkExclusiveStrikePtr(
-            GlobalStrikeCache()->findOrCreateStrike(
-                    font, paint, surfaceProps, scalerContextFlags,deviceMatrix));
-}
-
-auto SkStrikeCache::findOrCreateStrike(
-        const SkFont& font,
-        const SkPaint& paint,
-        const SkSurfaceProps& surfaceProps,
-        SkScalerContextFlags scalerContextFlags,
-        const SkMatrix& deviceMatrix) -> Node*
-{
-    SkAutoDescriptor ad;
-    SkScalerContextEffects effects;
-
-    auto desc = SkScalerContext::CreateDescriptorAndEffectsUsingPaint(
-            font, paint, surfaceProps, scalerContextFlags, deviceMatrix, &ad, &effects);
-
-    auto tf = font.getTypefaceOrDefault();
-
-    return this->findOrCreateStrike(*desc, effects, *tf);
-}
-
-SkExclusiveStrikePtr SkStrikeCache::FindOrCreateStrikeWithNoDeviceExclusive(const SkFont& font) {
-    return FindOrCreateStrikeWithNoDeviceExclusive(font, SkPaint());
-}
-
-SkExclusiveStrikePtr SkStrikeCache::FindOrCreateStrikeWithNoDeviceExclusive(const SkFont& font,
-                                                                            const SkPaint& paint) {
-    SkAutoDescriptor ad;
-    SkScalerContextEffects effects;
-    auto desc = SkScalerContext::CreateDescriptorAndEffectsUsingPaint(font, paint,
-                              SkSurfaceProps(SkSurfaceProps::kLegacyFontHost_InitType),
-                              kFakeGammaAndBoostContrast, SkMatrix::I(), &ad, &effects);
-    auto typeface = font.getTypefaceOrDefault();
-    return SkStrikeCache::FindOrCreateStrikeExclusive(*desc, effects, *typeface);
 }
 
 void SkStrikeCache::PurgeAll() {
@@ -408,28 +349,17 @@ bool SkStrikeCache::desperationSearchForPath(
     // There is also a problem with accounting for cache size with shared path data.
     for (Node* node = internalGetHead(); node != nullptr; node = node->fNext) {
         if (loose_compare(node->fStrike.getDescriptor(), desc)) {
-            if (node->fStrike.isGlyphCached(glyphID, 0, 0)) {
-                SkGlyph* from = node->fStrike.getRawGlyphByID(SkPackedGlyphID(glyphID));
-                if (from->fPathData != nullptr) {
+            if (SkGlyph *from = node->fStrike.glyphOrNull(SkPackedGlyphID{glyphID})) {
+                if (from->setPathHasBeenCalled() && from->path() != nullptr) {
                     // We can just copy the path out by value here, so no need to worry
                     // about the lifetime of this desperate-match node.
-                    *path = from->fPathData->fPath;
+                    *path = *from->path();
                     return true;
                 }
             }
         }
     }
     return false;
-}
-
-SkExclusiveStrikePtr SkStrikeCache::CreateStrikeExclusive(
-        const SkDescriptor& desc,
-        std::unique_ptr<SkScalerContext> scaler,
-        SkFontMetrics* maybeMetrics,
-        std::unique_ptr<SkStrikePinner> pinner)
-{
-    return GlobalStrikeCache()->createStrikeExclusive(
-            desc, std::move(scaler), maybeMetrics, std::move(pinner));
 }
 
 SkExclusiveStrikePtr SkStrikeCache::createStrikeExclusive(

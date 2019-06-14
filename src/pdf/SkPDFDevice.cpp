@@ -33,6 +33,7 @@
 #include "src/core/SkRasterClip.h"
 #include "src/core/SkScopeExit.h"
 #include "src/core/SkStrike.h"
+#include "src/core/SkStrikeSpec.h"
 #include "src/core/SkTextFormatParams.h"
 #include "src/core/SkXfermodeInterpretation.h"
 #include "src/pdf/SkBitmapKey.h"
@@ -777,14 +778,19 @@ static bool needs_new_font(SkPDFFont* font, SkGlyphID gid, SkStrike* cache,
     if (fontType == SkAdvancedTypefaceMetrics::kOther_Font) {
         return false;
     }
-    const SkGlyph& glyph = cache->getGlyphIDMetrics(gid);
-    if (glyph.isEmpty()) {
+    SkGlyph* glyph = cache->glyph(gid);
+    if (glyph->isEmpty()) {
         return false;
     }
 
-    bool bitmapOnly = nullptr == cache->findPath(glyph);
+    bool bitmapOnly = nullptr == cache->preparePath(glyph);
     bool convertedToType3 = (font->getType() == SkAdvancedTypefaceMetrics::kOther_Font);
     return convertedToType3 != bitmapOnly;
+}
+
+namespace {
+constexpr int kTypicalGlyphCount = 20;
+using SmallPointsArray = SkAutoSTArray<kTypicalGlyphCount, SkPoint>;
 }
 
 void SkPDFDevice::internalDrawGlyphRun(
@@ -823,7 +829,8 @@ void SkPDFDevice::internalDrawGlyphRun(
     SkClusterator clusterator(glyphRun);
 
     int emSize;
-    auto glyphCache = SkPDFFont::MakeVectorCache(typeface, &emSize);
+    SkStrikeSpec strikeSpec = SkStrikeSpec::MakePDFVector(*typeface, &emSize);
+    auto glyphCache = strikeSpec.findOrCreateExclusiveStrike();
 
     SkScalar textSize = glyphRunFont.getSize();
     SkScalar advanceScale = textSize * glyphRunFont.getScaleX() / emSize;
@@ -865,6 +872,9 @@ void SkPDFDevice::internalDrawGlyphRun(
     SK_AT_SCOPE_EXIT(if (clusterator.reversedChars()) { out->writeText("EMC\n"); } );
     GlyphPositioner glyphPositioner(out, glyphRunFont.getSkewX(), offset);
     SkPDFFont* font = nullptr;
+
+    SmallPointsArray advances(glyphRun.runSize());
+    glyphCache->getAdvances(glyphRun.glyphsIDs(), advances.get());
 
     while (SkClusterator::Cluster c = clusterator.next()) {
         int index = c.fGlyphIndex;
@@ -939,7 +949,7 @@ void SkPDFDevice::internalDrawGlyphRun(
             font->noteGlyphUsage(gid);
             SkGlyphID encodedGlyph = font->multiByteGlyphs()
                                    ? gid : font->glyphToPDFFontEncoding(gid);
-            SkScalar advance = advanceScale * glyphCache->getGlyphIDAdvance(gid).fAdvanceX;
+            SkScalar advance = advanceScale * advances[index].x();
             glyphPositioner.writeGlyph(xy, advance, encodedGlyph);
         }
     }
@@ -1210,7 +1220,7 @@ static void populate_graphic_state_entry_from_paint(
             clipStackBounds.roundOut(&bounds);
 
             SkPDFIndirectReference pdfShader
-                = SkPDFMakeShader(doc, shader, transform, bounds, paint.getColor());
+                = SkPDFMakeShader(doc, shader, transform, bounds, paint.getColor4f());
 
             if (pdfShader) {
                 // pdfShader has been canonicalized so we can directly compare pointers.

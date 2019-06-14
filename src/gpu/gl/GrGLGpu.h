@@ -136,11 +136,11 @@ public:
     GrStencilAttachment* createStencilAttachmentForRenderTarget(const GrRenderTarget* rt,
                                                                 int width,
                                                                 int height) override;
-    GrBackendTexture createTestingOnlyBackendTexture(int w, int h, const GrBackendFormat&,
-                                                     GrMipMapped, GrRenderable,
-                                                     const void* pixels = nullptr,
-                                                     size_t rowBytes = 0) override;
-    void deleteTestingOnlyBackendTexture(const GrBackendTexture&) override;
+    GrBackendTexture createBackendTexture(int w, int h, const GrBackendFormat&,
+                                          GrMipMapped, GrRenderable,
+                                          const void* pixels, size_t rowBytes,
+                                          const SkColor4f* color) override;
+    void deleteBackendTexture(const GrBackendTexture&) override;
 
 #if GR_TEST_UTILS
     bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
@@ -215,9 +215,10 @@ private:
     // result is stored in |info|.
     // The texture is populated with |texels|, if it exists.
     // The texture parameters are cached in |initialTexParams|.
-    bool createTextureImpl(const GrSurfaceDesc& desc, GrGLTextureInfo* info, bool renderTarget,
-                           GrGLTexture::SamplerParams* initialTexParams, const GrMipLevel texels[],
-                           int mipLevelCount, GrMipMapsStatus* mipMapsStatus);
+    bool createTextureImpl(const GrSurfaceDesc& desc, GrGLTextureInfo* info, GrRenderable,
+                           GrGLTextureParameters::SamplerOverriddenState* initialState,
+                           const GrMipLevel texels[], int mipLevelCount,
+                           GrMipMapsStatus* mipMapsStatus);
 
     // Checks whether glReadPixels can be called to get pixel values in readConfig from the
     // render target.
@@ -254,10 +255,8 @@ private:
 
     bool onRegenerateMipMapLevels(GrTexture*) override;
 
-    bool onCopySurface(GrSurface* dst, GrSurfaceOrigin dstOrigin,
-                       GrSurface* src, GrSurfaceOrigin srcOrigin,
-                       const SkIRect& srcRect, const SkIPoint& dstPoint,
-                       bool canDiscardOutsideDstRect) override;
+    bool onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
+                       const SkIPoint& dstPoint, bool canDiscardOutsideDstRect) override;
 
     // binds texture unit in GL
     void setTextureUnit(int unitIdx);
@@ -300,15 +299,12 @@ private:
 
     bool waitSync(GrGLsync, uint64_t timeout, bool flush);
 
-    bool copySurfaceAsDraw(GrSurface* dst, GrSurfaceOrigin dstOrigin,
-                           GrSurface* src, GrSurfaceOrigin srcOrigin,
-                           const SkIRect& srcRect, const SkIPoint& dstPoint);
-    void copySurfaceAsCopyTexSubImage(GrSurface* dst, GrSurfaceOrigin dstOrigin,
-                                      GrSurface* src, GrSurfaceOrigin srcOrigin,
-                                      const SkIRect& srcRect, const SkIPoint& dstPoint);
-    bool copySurfaceAsBlitFramebuffer(GrSurface* dst, GrSurfaceOrigin dstOrigin,
-                                      GrSurface* src, GrSurfaceOrigin srcOrigin,
-                                      const SkIRect& srcRect, const SkIPoint& dstPoint);
+    bool copySurfaceAsDraw(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
+                           const SkIPoint& dstPoint);
+    void copySurfaceAsCopyTexSubImage(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
+                                      const SkIPoint& dstPoint);
+    bool copySurfaceAsBlitFramebuffer(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
+                                      const SkIPoint& dstPoint);
 
     static bool BlendCoeffReferencesConstant(GrBlendCoeff coeff);
 
@@ -356,9 +352,7 @@ private:
 
     // flushes the scissor. see the note on flushBoundTextureAndParams about
     // flushing the scissor after that function is called.
-    void flushScissor(const GrScissorState&,
-                      const GrGLIRect& rtViewport,
-                      GrSurfaceOrigin rtOrigin);
+    void flushScissor(const GrScissorState&, int rtWidth, int rtHeight, GrSurfaceOrigin rtOrigin);
 
     // disables the scissor
     void disableScissor();
@@ -383,7 +377,7 @@ private:
     void flushRenderTargetNoColorWrites(GrGLRenderTarget*);
 
     // Need not be called if flushRenderTarget is used.
-    void flushViewport(const GrGLIRect&);
+    void flushViewport(int width, int height);
 
     void flushStencil(const GrStencilSettings&, GrSurfaceOrigin);
     void disableStencil();
@@ -406,7 +400,7 @@ private:
     // helper for onCreateCompressedTexture. Compressed textures are read-only so we
     // only use this to populate a new texture.
     bool uploadCompressedTexData(GrPixelConfig texConfig, int texWidth, int texHeight,
-                                 GrGLenum target, GrPixelConfig dataConfig,
+                                 GrGLenum target,
                                  const GrMipLevel texels[], int mipLevelCount,
                                  GrMipMapsStatus* mipMapsStatus = nullptr);
 
@@ -421,7 +415,7 @@ private:
     // Binds a surface as a FBO for copying, reading, or clearing. If the surface already owns an
     // FBO ID then that ID is bound. If not the surface is temporarily bound to a FBO and that FBO
     // is bound. This must be paired with a call to unbindSurfaceFBOForPixelOps().
-    void bindSurfaceFBOForPixelOps(GrSurface* surface, GrGLenum fboTarget, GrGLIRect* viewport,
+    void bindSurfaceFBOForPixelOps(GrSurface* surface, GrGLenum fboTarget,
                                    TempFBOTarget tempFBOTarget);
 
     // Must be called if bindSurfaceFBOForPixelOps was used to bind a surface for copying.
@@ -478,19 +472,21 @@ private:
             fWindowState.setDisabled();
         }
 
-        void set(GrSurfaceOrigin rtOrigin, const GrGLIRect& viewport,
+        void set(GrSurfaceOrigin rtOrigin, int width, int height,
                  const GrWindowRectsState& windowState) {
             fRTOrigin = rtOrigin;
-            fViewport = viewport;
+            fWidth = width;
+            fHeight = height;
             fWindowState = windowState;
         }
 
-        bool knownEqualTo(GrSurfaceOrigin rtOrigin, const GrGLIRect& viewport,
+        bool knownEqualTo(GrSurfaceOrigin rtOrigin, int width, int height,
                           const GrWindowRectsState& windowState) const {
             if (!this->valid()) {
                 return false;
             }
-            if (fWindowState.numWindows() && (fRTOrigin != rtOrigin || fViewport != viewport)) {
+            if (fWindowState.numWindows() &&
+                (fRTOrigin != rtOrigin || fWidth != width || fHeight != height)) {
                 return false;
             }
             return fWindowState == windowState;
@@ -500,7 +496,8 @@ private:
         enum { kInvalidSurfaceOrigin = -1 };
 
         int                  fRTOrigin;
-        GrGLIRect            fViewport;
+        int                  fWidth;
+        int                  fHeight;
         GrWindowRectsState   fWindowState;
     } fHWWindowRectsState;
 
@@ -663,6 +660,8 @@ private:
     }
 
     GrPrimitiveType fLastPrimitiveType;
+
+    GrGLTextureParameters::ResetTimestamp fResetTimestampForTextureParameters = 0;
 
     class SamplerObjectCache;
     std::unique_ptr<SamplerObjectCache> fSamplerObjectCache;

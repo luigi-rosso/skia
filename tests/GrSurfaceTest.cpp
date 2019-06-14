@@ -53,7 +53,8 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(GrSurface, reporter, ctxInfo) {
     REPORTER_ASSERT(reporter, static_cast<GrSurface*>(tex1.get()) == tex1->asTexture());
 
     GrBackendTexture backendTex = context->createBackendTexture(
-        256, 256, kRGBA_8888_SkColorType, GrMipMapped::kNo, GrRenderable::kNo);
+        256, 256, kRGBA_8888_SkColorType,
+        SkColors::kTransparent, GrMipMapped::kNo, GrRenderable::kNo);
 
     sk_sp<GrSurface> texRT2 = resourceProvider->wrapRenderableBackendTexture(
             backendTex, 1, kBorrow_GrWrapOwnership, GrWrapCacheable::kNo);
@@ -103,6 +104,10 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(GrSurfaceRenderability, reporter, ctxInfo) {
         kRGBA_half_GrPixelConfig,
         kRGBA_half_Clamped_GrPixelConfig,
         kRGB_ETC1_GrPixelConfig,
+
+        // Experimental (for P016 and P010)
+        kR_16_GrPixelConfig,
+        kRG_1616_GrPixelConfig,
     };
     GR_STATIC_ASSERT(kGrPixelConfigCnt == SK_ARRAY_COUNT(configs));
 
@@ -112,6 +117,10 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(GrSurfaceRenderability, reporter, ctxInfo) {
 
     for (GrPixelConfig config : configs) {
         for (GrSurfaceOrigin origin : { kTopLeft_GrSurfaceOrigin, kBottomLeft_GrSurfaceOrigin }) {
+            if (config == kUnknown_GrPixelConfig) {
+                // It is not valid to be calling into GrProxyProvider with an unknown pixel config.
+                continue;
+            }
             desc.fFlags = kNone_GrSurfaceFlags;
             desc.fConfig = config;
             desc.fSampleCnt = 1;
@@ -126,6 +135,9 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(GrSurfaceRenderability, reporter, ctxInfo) {
             GrColorType colorType = GrPixelConfigToColorTypeAndEncoding(config, &srgbEncoded);
             const GrBackendFormat format =
                     caps->getBackendFormatFromGrColorType(colorType, srgbEncoded);
+            if (!format.isValid()) {
+                continue;
+            }
 
             sk_sp<GrTextureProxy> proxy =
                     proxyProvider->createMipMapProxy(format, desc, origin, SkBudgeted::kNo);
@@ -249,7 +261,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(InitialTextureClear, reporter, context_info) 
 }
 
 DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ReadOnlyTexture, reporter, context_info) {
-    auto fillPixels = [](const SkPixmap* p, const std::function<uint32_t(int x, int y)>& f) {
+    auto fillPixels = [](SkPixmap* p, const std::function<uint32_t(int x, int y)>& f) {
         for (int y = 0; y < p->height(); ++y) {
             for (int x = 0; x < p->width(); ++x) {
                 *p->writable_addr32(x, y) = f(x, y);
@@ -272,9 +284,10 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ReadOnlyTexture, reporter, context_info) {
     static constexpr int kSize = 100;
     SkAutoPixmapStorage pixels;
     pixels.alloc(SkImageInfo::Make(kSize, kSize, kRGBA_8888_SkColorType, kPremul_SkAlphaType));
-    fillPixels(&pixels, [](int x, int y) {
-        return (0xFFU << 24) | (x << 16) | (y << 8) | uint8_t((x * y) & 0xFF);
-    });
+    fillPixels(&pixels,
+               [](int x, int y) {
+                    return (0xFFU << 24) | (x << 16) | (y << 8) | uint8_t((x * y) & 0xFF);
+               });
 
     GrContext* context = context_info.grContext();
     GrProxyProvider* proxyProvider = context->priv().proxyProvider();
@@ -283,9 +296,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ReadOnlyTexture, reporter, context_info) {
     // that they'd succeed if the texture wasn't kRead. We want to be sure we're failing with
     // kRead for the right reason.
     for (auto ioType : {kRead_GrIOType, kRW_GrIOType}) {
-        auto backendTex = context->priv().getGpu()->createTestingOnlyBackendTexture(
-                kSize, kSize, kRGBA_8888_SkColorType, GrMipMapped::kNo, GrRenderable::kYes,
-                pixels.addr());
+        auto backendTex = context->priv().createBackendTexture(&pixels, 1, GrRenderable::kYes);
+
         auto proxy = proxyProvider->wrapBackendTexture(backendTex, kTopLeft_GrSurfaceOrigin,
                                                        kBorrow_GrWrapOwnership,
                                                        GrWrapCacheable::kNo, ioType);
@@ -318,19 +330,21 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ReadOnlyTexture, reporter, context_info) {
                 SkImage::MakeFromRaster(write, nullptr, nullptr), kNone_GrSurfaceFlags, 1,
                 SkBudgeted::kYes, SkBackingFit::kExact);
         REPORTER_ASSERT(reporter, copySrc);
-        auto copyResult = surfContext->copy(copySrc.get());
+        auto copyResult = surfContext->testCopy(copySrc.get());
         REPORTER_ASSERT(reporter, copyResult == (ioType == kRW_GrIOType));
         // Try the low level copy.
         context->flush();
         auto gpuCopyResult = context->priv().getGpu()->copySurface(
-                proxy->peekTexture(), kTopLeft_GrSurfaceOrigin, copySrc->peekTexture(),
-                kTopLeft_GrSurfaceOrigin, SkIRect::MakeWH(kSize, kSize), {0, 0});
+                proxy->peekTexture(), copySrc->peekTexture(), SkIRect::MakeWH(kSize, kSize),
+                {0, 0});
         REPORTER_ASSERT(reporter, gpuCopyResult == (ioType == kRW_GrIOType));
 
         // Mip regen should not work with a read only texture.
         if (context->priv().caps()->mipMapSupport()) {
+            delete_backend_texture(context, backendTex);
             backendTex = context->createBackendTexture(
-                    kSize, kSize, kRGBA_8888_SkColorType, GrMipMapped::kYes, GrRenderable::kYes);
+                    kSize, kSize, kRGBA_8888_SkColorType,
+                    SkColors::kTransparent, GrMipMapped::kYes, GrRenderable::kYes);
             proxy = proxyProvider->wrapBackendTexture(backendTex, kTopLeft_GrSurfaceOrigin,
                                                       kBorrow_GrWrapOwnership, GrWrapCacheable::kNo,
                                                       ioType);
@@ -340,12 +354,16 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ReadOnlyTexture, reporter, context_info) {
                     context->priv().getGpu()->regenerateMipMapLevels(proxy->peekTexture());
             REPORTER_ASSERT(reporter, regenResult == (ioType == kRW_GrIOType));
         }
+        delete_backend_texture(context, backendTex);
     }
 }
 
+static const int kSurfSize = 10;
+
 static sk_sp<GrTexture> make_wrapped_texture(GrContext* context, GrRenderable renderable) {
     auto backendTexture = context->createBackendTexture(
-            10, 10, kRGBA_8888_SkColorType, GrMipMapped::kNo, renderable);
+            kSurfSize, kSurfSize, kRGBA_8888_SkColorType, SkColors::kTransparent, GrMipMapped::kNo,
+            renderable);
     sk_sp<GrTexture> texture;
     if (GrRenderable::kYes == renderable) {
         texture = context->priv().resourceProvider()->wrapRenderableBackendTexture(
@@ -372,7 +390,7 @@ static sk_sp<GrTexture> make_wrapped_texture(GrContext* context, GrRenderable re
 static sk_sp<GrTexture> make_normal_texture(GrContext* context, GrRenderable renderable) {
     GrSurfaceDesc desc;
     desc.fConfig = kRGBA_8888_GrPixelConfig;
-    desc.fWidth = desc.fHeight = 10;
+    desc.fWidth = desc.fHeight = kSurfSize;
     desc.fFlags = GrRenderable::kYes == renderable ? kRenderTarget_GrSurfaceFlag
                                                    : kNone_GrSurfaceFlags;
     return context->priv().resourceProvider()->createTexture(
@@ -717,14 +735,14 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(TextureIdleStateTest, reporter, contextInfo) {
 
         // Insert a copy from idleTexture to another texture so that we have some queued IO on
         // idleTexture.
-        auto proxy = context->priv().proxyProvider()->testingOnly_createWrapped(
-                std::move(idleTexture), kTopLeft_GrSurfaceOrigin);
-        SkImageInfo info = SkImageInfo::Make(proxy->width(), proxy->height(),
-                                             kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+        SkImageInfo info = SkImageInfo::Make(kSurfSize, kSurfSize, kRGBA_8888_SkColorType,
+                                             kPremul_SkAlphaType);
         auto rt = SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, info, 0, nullptr);
         auto rtc = rt->getCanvas()->internal_private_accessTopLayerRenderTargetContext();
+        auto proxy = context->priv().proxyProvider()->testingOnly_createWrapped(
+                std::move(idleTexture), rtc->asSurfaceProxy()->origin());
         context->flush();
-        rtc->copy(proxy.get());
+        SkAssertResult(rtc->testCopy(proxy.get()));
         proxy.reset();
         REPORTER_ASSERT(reporter, flags == 0);
 

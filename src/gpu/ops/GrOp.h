@@ -69,24 +69,9 @@ public:
 
     virtual const char* name() const = 0;
 
-    typedef std::function<void(GrSurfaceProxy*)> VisitProxyFunc;
+    using VisitProxyFunc = std::function<void(GrSurfaceProxy*, GrMipMapped)>;
 
-    /**
-     * Knowning the type of visitor may enable an op to be more efficient by skipping irrelevant
-     * proxies on visitProxies.
-     */
-    enum class VisitorType : unsigned {
-        /**
-         * Ops *may* skip proxy visitation for allocation for proxies that have the
-         * canSkipResourceAllocator() property.
-         */
-        kAllocatorGather,
-        /**
-         * Ops should visit all proxies.
-         */
-        kOther,
-    };
-    virtual void visitProxies(const VisitProxyFunc&, VisitorType = VisitorType::kOther) const {
+    virtual void visitProxies(const VisitProxyFunc&) const {
         // This default implementation assumes the op has no proxies
     }
 

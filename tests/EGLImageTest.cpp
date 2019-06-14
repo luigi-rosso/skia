@@ -88,6 +88,7 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest, reporter, ctxInfo) {
     static const int kSize = 100;
     backendTexture1 =
         context1->createBackendTexture(kSize, kSize, kRGBA_8888_SkColorType,
+                                       SkColors::kTransparent,
                                        GrMipMapped::kNo, GrRenderable::kNo);
 
     if (!backendTexture1.isValid() || !gpu1->isTestingOnlyBackendTexture(backendTexture1)) {
@@ -144,6 +145,7 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest, reporter, ctxInfo) {
     glCtx0->makeCurrent();
     externalTexture.fTarget = GR_GL_TEXTURE_EXTERNAL;
     externalTexture.fID = glCtx0->eglImageToExternalTexture(image);
+    externalTexture.fFormat = GR_GL_RGBA8;
     if (0 == externalTexture.fID) {
         ERRORF(reporter, "Error converting EGL Image back to texture");
         cleanup(glCtx0, externalTexture.fID, glCtx1.get(), context1, &backendTexture1, image);
@@ -193,7 +195,7 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest, reporter, ctxInfo) {
     // Only test RT-config
     // TODO: why do we always need to draw to copy from an external texture?
     test_copy_from_surface(reporter, context0, surfaceContext->asSurfaceProxy(),
-                           pixels.get(), true, "EGLImageTest-copy");
+                           pixels.get(), "EGLImageTest-copy");
 
     cleanup(glCtx0, externalTexture.fID, glCtx1.get(), context1, &backendTexture1, image);
 }

@@ -14,6 +14,7 @@
 #include "src/core/SkRemoteGlyphCacheImpl.h"
 #include "src/core/SkStrike.h"
 #include "src/core/SkStrikeCache.h"
+#include "src/core/SkStrikeSpec.h"
 #include "src/core/SkSurfacePriv.h"
 #include "src/core/SkTypeface_remote.h"
 #include "tests/Test.h"
@@ -96,6 +97,10 @@ public:
             if (fCacheMissCount[i] > 0) return true;
         }
         return false;
+    }
+    void resetCacheMissCounts() {
+        SkAutoMutexExclusive l(fMutex);
+        sk_bzero(&fCacheMissCount, sizeof(fCacheMissCount));
     }
 
 private:
@@ -445,7 +450,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsPath, reporter, 
     SkPaint paint;
     paint.setStyle(SkPaint::kStroke_Style);
     paint.setStrokeWidth(0);
-    REPORTER_ASSERT(reporter, SkDraw::ShouldDrawTextAsPaths(SkFont(), paint, SkMatrix::I()));
+    REPORTER_ASSERT(reporter,
+            SkStrikeSpec::ShouldDrawAsPath(paint, SkFont(), SkMatrix::I()));
 
     // Server.
     auto serverTf = SkTypeface::MakeFromName("monospace", SkFontStyle());
@@ -485,7 +491,8 @@ sk_sp<SkTextBlob> make_blob_causing_fallback(
     font.setHinting(SkFontHinting::kNormal);
     font.setTypeface(targetTf);
 
-    REPORTER_ASSERT(reporter, !SkDraw::ShouldDrawTextAsPaths(font, SkPaint(), SkMatrix::I()));
+    REPORTER_ASSERT(reporter,
+            !SkStrikeSpec::ShouldDrawAsPath(SkPaint(), font, SkMatrix::I()));
 
     char s[] = "Skia";
     int runSize = strlen(s);
@@ -739,6 +746,66 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_CacheMissReporting, report
     // miss.
     REPORTER_ASSERT(reporter, discardableManager->cacheMissCount(SkStrikeClient::kGlyphImage) == 0);
     REPORTER_ASSERT(reporter, discardableManager->cacheMissCount(SkStrikeClient::kGlyphPath) == 0);
+
+    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    discardableManager->unlockAndDeleteAll();
+}
+
+sk_sp<SkTextBlob> MakeEmojiBlob(sk_sp<SkTypeface> serverTf, SkScalar textSize,
+                                sk_sp<SkTypeface> clientTf = nullptr) {
+    SkFont font;
+    font.setTypeface(serverTf);
+    font.setSize(textSize);
+
+    const char* text = ToolUtils::emoji_sample_text();
+    SkFont serverFont = font;
+    auto blob = SkTextBlob::MakeFromText(text, strlen(text), font);
+    if (clientTf == nullptr) return blob;
+
+    SkSerialProcs s_procs;
+    s_procs.fTypefaceProc = [](SkTypeface*, void* ctx) -> sk_sp<SkData> {
+        return SkData::MakeUninitialized(1u);
+    };
+    auto serialized = blob->serialize(s_procs);
+
+    SkDeserialProcs d_procs;
+    d_procs.fTypefaceCtx = &clientTf;
+    d_procs.fTypefaceProc = [](const void* data, size_t length, void* ctx) -> sk_sp<SkTypeface> {
+        return *(static_cast<sk_sp<SkTypeface>*>(ctx));
+    };
+    return SkTextBlob::Deserialize(serialized->data(), serialized->size(), d_procs);
+}
+
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithNoPaths, reporter, ctxInfo) {
+    sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
+    SkStrikeServer server(discardableManager.get());
+    SkStrikeClient client(discardableManager, false);
+
+    auto serverTf = ToolUtils::emoji_typeface();
+    auto serverTfData = server.serializeTypeface(serverTf.get());
+    auto clientTf = client.deserializeTypeface(serverTfData->data(), serverTfData->size());
+
+    for (SkScalar textSize : { 70, 180, 270, 340}) {
+        auto serverBlob = MakeEmojiBlob(serverTf, textSize);
+        auto props = FindSurfaceProps(ctxInfo.grContext());
+        SkTextBlobCacheDiffCanvas cache_diff_canvas(500, 500, props, &server,
+                                                    MakeSettings(ctxInfo.grContext()));
+        SkPaint paint;
+        cache_diff_canvas.drawTextBlob(serverBlob.get(), 100, 100, paint);
+
+        std::vector<uint8_t> serverStrikeData;
+        server.writeStrikeData(&serverStrikeData);
+
+        REPORTER_ASSERT(reporter,
+                        client.readStrikeData(serverStrikeData.data(), serverStrikeData.size()));
+        auto clientBlob = MakeEmojiBlob(serverTf, textSize, clientTf);
+        REPORTER_ASSERT(reporter, clientBlob);
+
+        RasterBlob(clientBlob, 500, 500, paint, ctxInfo.grContext());
+        REPORTER_ASSERT(reporter, !discardableManager->hasCacheMiss());
+        SkStrikeCache::ValidateGlyphCacheDataSize();
+        discardableManager->resetCacheMissCounts();
+    }
 
     // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
     discardableManager->unlockAndDeleteAll();

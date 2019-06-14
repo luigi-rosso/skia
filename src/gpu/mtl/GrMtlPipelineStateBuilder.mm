@@ -18,6 +18,10 @@
 
 #import <simd/simd.h>
 
+#if !__has_feature(objc_arc)
+#error This file must be compiled with Arc. Use -fobjc-arc flag
+#endif
+
 GrMtlPipelineState* GrMtlPipelineStateBuilder::CreatePipelineState(
         GrMtlGpu* gpu,
         GrRenderTarget* renderTarget, GrSurfaceOrigin origin,
@@ -137,6 +141,9 @@ static inline MTLVertexFormat attribute_type_to_mtlformat(GrVertexAttribType typ
             return MTLVertexFormatInt;
         case kUint_GrVertexAttribType:
             return MTLVertexFormatUInt;
+        // Experimental (for P016 and P010)
+        case kUShort_norm_GrVertexAttribType:
+            return MTLVertexFormatUShortNormalized;
     }
     SK_ABORT("Unknown vertex attribute type");
     return MTLVertexFormatInvalid;

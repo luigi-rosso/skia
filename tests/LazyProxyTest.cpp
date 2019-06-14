@@ -66,8 +66,8 @@ public:
             return pool->allocate<Op>(context, proxyProvider, test, nullTexture);
         }
 
-        void visitProxies(const VisitProxyFunc& func, VisitorType) const override {
-            func(fProxy.get());
+        void visitProxies(const VisitProxyFunc& func) const override {
+            func(fProxy.get(), GrMipMapped::kNo);
         }
 
         void onExecute(GrOpFlushState*, const SkRect& chainBounds) override {
@@ -112,12 +112,6 @@ public:
         FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
         GrProcessorSet::Analysis finalize(
                 const GrCaps&, const GrAppliedClip* clip, GrFSAAType, GrClampType) override {
-            if (clip) {
-                for (int i = 0; i < clip->numClipCoverageFragmentProcessors(); ++i) {
-                    const GrFragmentProcessor* clipFP = clip->clipCoverageFragmentProcessor(i);
-                    clipFP->markPendingExecution();
-                }
-            }
             return GrProcessorSet::EmptySetAnalysis();
         }
         void onPrepare(GrOpFlushState*) override {}
@@ -319,8 +313,8 @@ public:
                                                              shouldFailInstantiation);
     }
 
-    void visitProxies(const VisitProxyFunc& func, VisitorType) const override {
-        func(fLazyProxy.get());
+    void visitProxies(const VisitProxyFunc& func) const override {
+        func(fLazyProxy.get(), GrMipMapped::kNo);
     }
 
 private:
@@ -414,8 +408,8 @@ public:
         return pool->allocate<LazyDeinstantiateTestOp>(std::move(proxy));
     }
 
-    void visitProxies(const VisitProxyFunc& func, VisitorType) const override {
-        func(fLazyProxy.get());
+    void visitProxies(const VisitProxyFunc& func) const override {
+        func(fLazyProxy.get(), GrMipMapped::kNo);
     }
 
 private:
@@ -472,7 +466,8 @@ DEF_GPUTEST(LazyProxyDeinstantiateTest, reporter, /* options */) {
         desc.fConfig = kRGBA_8888_GrPixelConfig;
 
         GrBackendTexture backendTex = ctx->createBackendTexture(
-                kSize, kSize, kRGBA_8888_SkColorType, GrMipMapped::kNo, GrRenderable::kNo);
+                kSize, kSize, kRGBA_8888_SkColorType, SkColors::kTransparent,
+                GrMipMapped::kNo, GrRenderable::kNo);
 
         sk_sp<GrTextureProxy> lazyProxy = proxyProvider->createLazyProxy(
                 [instantiatePtr, releasePtr,

@@ -14,7 +14,6 @@
 #include "src/gpu/GrSemaphore.h"
 
 #include "src/gpu/mtl/GrMtlCaps.h"
-#include "src/gpu/mtl/GrMtlCopyManager.h"
 #include "src/gpu/mtl/GrMtlResourceProvider.h"
 #include "src/gpu/mtl/GrMtlStencilAttachment.h"
 
@@ -29,10 +28,6 @@ class GrMtlCommandBuffer;
 namespace SkSL {
     class Compiler;
 }
-
-// Helper macros for autorelease pools
-#define SK_BEGIN_AUTORELEASE_BLOCK @autoreleasepool {
-#define SK_END_AUTORELEASE_BLOCK }
 
 class GrMtlGpu : public GrGpu {
 public:
@@ -60,14 +55,12 @@ public:
     // command buffer to finish before creating a new buffer and returning.
     void submitCommandBuffer(SyncQueue sync);
 
-    GrBackendTexture createTestingOnlyBackendTexture(int w, int h,
-                                                     const GrBackendFormat& format,
-                                                     GrMipMapped mipMapped,
-                                                     GrRenderable renderable,
-                                                     const void* pixels = nullptr,
-                                                     size_t rowBytes = 0) override;
+    GrBackendTexture createBackendTexture(int w, int h, const GrBackendFormat&,
+                                          GrMipMapped, GrRenderable,
+                                          const void* pixels, size_t rowBytes,
+                                          const SkColor4f* color) override;
 
-    void deleteTestingOnlyBackendTexture(const GrBackendTexture&) override;
+    void deleteBackendTexture(const GrBackendTexture&) override;
 
 #if GR_TEST_UTILS
     bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
@@ -78,22 +71,11 @@ public:
     void testingOnly_flushGpuAndSync() override;
 #endif
 
-    bool copySurfaceAsBlit(GrSurface* dst, GrSurfaceOrigin dstOrigin,
-                           GrSurface* src, GrSurfaceOrigin srcOrigin,
-                           const SkIRect& srcRect, const SkIPoint& dstPoint);
+    bool copySurfaceAsBlit(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
+                           const SkIPoint& dstPoint);
 
-    // This function is needed when we want to copy between two surfaces with different origins and
-    // the destination surface is not a render target. We will first draw to a temporary render
-    // target to adjust for the different origins and then blit from there to the destination.
-    bool copySurfaceAsDrawThenBlit(GrSurface* dst, GrSurfaceOrigin dstOrigin,
-                                   GrSurface* src, GrSurfaceOrigin srcOrigin,
-                                   const SkIRect& srcRect, const SkIPoint& dstPoint);
-
-    bool onCopySurface(GrSurface* dst, GrSurfaceOrigin dstOrigin,
-                       GrSurface* src, GrSurfaceOrigin srcOrigin,
-                       const SkIRect& srcRect,
-                       const SkIPoint& dstPoint,
-                       bool canDiscardOutsideDstRect) override;
+    bool onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
+                       const SkIPoint& dstPoint, bool canDiscardOutsideDstRect) override;
 
     GrGpuRTCommandBuffer* getCommandBuffer(
                                     GrRenderTarget*, GrSurfaceOrigin, const SkRect& bounds,
@@ -228,7 +210,6 @@ private:
 
     std::unique_ptr<SkSL::Compiler> fCompiler;
 
-    GrMtlCopyManager      fCopyManager;
     GrMtlResourceProvider fResourceProvider;
 
     bool fDisconnected;

@@ -11,6 +11,10 @@
 #include "src/gpu/mtl/GrMtlGpu.h"
 #include "src/gpu/mtl/GrMtlUtil.h"
 
+#if !__has_feature(objc_arc)
+#error This file must be compiled with Arc. Use -fobjc-arc flag
+#endif
+
 GrMtlTexture::GrMtlTexture(GrMtlGpu* gpu,
                            SkBudgeted budgeted,
                            const GrSurfaceDesc& desc,
@@ -94,7 +98,7 @@ GrBackendTexture GrMtlTexture::getBackendTexture() const {
     GrMipMapped mipMapped = fTexture.mipmapLevelCount > 1 ? GrMipMapped::kYes
                                                           : GrMipMapped::kNo;
     GrMtlTextureInfo info;
-    info.fTexture = GrGetPtrFromId(fTexture);
+    info.fTexture.reset(GrRetainPtrFromId(fTexture));
     return GrBackendTexture(this->width(), this->height(), mipMapped, info);
 }
 

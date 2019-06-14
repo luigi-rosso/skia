@@ -19,12 +19,12 @@
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrDistanceFieldGenFromVector.h"
 #include "src/gpu/GrDrawOpTest.h"
-#include "src/gpu/GrQuad.h"
 #include "src/gpu/GrRenderTargetContext.h"
 #include "src/gpu/GrResourceProvider.h"
 #include "src/gpu/GrVertexWriter.h"
 #include "src/gpu/effects/GrBitmapTextGeoProc.h"
 #include "src/gpu/effects/GrDistanceFieldGeoProc.h"
+#include "src/gpu/geometry/GrQuad.h"
 #include "src/gpu/ops/GrMeshDrawOp.h"
 #include "src/gpu/ops/GrSimpleMeshDrawOpHelper.h"
 
@@ -272,13 +272,13 @@ public:
 
     const char* name() const override { return "SmallPathOp"; }
 
-    void visitProxies(const VisitProxyFunc& func, VisitorType) const override {
+    void visitProxies(const VisitProxyFunc& func) const override {
         fHelper.visitProxies(func);
 
         const sk_sp<GrTextureProxy>* proxies = fAtlas->getProxies();
         for (uint32_t i = 0; i < fAtlas->numActivePages(); ++i) {
             SkASSERT(proxies[i]);
-            func(proxies[i].get());
+            func(proxies[i].get(), GrMipMapped::kNo);
         }
     }
 

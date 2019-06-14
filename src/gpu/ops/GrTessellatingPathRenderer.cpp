@@ -15,12 +15,12 @@
 #include "src/gpu/GrDrawOpTest.h"
 #include "src/gpu/GrMesh.h"
 #include "src/gpu/GrOpFlushState.h"
-#include "src/gpu/GrPathUtils.h"
 #include "src/gpu/GrResourceCache.h"
 #include "src/gpu/GrResourceProvider.h"
-#include "src/gpu/GrShape.h"
 #include "src/gpu/GrStyle.h"
 #include "src/gpu/GrTessellator.h"
+#include "src/gpu/geometry/GrPathUtils.h"
+#include "src/gpu/geometry/GrShape.h"
 #include "src/gpu/ops/GrMeshDrawOp.h"
 #include "src/gpu/ops/GrSimpleMeshDrawOpHelper.h"
 
@@ -137,7 +137,8 @@ private:
 
 }  // namespace
 
-GrTessellatingPathRenderer::GrTessellatingPathRenderer() {
+GrTessellatingPathRenderer::GrTessellatingPathRenderer()
+  : fMaxVerbCount(GR_AA_TESSELLATOR_MAX_VERB_COUNT) {
 }
 
 GrPathRenderer::CanDrawPath
@@ -161,7 +162,7 @@ GrTessellatingPathRenderer::onCanDrawPath(const CanDrawPathArgs& args) const {
         // without keys.
         SkPath path;
         args.fShape->asPath(&path);
-        if (path.countVerbs() > GR_AA_TESSELLATOR_MAX_VERB_COUNT) {
+        if (path.countVerbs() > fMaxVerbCount) {
             return CanDrawPath::kNo;
         }
     }
@@ -191,7 +192,7 @@ public:
 
     const char* name() const override { return "TessellatingPathOp"; }
 
-    void visitProxies(const VisitProxyFunc& func, VisitorType) const override {
+    void visitProxies(const VisitProxyFunc& func) const override {
         fHelper.visitProxies(func);
     }
 

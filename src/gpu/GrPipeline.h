@@ -16,7 +16,6 @@
 #include "src/gpu/GrPendingIOResource.h"
 #include "src/gpu/GrProcessorSet.h"
 #include "src/gpu/GrProgramDesc.h"
-#include "src/gpu/GrRect.h"
 #include "src/gpu/GrScissorState.h"
 #include "src/gpu/GrUserStencilSettings.h"
 #include "src/gpu/GrWindowRectsState.h"
@@ -24,6 +23,7 @@
 #include "src/gpu/effects/GrDisableColorXP.h"
 #include "src/gpu/effects/GrPorterDuffXferProcessor.h"
 #include "src/gpu/effects/generated/GrSimpleTextureEffect.h"
+#include "src/gpu/geometry/GrRect.h"
 
 class GrAppliedClip;
 class GrOp;
@@ -136,7 +136,8 @@ public:
         if (offset) {
             *offset = fDstTextureOffset;
         }
-        return fDstTextureProxy.get();
+
+        return fDstTextureProxy ? fDstTextureProxy->asTextureProxy() : nullptr;
     }
 
     GrTexture* peekDstTexture(SkIPoint* offset = nullptr) const {
@@ -205,10 +206,9 @@ private:
 
     friend bool operator&(Flags, InputFlags);
 
-    using DstTextureProxy = GrPendingIOResource<GrTextureProxy, kRead_GrIOType>;
     using FragmentProcessorArray = SkAutoSTArray<8, std::unique_ptr<const GrFragmentProcessor>>;
 
-    DstTextureProxy fDstTextureProxy;
+    GrProxyPendingIO fDstTextureProxy;
     SkIPoint fDstTextureOffset;
     GrWindowRectsState fWindowRectsState;
     const GrUserStencilSettings* fUserStencilSettings;

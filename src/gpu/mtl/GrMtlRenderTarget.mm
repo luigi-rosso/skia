@@ -10,6 +10,10 @@
 #include "src/gpu/mtl/GrMtlGpu.h"
 #include "src/gpu/mtl/GrMtlUtil.h"
 
+#if !__has_feature(objc_arc)
+#error This file must be compiled with Arc. Use -fobjc-arc flag
+#endif
+
 // Called for wrapped non-texture render targets.
 GrMtlRenderTarget::GrMtlRenderTarget(GrMtlGpu* gpu,
                                      const GrSurfaceDesc& desc,
@@ -50,7 +54,7 @@ GrMtlRenderTarget::~GrMtlRenderTarget() {
 
 GrBackendRenderTarget GrMtlRenderTarget::getBackendRenderTarget() const {
     GrMtlTextureInfo info;
-    info.fTexture = GrGetPtrFromId(fRenderTexture);
+    info.fTexture.reset(GrRetainPtrFromId(fRenderTexture));
     return GrBackendRenderTarget(this->width(), this->height(), fRenderTexture.sampleCount, info);
 }
 

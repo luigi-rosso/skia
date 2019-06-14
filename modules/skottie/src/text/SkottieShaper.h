@@ -11,6 +11,8 @@
 #include "include/core/SkPoint.h"
 #include "include/utils/SkTextUtils.h"
 
+#include <vector>
+
 class SkTextBlob;
 
 namespace skottie {
@@ -19,14 +21,18 @@ namespace skottie {
 
 class Shaper final {
 public:
-    struct Result {
-        // For now, shaping produces a single text blob.  This will eventually
-        // evolve into an array of <blob,pos> tuples to support animating
-        // per-character properties.
+    struct Fragment {
         sk_sp<SkTextBlob> fBlob;
         SkPoint           fPos;
 
-        SkRect computeBounds() const;
+        // Only valid for kFragmentGlyphs
+        uint32_t          fLineIndex;    // 0-based index for the line this fragment belongs to.
+        bool              fIsWhitespace; // True if the first code point in the corresponding
+                                         // cluster is whitespace.
+    };
+
+    struct Result {
+        std::vector<Fragment> fFragments;
     };
 
     enum class VAlign : uint8_t {
@@ -36,16 +42,27 @@ public:
         kTopBaseline,
         // Align the center of the shaped text bounds with the center of the text box.
         kCenter,
+        // Align the last line visual bottom with the text box bottom.
+        kBottom,
         // Resize the text such that it fits (snuggly) in the given box.
         kResizeToFit,
+    };
+
+    enum Flags : uint32_t {
+        kNone           = 0x00,
+
+        // Split out individual glyphs into separate Fragments
+        // (useful when the caller intends to manipulate glyphs independently).
+        kFragmentGlyphs = 0x01,
     };
 
     struct TextDesc {
         const sk_sp<SkTypeface>&  fTypeface;
         SkScalar                  fTextSize,
-                                  fLineHeight; // when 0, use natural/computed line height.
+                                  fLineHeight;
         SkTextUtils::Align        fHAlign;
         VAlign                    fVAlign;
+        uint32_t                  fFlags;
     };
 
     // Performs text layout along an infinite horizontal line, starting at |textPoint|.

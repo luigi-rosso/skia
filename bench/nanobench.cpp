@@ -28,15 +28,16 @@
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
-#include "include/private/SkLeanWindows.h"
 #include "src/core/SkAutoMalloc.h"
 #include "src/core/SkBBoxHierarchy.h"
 #include "src/core/SkColorSpacePriv.h"
+#include "src/core/SkLeanWindows.h"
 #include "src/core/SkOSFile.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/utils/SkJSONWriter.h"
 #include "src/utils/SkOSPath.h"
+#include "tools/AutoreleasePool.h"
 #include "tools/CrashHandler.h"
 #include "tools/ProcStats.h"
 #include "tools/Stats.h"
@@ -1235,6 +1236,7 @@ int main(int argc, char** argv) {
     int runs = 0;
     BenchmarkStream benchStream;
     log.beginObject("results");
+    AutoreleasePool pool;
     while (Benchmark* b = benchStream.next()) {
         std::unique_ptr<Benchmark> bench(b);
         if (CommandLineFlags::ShouldSkip(FLAGS_match, bench->getUniqueName())) {
@@ -1305,6 +1307,11 @@ int main(int argc, char** argv) {
                 for (int s = 0; s < FLAGS_samples; s++) {
                     samples[s] = time(loops, bench.get(), target) / loops;
                 }
+            }
+
+            // Scale each result to the benchmark's own units, time/unit.
+            for (double& sample : samples) {
+                sample *= (1.0 / bench->getUnits());
             }
 
             SkTArray<SkString> keys;
@@ -1421,6 +1428,7 @@ int main(int argc, char** argv) {
                 SkDebugf("%s\n", bench->getUniqueName());
             }
             cleanup_run(target);
+            pool.drain();
         }
         if (!configs.empty()) {
             log.endBench();

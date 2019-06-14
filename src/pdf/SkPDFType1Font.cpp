@@ -5,6 +5,7 @@
 
 #include "include/private/SkTemplates.h"
 #include "include/private/SkTo.h"
+#include "src/core/SkStrikeSpec.h"
 
 #include <ctype.h>
 
@@ -299,13 +300,22 @@ void SkPDFEmitType1Font(const SkPDFFont& pdfFont, SkPDFDocument* doc) {
     font.insertInt("LastChar", (size_t)glyphCount);
     {
         int emSize;
-        auto glyphCache = SkPDFFont::MakeVectorCache(typeface, &emSize);
+        SkStrikeSpec strikeSpec = SkStrikeSpec::MakePDFVector(*typeface, &emSize);
+        auto glyphCache = strikeSpec.findOrCreateExclusiveStrike();
         auto widths = SkPDFMakeArray();
-        SkScalar advance = glyphCache->getGlyphIDAdvance(0).fAdvanceX;
-        widths->appendScalar(from_font_units(advance, SkToU16(emSize)));
-        for (unsigned gID = firstGlyphID; gID <= lastGlyphID; gID++) {
-            advance = glyphCache->getGlyphIDAdvance(gID).fAdvanceX;
-            widths->appendScalar(from_font_units(advance, SkToU16(emSize)));
+
+        int glyphRangeSize = lastGlyphID - firstGlyphID + 2;
+        SkAutoTArray<SkGlyphID> glyphIDs{glyphRangeSize};
+        glyphIDs[0] = 0;
+        for (unsigned gId = firstGlyphID; gId <= lastGlyphID; gId++) {
+            glyphIDs[gId - firstGlyphID + 1] = gId;
+        }
+        SkAutoTArray<SkPoint> advances{glyphRangeSize};
+        glyphCache->getAdvances(
+                SkSpan<const SkGlyphID>{glyphIDs.get(), SkTo<size_t>(glyphRangeSize)},
+                advances.get());
+        for (int i = 0; i < glyphRangeSize; ++i) {
+            widths->appendScalar(from_font_units(advances[i].x(), SkToU16(emSize)));
         }
         font.insertObject("Widths", std::move(widths));
     }

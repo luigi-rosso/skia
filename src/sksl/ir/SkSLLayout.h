@@ -86,6 +86,7 @@ struct Layout {
         kSkIRect,
         kSkPMColor4f,
         kSkPMColor,
+        kSkVector4,
         kSkPoint,
         kSkIPoint,
         kSkMatrix,
@@ -158,6 +159,8 @@ struct Layout {
                 return "SkPMColor4f";
             case CType::kSkPMColor:
                 return "SkPMColor";
+            case CType::kSkVector4:
+                return "SkVector4";
             case CType::kSkPoint:
                 return "SkPoint";
             case CType::kSkIPoint:
@@ -178,7 +181,7 @@ struct Layout {
 
     Layout(int flags, int location, int offset, int binding, int index, int set, int builtin,
            int inputAttachmentIndex, Format format, Primitive primitive, int maxVertices,
-           int invocations, String when, Key key, CType ctype)
+           int invocations, StringFragment when, Key key, CType ctype)
     : fFlags(flags)
     , fLocation(location)
     , fOffset(offset)
@@ -366,7 +369,7 @@ struct Layout {
             result += separator + "invocations = " + to_string(fInvocations);
             separator = ", ";
         }
-        if (fWhen.size()) {
+        if (fWhen.fLength) {
             result += separator + "when = " + fWhen;
             separator = ", ";
         }
@@ -414,7 +417,7 @@ struct Layout {
     Primitive fPrimitive;
     int fMaxVertices;
     int fInvocations;
-    String fWhen;
+    StringFragment fWhen;
     Key fKey;
     CType fCType;
 };

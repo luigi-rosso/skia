@@ -12,6 +12,7 @@
 #include "include/core/SkTypes.h"
 #include "modules/skottie/src/SkottieJson.h"
 #include "modules/skottie/src/text/TextAdapter.h"
+#include "modules/skottie/src/text/TextAnimator.h"
 #include "modules/skottie/src/text/TextValue.h"
 #include "modules/sksg/include/SkSGDraw.h"
 #include "modules/sksg/include/SkSGGroup.h"
@@ -31,13 +32,30 @@ SkFontStyle FontStyle(const AnimationBuilder* abuilder, const char* style) {
         const char*               fName;
         const SkFontStyle::Weight fWeight;
     } gWeightMap[] = {
-        { "ExtraLight", SkFontStyle::kExtraLight_Weight },
-        { "Light"     , SkFontStyle::kLight_Weight      },
         { "Regular"   , SkFontStyle::kNormal_Weight     },
         { "Medium"    , SkFontStyle::kMedium_Weight     },
-        { "SemiBold"  , SkFontStyle::kSemiBold_Weight   },
         { "Bold"      , SkFontStyle::kBold_Weight       },
+        { "Light"     , SkFontStyle::kLight_Weight      },
+        { "Black"     , SkFontStyle::kBlack_Weight      },
+        { "Thin"      , SkFontStyle::kThin_Weight       },
+        { "Extra"     , SkFontStyle::kExtraBold_Weight  },
         { "ExtraBold" , SkFontStyle::kExtraBold_Weight  },
+        { "ExtraLight", SkFontStyle::kExtraLight_Weight },
+        { "ExtraBlack", SkFontStyle::kExtraBlack_Weight },
+        { "SemiBold"  , SkFontStyle::kSemiBold_Weight   },
+        { "Hairline"  , SkFontStyle::kThin_Weight       },
+        { "Normal"    , SkFontStyle::kNormal_Weight     },
+        { "Plain"     , SkFontStyle::kNormal_Weight     },
+        { "Standard"  , SkFontStyle::kNormal_Weight     },
+        { "Roman"     , SkFontStyle::kNormal_Weight     },
+        { "Heavy"     , SkFontStyle::kBlack_Weight      },
+        { "Demi"      , SkFontStyle::kSemiBold_Weight   },
+        { "DemiBold"  , SkFontStyle::kSemiBold_Weight   },
+        { "Ultra"     , SkFontStyle::kExtraBold_Weight  },
+        { "UltraBold" , SkFontStyle::kExtraBold_Weight  },
+        { "UltraBlack", SkFontStyle::kExtraBlack_Weight },
+        { "UltraHeavy", SkFontStyle::kExtraBlack_Weight },
+        { "UltraLight", SkFontStyle::kExtraLight_Weight },
     };
 
     SkFontStyle::Weight weight = SkFontStyle::kNormal_Weight;
@@ -240,7 +258,7 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachTextLayer(const skjson::ObjectVa
                                                           AnimatorScope* ascope) const {
     // General text node format:
     // "t": {
-    //    "a": [], // animators (TODO)
+    //    "a": [], // animators (see TextAnimator.cpp)
     //    "d": {
     //        "k": [
     //            {
@@ -272,9 +290,7 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachTextLayer(const skjson::ObjectVa
     }
 
     const skjson::ArrayValue* animated_props = (*jt)["a"];
-    if (animated_props && animated_props->size() > 0) {
-        this->log(Logger::Level::kWarning, nullptr, "Unsupported animated text properties.");
-    }
+    const auto has_animators = (animated_props && animated_props->size() > 0);
 
     const skjson::ObjectValue* jd  = (*jt)["d"];
     if (!jd) {
@@ -282,11 +298,17 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachTextLayer(const skjson::ObjectVa
     }
 
     auto text_root = sksg::Group::Make();
-    auto adapter   = sk_make_sp<TextAdapter>(text_root);
+    auto adapter   = sk_make_sp<TextAdapter>(text_root, has_animators);
 
     this->bindProperty<TextValue>(*jd, ascope, [adapter] (const TextValue& txt) {
         adapter->setText(txt);
     });
+
+    if (has_animators) {
+        if (auto alist = TextAnimatorList::Make(*animated_props, this, adapter)) {
+            ascope->push_back(std::move(alist));
+        }
+    }
 
     return std::move(text_root);
 }

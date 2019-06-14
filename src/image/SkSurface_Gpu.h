@@ -25,13 +25,24 @@ public:
 
     GrBackendTexture onGetBackendTexture(BackendHandleAccess) override;
     GrBackendRenderTarget onGetBackendRenderTarget(BackendHandleAccess) override;
+    bool onReplaceBackendTexture(const GrBackendTexture&, GrSurfaceOrigin, TextureReleaseProc,
+                                 ReleaseContext) override;
 
     SkCanvas* onNewCanvas() override;
     sk_sp<SkSurface> onNewSurface(const SkImageInfo&) override;
     sk_sp<SkImage> onNewImageSnapshot(const SkIRect* subset) override;
     void onWritePixels(const SkPixmap&, int x, int y) override;
-    void onAsyncReadPixels(const SkImageInfo& info, int srcX, int srcY, ReadPixelsCallback,
-                           ReadPixelsContext) override;
+    void onAsyncRescaleAndReadPixels(const SkImageInfo& info, const SkIRect& srcRect,
+                                     RescaleGamma rescaleGamma, SkFilterQuality rescaleQuality,
+                                     ReadPixelsCallback callback,
+                                     ReadPixelsContext context) override;
+    void onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSpace,
+                                           sk_sp<SkColorSpace> dstColorSpace,
+                                           const SkIRect& srcRect, int dstW, int dstH,
+                                           RescaleGamma rescaleGamma,
+                                           SkFilterQuality rescaleQuality,
+                                           ReadPixelsCallbackYUV420 callback,
+                                           ReadPixelsContext context) override;
 
     void onCopyOnWrite(ContentChangeMode) override;
     void onDiscard() override;

@@ -71,17 +71,14 @@ public:
          * Stack before call: ... lvalue value
          * Stack after call: ...
          */
-        virtual void store() = 0;
+        virtual void store(bool discard) = 0;
 
     protected:
         ByteCodeGenerator& fGenerator;
     };
 
     ByteCodeGenerator(const Context* context, const Program* program, ErrorReporter* errors,
-                      ByteCode* output)
-    : INHERITED(program, errors, nullptr)
-    , fContext(*context)
-    , fOutput(output) {}
+                      ByteCode* output);
 
     bool generateCode() override;
 
@@ -98,6 +95,8 @@ public:
      */
     void writeTypedInstruction(const Type& type, ByteCodeInstruction s, ByteCodeInstruction u,
                                ByteCodeInstruction f, int count);
+
+    static int SlotCount(const Type& type);
 
 private:
     // reserves 16 bits in the output code, to be filled in later with an address once we determine
@@ -146,7 +145,7 @@ private:
 
         bool set() {
             size_t idx;
-            const auto& functions(fGenerator.fOutput->fFunctions);
+            const auto& functions(fGenerator.fFunctions);
             for (idx = 0; idx < functions.size(); ++idx) {
                 if (fFunction.matches(functions[idx]->fDeclaration)) {
                     break;
@@ -167,6 +166,34 @@ private:
         const FunctionDeclaration& fFunction;
     };
 
+    // Intrinsics which do not simply map to a single opcode
+    enum class SpecialIntrinsic {
+        kDot,
+    };
+
+    struct Intrinsic {
+        Intrinsic(ByteCodeInstruction instruction)
+            : fIsSpecial(false)
+            , fValue(instruction) {}
+
+        Intrinsic(SpecialIntrinsic special)
+            : fIsSpecial(true)
+            , fValue(special) {}
+
+        bool fIsSpecial;
+
+        union Value {
+            Value(ByteCodeInstruction instruction)
+                : fInstruction(instruction) {}
+
+            Value(SpecialIntrinsic special)
+                : fSpecial(special) {}
+
+            ByteCodeInstruction fInstruction;
+            SpecialIntrinsic fSpecial;
+        } fValue;
+    };
+
     /**
      * Returns the local slot into which var should be stored, allocating a new slot if it has not
      * already been assigned one. Compound variables (e.g. vectors) will consume more than one local
@@ -174,19 +201,28 @@ private:
      */
     int getLocation(const Variable& var);
 
+    /**
+     * As above, but computes the (possibly dynamic) address of an expression involving indexing &
+     * field access. If the address is known, it's returned. If not, -1 is returned, and the
+     * location will be left on the top of the stack.
+     */
+    int getLocation(const Expression& expr, Variable::Storage* storage);
+
     std::unique_ptr<ByteCodeFunction> writeFunction(const FunctionDefinition& f);
 
     void writeVarDeclarations(const VarDeclarations& decl);
 
-    void writeVariableReference(const VariableReference& ref);
+    void writeVariableExpression(const Expression& expr);
 
-    void writeExpression(const Expression& expr);
+    void writeExpression(const Expression& expr, bool discard = false);
 
     /**
      * Pushes whatever values are required by the lvalue onto the stack, and returns an LValue
      * permitting loads and stores to it.
      */
     std::unique_ptr<LValue> getLValue(const Expression& expr);
+
+    void writeIntrinsicCall(const FunctionCall& c);
 
     void writeFunctionCall(const FunctionCall& c);
 
@@ -196,15 +232,11 @@ private:
 
     void writeExternalValue(const ExternalValueReference& r);
 
-    void writeFieldAccess(const FieldAccess& f);
-
     void writeSwizzle(const Swizzle& swizzle);
 
-    void writeBinaryExpression(const BinaryExpression& b);
+    bool writeBinaryExpression(const BinaryExpression& b, bool discard);
 
     void writeTernaryExpression(const TernaryExpression& t);
-
-    void writeIndexExpression(const IndexExpression& expr);
 
     void writeLogicalAnd(const BinaryExpression& b);
 
@@ -212,9 +244,9 @@ private:
 
     void writeNullLiteral(const NullLiteral& n);
 
-    void writePrefixExpression(const PrefixExpression& p);
+    bool writePrefixExpression(const PrefixExpression& p, bool discard);
 
-    void writePostfixExpression(const PostfixExpression& p);
+    bool writePostfixExpression(const PostfixExpression& p, bool discard);
 
     void writeBoolLiteral(const BoolLiteral& b);
 
@@ -262,12 +294,15 @@ private:
 
     std::stack<std::vector<DeferredLocation>> fBreakTargets;
 
+    std::vector<const FunctionDefinition*> fFunctions;
     std::vector<DeferredCallTarget> fCallTargets;
 
     int fParameterCount;
 
+    const std::unordered_map<String, Intrinsic> fIntrinsics;
+
     friend class DeferredLocation;
-    friend class ByteCodeVariableLValue;
+    friend class ByteCodeExpressionLValue;
     friend class ByteCodeSwizzleLValue;
 
     typedef CodeGenerator INHERITED;

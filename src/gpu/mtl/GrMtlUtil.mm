@@ -16,6 +16,10 @@
 
 #import <Metal/Metal.h>
 
+#if !__has_feature(objc_arc)
+#error This file must be compiled with Arc. Use -fobjc-arc flag
+#endif
+
 #define PRINT_MSL 0 // print out the MSL code generated
 
 bool GrPixelConfigToMTLFormat(GrPixelConfig config, MTLPixelFormat* format) {
@@ -100,25 +104,15 @@ bool GrPixelConfigToMTLFormat(GrPixelConfig config, MTLPixelFormat* format) {
 #else
             return false;
 #endif
+        case kR_16_GrPixelConfig:
+            *format = MTLPixelFormatR16Unorm;
+            return true;
+        case kRG_1616_GrPixelConfig:
+            *format = MTLPixelFormatRG16Unorm;
+            return true;
     }
     SK_ABORT("Unexpected config");
     return false;
-}
-
-id<MTLTexture> GrGetMTLTexture(const void* mtlTexture, GrWrapOwnership wrapOwnership) {
-    if (GrWrapOwnership::kAdopt_GrWrapOwnership == wrapOwnership) {
-        return (__bridge_transfer id<MTLTexture>)mtlTexture;
-    } else {
-        return (__bridge id<MTLTexture>)mtlTexture;
-    }
-}
-
-const void* GrGetPtrFromId(id idObject) {
-    return (__bridge const void*)idObject;
-}
-
-const void* GrReleaseId(id idObject) {
-    return (__bridge_retained const void*)idObject;
 }
 
 MTLTextureDescriptor* GrGetMTLTextureDescriptor(id<MTLTexture> mtlTexture) {
@@ -215,7 +209,6 @@ id<MTLTexture> GrGetMTLTextureFromSurface(GrSurface* surface, bool doResolve) {
 // CPP Utils
 
 GrMTLPixelFormat GrGetMTLPixelFormatFromMtlTextureInfo(const GrMtlTextureInfo& info) {
-    id<MTLTexture> mtlTexture = GrGetMTLTexture(info.fTexture,
-                                                GrWrapOwnership::kBorrow_GrWrapOwnership);
+    id<MTLTexture> mtlTexture = GrGetMTLTexture(info.fTexture.get());
     return static_cast<GrMTLPixelFormat>(mtlTexture.pixelFormat);
 }

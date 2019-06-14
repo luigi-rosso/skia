@@ -174,8 +174,6 @@ GrProcessorSet::Analysis GrProcessorSet::finalize(
             fFragmentProcessors.get() + fFragmentProcessorOffset;
     GrColorFragmentProcessorAnalysis colorAnalysis(
             colorInput, unique_ptr_address_as_pointer_address(fps), fColorFragmentProcessorCnt);
-    analysis.fCompatibleWithCoverageAsAlpha &=
-            colorAnalysis.allProcessorsCompatibleWithCoverageAsAlpha();
     fps += fColorFragmentProcessorCnt;
     int n = this->numCoverageFragmentProcessors();
     bool hasCoverageFP = n > 0;
@@ -190,7 +188,6 @@ GrProcessorSet::Analysis GrProcessorSet::finalize(
         hasCoverageFP = hasCoverageFP || clip->numClipCoverageFragmentProcessors();
         for (int i = 0; i < clip->numClipCoverageFragmentProcessors(); ++i) {
             const GrFragmentProcessor* clipFP = clip->clipCoverageFragmentProcessor(i);
-            clipFP->markPendingExecution();
             analysis.fCompatibleWithCoverageAsAlpha &= clipFP->compatibleWithCoverageAsAlpha();
             coverageUsesLocalCoords |= clipFP->usesLocalCoords();
         }
@@ -226,13 +223,12 @@ GrProcessorSet::Analysis GrProcessorSet::finalize(
                 static_cast<Analysis::PackedInputColorType>(Analysis::kIgnored_InputColorType);
         analysis.fUsesLocalCoords = coverageUsesLocalCoords;
     } else {
+        analysis.fCompatibleWithCoverageAsAlpha &=
+            colorAnalysis.allProcessorsCompatibleWithCoverageAsAlpha();
         analysis.fUsesLocalCoords = coverageUsesLocalCoords | colorAnalysis.usesLocalCoords();
     }
     for (int i = 0; i < colorFPsToEliminate; ++i) {
         fFragmentProcessors[i].reset(nullptr);
-    }
-    for (int i = colorFPsToEliminate; i < fFragmentProcessors.count(); ++i) {
-        fFragmentProcessors[i]->markPendingExecution();
     }
     fFragmentProcessorOffset = colorFPsToEliminate;
     fColorFragmentProcessorCnt -= colorFPsToEliminate;

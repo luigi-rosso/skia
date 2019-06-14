@@ -18,16 +18,17 @@
 #include "include/ports/SkTypeface_win.h"
 #include "include/private/SkChecksum.h"
 #include "include/private/SkHalf.h"
-#include "include/private/SkLeanWindows.h"
 #include "include/private/SkMutex.h"
 #include "include/private/SkSpinlock.h"
 #include "include/private/SkTHash.h"
 #include "src/core/SkColorSpacePriv.h"
+#include "src/core/SkLeanWindows.h"
 #include "src/core/SkMD5.h"
 #include "src/core/SkOSFile.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/utils/SkOSPath.h"
 #include "tests/Test.h"
+#include "tools/AutoreleasePool.h"
 #include "tools/HashAndEncode.h"
 #include "tools/ProcStats.h"
 #include "tools/Resources.h"
@@ -152,11 +153,8 @@ using sk_gpu_test::ContextInfo;
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-static constexpr skcms_TransferFunction k2020_TF =
-    {2.22222f, 0.909672f, 0.0903276f, 0.222222f, 0.0812429f, 0, 0};
-
 static sk_sp<SkColorSpace> rec2020() {
-    return SkColorSpace::MakeRGB(k2020_TF, SkNamedGamut::kRec2020);
+    return SkColorSpace::MakeRGB(SkNamedTransferFn::kRec2020, SkNamedGamut::kRec2020);
 }
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
@@ -1024,6 +1022,7 @@ static Sink* create_via(const SkString& tag, Sink* wrapped) {
 static bool gather_sinks(const GrContextOptions& grCtxOptions, bool defaultConfigs) {
     SkCommandLineConfigArray configs;
     ParseConfigs(FLAGS_config, &configs);
+    AutoreleasePool pool;
     for (int i = 0; i < configs.count(); i++) {
         const SkCommandLineConfig& config = *configs[i];
         Sink* sink = create_sink(grCtxOptions, &config);
@@ -1097,6 +1096,7 @@ struct Task {
     const TaggedSink& sink;
 
     static void Run(const Task& task) {
+        AutoreleasePool pool;
         SkString name = task.src->name();
 
         SkString log;
@@ -1241,8 +1241,8 @@ struct Task {
             if (tf.a == 1 && tf.b == 0 && tf.c == 0 && tf.d == 0 && tf.e == 0 && tf.f == 0) {
                 return SkStringPrintf("gamma %.3g", tf.g);
             }
-            if (eq(tf, SkNamedTransferFn::kSRGB)) { return SkString("sRGB"); }
-            if (eq(tf, k2020_TF                )) { return SkString("2020"); }
+            if (eq(tf, SkNamedTransferFn::kSRGB   )) { return SkString("sRGB"); }
+            if (eq(tf, SkNamedTransferFn::kRec2020)) { return SkString("2020"); }
             return SkStringPrintf("%.3g %.3g %.3g %.3g %.3g %.3g %.3g",
                                   tf.g, tf.a, tf.b, tf.c, tf.d, tf.e, tf.f);
         }
@@ -1367,6 +1367,7 @@ static void run_test(skiatest::Test test, const GrContextOptions& grCtxOptions) 
     } reporter;
 
     if (!FLAGS_dryRun && !is_blacklisted("_", "tests", "_", test.name)) {
+        AutoreleasePool pool;
         GrContextOptions options = grCtxOptions;
         test.modifyGrContextOptions(&options);
 

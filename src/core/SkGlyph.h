@@ -25,45 +25,39 @@ class SkScalerContext;
 
 #define kMaxGlyphWidth (1<<13)
 
-/** (glyph-index or unicode-point) + subpixel-pos */
-struct SkPackedID {
-    static constexpr uint32_t kImpossibleID = ~0;
+/** SkGlyphID + subpixel-pos */
+struct SkPackedGlyphID {
+    static constexpr uint32_t kImpossibleID = ~0u;
     enum {
-        kSubBits = 2,
-        kSubMask = ((1 << kSubBits) - 1),
-        kSubShift = 24, // must be large enough for glyphs and unichars
-        kCodeMask = ((1 << kSubShift) - 1),
+        kSubBits = 2u,
+        kSubMask = ((1u << kSubBits) - 1),
+        kSubShift = 24u, // must be large enough for glyphs and unichars
+        kCodeMask = ((1u << kSubShift) - 1),
         // relative offsets for X and Y subpixel bits
         kSubShiftX = kSubBits,
         kSubShiftY = 0
     };
 
-    SkPackedID(uint32_t code) {
-        SkASSERT(code <= kCodeMask);
-        SkASSERT(code != kImpossibleID);
-        fID = code;
+    constexpr explicit SkPackedGlyphID(SkGlyphID glyphID)
+            : fID{glyphID} { }
+
+    constexpr SkPackedGlyphID(SkGlyphID glyphID, SkFixed x, SkFixed y)
+            : fID {PackIDXY(glyphID, x, y)} {
+        SkASSERT(fID != kImpossibleID);
     }
 
-    SkPackedID(uint32_t code, SkFixed x, SkFixed y) {
-        SkASSERT(code <= kCodeMask);
-        x = FixedToSub(x);
-        y = FixedToSub(y);
-        uint32_t ID = (x << (kSubShift + kSubShiftX)) |
-                      (y << (kSubShift + kSubShiftY)) |
-                      code;
-        SkASSERT(ID != kImpossibleID);
-        fID = ID;
-    }
+    constexpr SkPackedGlyphID(SkGlyphID code, SkIPoint pt)
+        : SkPackedGlyphID(code, pt.fX, pt.fY) { }
 
-    constexpr SkPackedID() : fID(kImpossibleID) {}
+    constexpr SkPackedGlyphID() : fID{kImpossibleID} {}
 
-    bool operator==(const SkPackedID& that) const {
+    bool operator==(const SkPackedGlyphID& that) const {
         return fID == that.fID;
     }
-    bool operator!=(const SkPackedID& that) const {
+    bool operator!=(const SkPackedGlyphID& that) const {
         return !(*this == that);
     }
-    bool operator<(SkPackedID that) const {
+    bool operator<(SkPackedGlyphID that) const {
         return this->fID < that.fID;
     }
 
@@ -94,34 +88,30 @@ struct SkPackedID {
     }
 
 private:
-    static unsigned ID2SubX(uint32_t id) {
+    static constexpr uint32_t PackIDXY(SkGlyphID glyphID, SkFixed x, SkFixed y) {
+        return (FixedToSub(x) << (kSubShift + kSubShiftX))
+             | (FixedToSub(y) << (kSubShift + kSubShiftY))
+             | glyphID;
+    }
+
+    static constexpr unsigned ID2SubX(uint32_t id) {
         return id >> (kSubShift + kSubShiftX);
     }
 
-    static unsigned ID2SubY(uint32_t id) {
+    static constexpr unsigned ID2SubY(uint32_t id) {
         return (id >> (kSubShift + kSubShiftY)) & kSubMask;
     }
 
-    static unsigned FixedToSub(SkFixed n) {
+    static constexpr unsigned FixedToSub(SkFixed n) {
         return (n >> (16 - kSubBits)) & kSubMask;
     }
 
-    static SkFixed SubToFixed(unsigned sub) {
+    static constexpr SkFixed SubToFixed(uint32_t sub) {
         SkASSERT(sub <= kSubMask);
-        return sub << (16 - kSubBits);
+        return sub << (16u - kSubBits);
     }
 
     uint32_t fID;
-};
-
-struct SkPackedGlyphID : public SkPackedID {
-    SkPackedGlyphID(SkGlyphID code) : SkPackedID(code) { }
-    SkPackedGlyphID(SkGlyphID code, SkFixed x, SkFixed y) : SkPackedID(code, x, y) { }
-    SkPackedGlyphID(SkGlyphID code, SkIPoint pt) : SkPackedID(code, pt.x(), pt.y()) { }
-    constexpr SkPackedGlyphID() = default;
-    SkGlyphID code() const {
-        return SkTo<SkGlyphID>(SkPackedID::code());
-    }
 };
 
 class SkGlyph {
@@ -129,7 +119,11 @@ class SkGlyph {
 
 public:
     constexpr explicit SkGlyph(SkPackedGlyphID id) : fID{id} {}
-    static constexpr SkFixed kSubpixelRound = SK_FixedHalf >> SkPackedID::kSubBits;
+    static constexpr SkFixed kSubpixelRound = SK_FixedHalf >> SkPackedGlyphID::kSubBits;
+
+    SkVector advanceVector() const { return SkVector{fAdvanceX, fAdvanceY}; }
+    SkScalar advanceX() const { return fAdvanceX; }
+    SkScalar advanceY() const { return fAdvanceY; }
 
     bool isEmpty() const { return fWidth == 0 || fHeight == 0; }
     bool isJustAdvance() const { return MASK_FORMAT_JUST_ADVANCE == fMaskFormat; }
@@ -159,21 +153,26 @@ public:
 
     SkMask mask(SkPoint position) const;
 
-    SkPath* addPath(SkScalerContext*, SkArenaAlloc*);
+    // If we haven't already tried to associate a path to this glyph
+    // (i.e. setPathHasBeenCalled() returns false), then use the
+    // SkScalerContext or SkPath argument to try to do so.  N.B. this
+    // may still result in no path being associated with this glyph,
+    // e.g. if you pass a null SkPath or the typeface is bitmap-only.
+    //
+    // This setPath() call is sticky... once you call it, the glyph
+    // stays in its state permanently, ignoring any future calls.
+    //
+    // Returns true if this is the first time you called setPath()
+    // and there actually is a path; call path() to get it.
+    bool setPath(SkArenaAlloc* alloc, SkScalerContext* scalerContext);
+    bool setPath(SkArenaAlloc* alloc, const SkPath* path);
 
-    SkPath* path() const {
-        return fPathData != nullptr && fPathData->fHasPath ? &fPathData->fPath : nullptr;
-    }
+    // Returns true if that path has been set.
+    bool setPathHasBeenCalled() const { return fPathData != nullptr; }
 
-    bool hasPath() const {
-        // Need to have called getMetrics before calling findPath.
-        SkASSERT(fMaskFormat != MASK_FORMAT_UNKNOWN);
-
-        // Find path must have been called to use this call.
-        SkASSERT(fPathData != nullptr);
-
-        return fPathData != nullptr && fPathData->fHasPath;
-    }
+    // Return a pointer to the path if it exists, otherwise return nullptr. Only works if the
+    // path was previously set.
+    const SkPath* path() const;
 
     int maxDimension() const {
         // width and height are only defined if a metrics call was made.
@@ -185,16 +184,16 @@ public:
     // Returns the size allocated on the arena.
     size_t copyImageData(const SkGlyph& from, SkArenaAlloc* alloc);
 
+    // Make sure that the intercept information is on the glyph and return it, or return it if it
+    // already exists.
+    // * bounds - either end of the gap for the character.
+    // * scale, xPos - information about how wide the gap is.
+    // * array - accumulated gaps for many characters if not null.
+    // * count - the number of gaps.
+    void ensureIntercepts(const SkScalar bounds[2], SkScalar scale, SkScalar xPos,
+                          SkScalar* array, int* count, SkArenaAlloc* alloc);
+
     void*     fImage    = nullptr;
-
-    // Path data has tricky state. If the glyph isEmpty, then fPathData should always be nullptr,
-    // else if fPathData is not null, then a path has been requested. The fPath field of fPathData
-    // may still be null after the request meaning that there is no path for this glyph.
-    PathData* fPathData = nullptr;
-
-    // The advance for this glyph.
-    float     fAdvanceX = 0,
-              fAdvanceY = 0;
 
     // The width and height of the glyph mask.
     uint16_t  fWidth  = 0,
@@ -204,15 +203,24 @@ public:
     int16_t   fTop  = 0,
               fLeft = 0;
 
-    // Used by the GDI scaler to track state.
-    int8_t    fForceBW = 0;
-
     // This is a combination of SkMask::Format and SkGlyph state. The SkGlyph can be in one of two
     // states, just the advances have been calculated, and all the metrics are available. The
     // illegal mask format is used to signal that only the advances are available.
     uint8_t   fMaskFormat = MASK_FORMAT_UNKNOWN;
 
 private:
+    // There are two sides to an SkGlyph, the scaler side (things that create glyph data) have
+    // access to all the fields. Scalers are assumed to maintain all the SkGlyph invariants. The
+    // consumer side has a tighter interface.
+    friend class SkScalerContext_FreeType;
+    friend class SkScalerContext_DW;
+    friend class SkScalerContext_GDI;
+    friend class SkScalerContext_Mac;
+    friend class SkStrikeClient;
+    friend class SkTestScalerContext;
+    friend class SkTestSVGScalerContext;
+    friend class TestSVGTypeface;
+    friend class TestTypeface;
 
     // Support horizontal and vertical skipping strike-through / underlines.
     // The caller walks the linked list looking for a match. For a horizontal underline,
@@ -230,6 +238,21 @@ private:
         SkPath     fPath;
         bool       fHasPath{false};
     };
+
+    // path == nullptr indicates there is no path.
+    void installPath(SkArenaAlloc* alloc, const SkPath* path);
+
+    // Path data has tricky state. If the glyph isEmpty, then fPathData should always be nullptr,
+    // else if fPathData is not null, then a path has been requested. The fPath field of fPathData
+    // may still be null after the request meaning that there is no path for this glyph.
+    PathData* fPathData = nullptr;
+
+    // The advance for this glyph.
+    float     fAdvanceX = 0,
+              fAdvanceY = 0;
+
+    // Used by the DirectWrite scaler to track state.
+    int8_t    fForceBW = 0;
 
     // TODO(herb) remove friend statement after SkStrike cleanup.
     friend class SkStrike;

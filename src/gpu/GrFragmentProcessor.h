@@ -10,6 +10,7 @@
 
 #include "include/private/GrProxyRef.h"
 #include "src/gpu/GrProcessor.h"
+#include "src/gpu/ops/GrOp.h"
 
 class GrCoordTransform;
 class GrGLSLFragmentProcessor;
@@ -123,8 +124,6 @@ public:
     const GrFragmentProcessor& childProcessor(int index) const { return *fChildProcessors[index]; }
 
     bool instantiate(GrResourceProvider*) const;
-
-    void markPendingExecution() const;
 
     /** Do any of the coordtransforms for this processor require local coords? */
     bool usesLocalCoords() const { return SkToBool(fFlags & kUsesLocalCoords_Flag); }
@@ -242,7 +241,7 @@ public:
                                          &GrFragmentProcessor::numTextureSamplers,
                                          &GrFragmentProcessor::textureSampler>;
 
-    void visitProxies(const std::function<void(GrSurfaceProxy*)>& func);
+    void visitProxies(const GrOp::VisitProxyFunc& func);
 
 protected:
     enum OptimizationFlags : uint32_t {
@@ -413,7 +412,7 @@ public:
      * in pending execution state.
      */
     explicit TextureSampler(const TextureSampler& that)
-            : fProxyRef(sk_ref_sp(that.fProxyRef.get()), that.fProxyRef.ioType())
+            : fProxyRef(sk_ref_sp(that.fProxyRef.get()))
             , fSamplerState(that.fSamplerState) {}
 
     TextureSampler(sk_sp<GrTextureProxy>, const GrSamplerState&);

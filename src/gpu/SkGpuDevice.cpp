@@ -37,7 +37,6 @@
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrImageTextureMaker.h"
 #include "src/gpu/GrRenderTargetContextPriv.h"
-#include "src/gpu/GrShape.h"
 #include "src/gpu/GrStyle.h"
 #include "src/gpu/GrSurfaceProxyPriv.h"
 #include "src/gpu/GrTextureAdjuster.h"
@@ -45,6 +44,7 @@
 #include "src/gpu/SkGr.h"
 #include "src/gpu/effects/GrBicubicEffect.h"
 #include "src/gpu/effects/GrTextureDomain.h"
+#include "src/gpu/geometry/GrShape.h"
 #include "src/gpu/text/GrTextTarget.h"
 #include "src/image/SkImage_Base.h"
 #include "src/image/SkReadPixelsRec.h"
@@ -161,6 +161,9 @@ sk_sp<GrRenderTargetContext> SkGpuDevice::MakeRenderTargetContext(
     }
     GrBackendFormat format =
             context->priv().caps()->getBackendFormatFromColorType(origInfo.colorType());
+    if (!format.isValid()) {
+        return nullptr;
+    }
     // This method is used to create SkGpuDevice's for SkSurface_Gpus. In this case
     // they need to be exact.
     return context->priv().makeDeferredRenderTargetContext(
@@ -243,6 +246,27 @@ void SkGpuDevice::clearAll() {
                                 GrRenderTargetContext::CanClearFullscreen::kYes);
 }
 
+void SkGpuDevice::replaceRenderTargetContext(sk_sp<GrRenderTargetContext> rtc,
+                                             bool shouldRetainContent) {
+    SkASSERT(rtc->width() == this->width());
+    SkASSERT(rtc->height() == this->height());
+    SkASSERT(rtc->numColorSamples() == fRenderTargetContext->numColorSamples());
+    SkASSERT(rtc->numStencilSamples() == fRenderTargetContext->numStencilSamples());
+    SkASSERT(rtc->asSurfaceProxy()->priv().isExact());
+    if (shouldRetainContent) {
+        if (this->context()->abandoned()) {
+            return;
+        }
+
+        SkASSERT(fRenderTargetContext->asTextureProxy());
+        SkAssertResult(rtc->blitTexture(fRenderTargetContext->asTextureProxy(),
+                                        SkIRect::MakeWH(this->width(), this->height()),
+                                        SkIPoint::Make(0,0)));
+    }
+
+    fRenderTargetContext = std::move(rtc);
+}
+
 void SkGpuDevice::replaceRenderTargetContext(bool shouldRetainContent) {
     ASSERT_SINGLE_OWNER
 
@@ -261,16 +285,7 @@ void SkGpuDevice::replaceRenderTargetContext(bool shouldRetainContent) {
     if (!newRTC) {
         return;
     }
-    SkASSERT(newRTC->asSurfaceProxy()->priv().isExact());
-
-    if (shouldRetainContent) {
-        if (this->context()->abandoned()) {
-            return;
-        }
-        newRTC->copy(fRenderTargetContext->asSurfaceProxy());
-    }
-
-    fRenderTargetContext = newRTC;
+    this->replaceRenderTargetContext(std::move(newRTC), shouldRetainContent);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -971,7 +986,9 @@ void SkGpuDevice::drawBitmapTile(const SkBitmap& bitmap,
             domain.fTop = domain.fBottom = srcRect.centerY();
         }
         if (bicubic) {
-            fp = GrBicubicEffect::Make(std::move(proxy), texMatrix, domain, bitmap.alphaType());
+            static constexpr auto kDir = GrBicubicEffect::Direction::kXY;
+            fp = GrBicubicEffect::Make(std::move(proxy), texMatrix, domain, kDir,
+                                       bitmap.alphaType());
         } else {
             fp = GrTextureDomainEffect::Make(std::move(proxy), texMatrix, domain,
                                              GrTextureDomain::kClamp_Mode, samplerState.filter());
@@ -979,7 +996,8 @@ void SkGpuDevice::drawBitmapTile(const SkBitmap& bitmap,
     } else if (bicubic) {
         SkASSERT(GrSamplerState::Filter::kNearest == samplerState.filter());
         GrSamplerState::WrapMode wrapMode[2] = {samplerState.wrapModeX(), samplerState.wrapModeY()};
-        fp = GrBicubicEffect::Make(std::move(proxy), texMatrix, wrapMode, bitmap.alphaType());
+        static constexpr auto kDir = GrBicubicEffect::Direction::kXY;
+        fp = GrBicubicEffect::Make(std::move(proxy), texMatrix, wrapMode, kDir, bitmap.alphaType());
     } else {
         fp = GrSimpleTextureEffect::Make(std::move(proxy), texMatrix, samplerState);
     }

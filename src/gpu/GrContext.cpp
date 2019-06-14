@@ -27,7 +27,6 @@
 #include "src/gpu/SkGr.h"
 #include "src/gpu/ccpr/GrCoverageCountingPathRenderer.h"
 #include "src/gpu/effects/GrSkSLFP.h"
-#include "src/gpu/effects/generated/GrConfigConversionEffect.h"
 #include "src/gpu/text/GrTextBlobCache.h"
 #include "src/gpu/text/GrTextContext.h"
 #include "src/image/SkSurface_Gpu.h"
@@ -287,39 +286,6 @@ void GrContext::storeVkPipelineCacheData() {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-std::unique_ptr<GrFragmentProcessor> GrContext::createPMToUPMEffect(
-        std::unique_ptr<GrFragmentProcessor> fp) {
-    ASSERT_SINGLE_OWNER
-    // We should have already called this->validPMUPMConversionExists() in this case
-    SkASSERT(fDidTestPMConversions);
-    // ...and it should have succeeded
-    SkASSERT(this->validPMUPMConversionExists());
-
-    return GrConfigConversionEffect::Make(std::move(fp), PMConversion::kToUnpremul);
-}
-
-std::unique_ptr<GrFragmentProcessor> GrContext::createUPMToPMEffect(
-        std::unique_ptr<GrFragmentProcessor> fp) {
-    ASSERT_SINGLE_OWNER
-    // We should have already called this->validPMUPMConversionExists() in this case
-    SkASSERT(fDidTestPMConversions);
-    // ...and it should have succeeded
-    SkASSERT(this->validPMUPMConversionExists());
-
-    return GrConfigConversionEffect::Make(std::move(fp), PMConversion::kToPremul);
-}
-
-bool GrContext::validPMUPMConversionExists() {
-    ASSERT_SINGLE_OWNER
-    if (!fDidTestPMConversions) {
-        fPMUPMConversionsRoundTrip = GrConfigConversionEffect::TestForPreservingPMConversions(this);
-        fDidTestPMConversions = true;
-    }
-
-    // The PM<->UPM tests fail or succeed together so we only need to check one.
-    return fPMUPMConversionsRoundTrip;
-}
-
 bool GrContext::supportsDistanceFieldText() const {
     return this->caps()->shaderCaps()->supportsDistanceFieldText();
 }
@@ -367,9 +333,9 @@ GrBackendTexture GrContext::createBackendTexture(int width, int height,
         return GrBackendTexture();
     }
 
-    return fGpu->createTestingOnlyBackendTexture(width, height, backendFormat,
-                                                 mipMapped, renderable,
-                                                 nullptr, 0);
+    return fGpu->createBackendTexture(width, height, backendFormat,
+                                      mipMapped, renderable,
+                                      nullptr, 0, nullptr);
 }
 
 GrBackendTexture GrContext::createBackendTexture(int width, int height,
@@ -392,11 +358,54 @@ GrBackendTexture GrContext::createBackendTexture(int width, int height,
     return this->createBackendTexture(width, height, format, mipMapped, renderable);
 }
 
+GrBackendTexture GrContext::createBackendTexture(int width, int height,
+                                                 GrBackendFormat backendFormat,
+                                                 const SkColor4f& color,
+                                                 GrMipMapped mipMapped,
+                                                 GrRenderable renderable) {
+    if (!this->asDirectContext()) {
+        return GrBackendTexture();
+    }
+
+    if (this->abandoned()) {
+        return GrBackendTexture();
+    }
+
+    if (!backendFormat.isValid()) {
+        return GrBackendTexture();
+    }
+
+    return fGpu->createBackendTexture(width, height, backendFormat,
+                                      mipMapped, renderable,
+                                      nullptr, 0, &color);
+}
+
+GrBackendTexture GrContext::createBackendTexture(int width, int height,
+                                                 SkColorType colorType,
+                                                 const SkColor4f& color,
+                                                 GrMipMapped mipMapped,
+                                                 GrRenderable renderable) {
+    if (!this->asDirectContext()) {
+        return GrBackendTexture();
+    }
+
+    if (this->abandoned()) {
+        return GrBackendTexture();
+    }
+
+    GrBackendFormat format = this->caps()->getBackendFormatFromColorType(colorType);
+    if (!format.isValid()) {
+        return GrBackendTexture();
+    }
+
+    return this->createBackendTexture(width, height, format, color, mipMapped, renderable);
+}
+
 void GrContext::deleteBackendTexture(GrBackendTexture backendTex) {
     if (this->abandoned() || !backendTex.isValid()) {
         return;
     }
 
-    fGpu->deleteTestingOnlyBackendTexture(backendTex);
+    fGpu->deleteBackendTexture(backendTex);
 }
 
