@@ -62,9 +62,9 @@ public:
 
     virtual size_t lineNumber() = 0;
 
-protected:
-    friend class ParagraphBuilder;
+    virtual void markDirty() = 0;
 
+protected:
     sk_sp<FontCollection> fFontCollection;
     ParagraphStyle fParagraphStyle;
 

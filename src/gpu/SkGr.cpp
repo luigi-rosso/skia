@@ -12,7 +12,6 @@
 #include "include/gpu/GrContext.h"
 #include "include/gpu/GrTypes.h"
 #include "include/private/GrRecordingContext.h"
-#include "include/private/GrTextureProxy.h"
 #include "include/private/SkImageInfoPriv.h"
 #include "include/private/SkTemplates.h"
 #include "src/core/SkAutoMalloc.h"
@@ -32,6 +31,7 @@
 #include "src/gpu/GrPaint.h"
 #include "src/gpu/GrProxyProvider.h"
 #include "src/gpu/GrRecordingContextPriv.h"
+#include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/GrXferProcessor.h"
 #include "src/gpu/SkGr.h"
 #include "src/gpu/effects/GrBicubicEffect.h"
@@ -132,7 +132,6 @@ sk_sp<GrTextureProxy> GrCopyBaseMipMapToTextureProxy(GrRecordingContext* ctx,
     if (!ctx->priv().caps()->isConfigCopyable(baseProxy->config())) {
         return nullptr;
     }
-
     return GrSurfaceProxy::Copy(ctx, baseProxy, GrMipMapped::kYes, SkBackingFit::kExact,
                                 SkBudgeted::kYes);
 }
@@ -296,9 +295,11 @@ static inline int32_t dither_range_type_for_config(GrPixelConfig dstConfig) {
         case kRGB_888X_GrPixelConfig:
         case kRG_88_GrPixelConfig:
         case kBGRA_8888_GrPixelConfig:
-        // Experimental (for P016 and P010)
         case kR_16_GrPixelConfig:
         case kRG_1616_GrPixelConfig:
+        // Experimental (for Y416 and mutant P016/P010)
+        case kRGBA_16161616_GrPixelConfig:
+        case kRG_half_GrPixelConfig:
             return 0;
         case kRGB_565_GrPixelConfig:
             return 1;
@@ -306,7 +307,6 @@ static inline int32_t dither_range_type_for_config(GrPixelConfig dstConfig) {
             return 2;
         case kUnknown_GrPixelConfig:
         case kSRGBA_8888_GrPixelConfig:
-        case kSBGRA_8888_GrPixelConfig:
         case kRGBA_1010102_GrPixelConfig:
         case kAlpha_half_GrPixelConfig:
         case kAlpha_half_as_Red_GrPixelConfig:

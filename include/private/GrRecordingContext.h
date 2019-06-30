@@ -9,14 +9,17 @@
 #define GrRecordingContext_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/private/GrAuditTrail.h"
 #include "include/private/GrImageContext.h"
 
+class GrAuditTrail;
+class GrBackendFormat;
 class GrDrawingManager;
 class GrOnFlushCallbackObject;
 class GrOpMemoryPool;
 class GrRecordingContextPriv;
 class GrStrikeCache;
+class GrSurfaceContext;
+class GrSurfaceProxy;
 class GrTextBlobCache;
 
 class SK_API GrRecordingContext : public GrImageContext {
@@ -54,6 +57,8 @@ protected:
     void addOnFlushCallbackObject(GrOnFlushCallbackObject*);
 
     sk_sp<GrSurfaceContext> makeWrappedSurfaceContext(sk_sp<GrSurfaceProxy>,
+                                                      GrColorType,
+                                                      SkAlphaType,
                                                       sk_sp<SkColorSpace> = nullptr,
                                                       const SkSurfaceProps* = nullptr);
 
@@ -63,6 +68,8 @@ protected:
                                                        GrMipMapped,
                                                        SkBackingFit,
                                                        SkBudgeted,
+                                                       GrColorType,
+                                                       SkAlphaType,
                                                        sk_sp<SkColorSpace> colorSpace = nullptr,
                                                        const SkSurfaceProps* = nullptr);
 
@@ -72,16 +79,19 @@ protected:
      * renderTargetContexts created via this entry point.
      */
     sk_sp<GrRenderTargetContext> makeDeferredRenderTargetContext(
-                                            const GrBackendFormat& format,
-                                            SkBackingFit fit,
-                                            int width, int height,
-                                            GrPixelConfig config,
-                                            sk_sp<SkColorSpace> colorSpace,
-                                            int sampleCnt = 1,
-                                            GrMipMapped = GrMipMapped::kNo,
-                                            GrSurfaceOrigin origin = kBottomLeft_GrSurfaceOrigin,
-                                            const SkSurfaceProps* surfaceProps = nullptr,
-                                            SkBudgeted = SkBudgeted::kYes);
+            const GrBackendFormat& format,
+            SkBackingFit fit,
+            int width,
+            int height,
+            GrPixelConfig config,
+            GrColorType colorType,
+            sk_sp<SkColorSpace> colorSpace,
+            int sampleCnt = 1,
+            GrMipMapped = GrMipMapped::kNo,
+            GrSurfaceOrigin origin = kBottomLeft_GrSurfaceOrigin,
+            const SkSurfaceProps* surfaceProps = nullptr,
+            SkBudgeted = SkBudgeted::kYes,
+            GrProtected isProtected = GrProtected::kNo);
 
     /*
      * This method will attempt to create a renderTargetContext that has, at least, the number of
@@ -90,18 +100,21 @@ protected:
      * SRGB-ness will be preserved.
      */
     sk_sp<GrRenderTargetContext> makeDeferredRenderTargetContextWithFallback(
-                                            const GrBackendFormat& format,
-                                            SkBackingFit fit,
-                                            int width, int height,
-                                            GrPixelConfig config,
-                                            sk_sp<SkColorSpace> colorSpace,
-                                            int sampleCnt = 1,
-                                            GrMipMapped = GrMipMapped::kNo,
-                                            GrSurfaceOrigin origin = kBottomLeft_GrSurfaceOrigin,
-                                            const SkSurfaceProps* surfaceProps = nullptr,
-                                            SkBudgeted budgeted = SkBudgeted::kYes);
+            const GrBackendFormat& format,
+            SkBackingFit fit,
+            int width,
+            int height,
+            GrPixelConfig config,
+            GrColorType colorType,
+            sk_sp<SkColorSpace> colorSpace,
+            int sampleCnt = 1,
+            GrMipMapped = GrMipMapped::kNo,
+            GrSurfaceOrigin origin = kBottomLeft_GrSurfaceOrigin,
+            const SkSurfaceProps* surfaceProps = nullptr,
+            SkBudgeted budgeted = SkBudgeted::kYes,
+            GrProtected isProtected = GrProtected::kNo);
 
-    GrAuditTrail* auditTrail() { return &fAuditTrail; }
+    GrAuditTrail* auditTrail() { return fAuditTrail.get(); }
 
     GrRecordingContext* asRecordingContext() override { return this; }
 
@@ -113,7 +126,7 @@ private:
     std::unique_ptr<GrStrikeCache>    fStrikeCache;
     std::unique_ptr<GrTextBlobCache>  fTextBlobCache;
 
-    GrAuditTrail                      fAuditTrail;
+    std::unique_ptr<GrAuditTrail>     fAuditTrail;
 
     typedef GrImageContext INHERITED;
 };

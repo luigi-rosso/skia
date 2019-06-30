@@ -74,9 +74,11 @@ static inline VkFormat attrib_type_to_vkformat(GrVertexAttribType type) {
             return VK_FORMAT_R32_SINT;
         case kUint_GrVertexAttribType:
             return VK_FORMAT_R32_UINT;
-        // Experimental (for P016 and P010)
         case kUShort_norm_GrVertexAttribType:
             return VK_FORMAT_R16_UNORM;
+        // Experimental (for Y416)
+        case kUShort4_norm_GrVertexAttribType:
+            return VK_FORMAT_R16G16B16A16_UNORM;
     }
     SK_ABORT("Unknown vertex attrib type");
     return VK_FORMAT_UNDEFINED;
@@ -624,7 +626,7 @@ void GrVkPipeline::SetDynamicViewportState(GrVkGpu* gpu,
 
 void GrVkPipeline::SetDynamicBlendConstantState(GrVkGpu* gpu,
                                                 GrVkCommandBuffer* cmdBuffer,
-                                                GrPixelConfig pixelConfig,
+                                                const GrSwizzle& swizzle,
                                                 const GrXferProcessor& xferProcessor) {
     GrXferProcessor::BlendInfo blendInfo;
     xferProcessor.getBlendInfo(&blendInfo);
@@ -633,7 +635,6 @@ void GrVkPipeline::SetDynamicBlendConstantState(GrVkGpu* gpu,
     float floatColors[4];
     if (blend_coeff_refs_constant(srcCoeff) || blend_coeff_refs_constant(dstCoeff)) {
         // Swizzle the blend to match what the shader will output.
-        const GrSwizzle& swizzle = gpu->caps()->shaderCaps()->configOutputSwizzle(pixelConfig);
         SkPMColor4f blendConst = swizzle.applyTo(blendInfo.fBlendConstant);
         floatColors[0] = blendConst.fR;
         floatColors[1] = blendConst.fG;

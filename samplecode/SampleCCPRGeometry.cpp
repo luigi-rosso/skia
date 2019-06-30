@@ -94,8 +94,8 @@ public:
 
 private:
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
-    GrProcessorSet::Analysis finalize(
-            const GrCaps&, const GrAppliedClip*, GrFSAAType, GrClampType) override {
+    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*,
+                                      bool hasMixedSampledCoverage, GrClampType) override {
         return GrProcessorSet::EmptySetAnalysis();
     }
     void onPrepare(GrOpFlushState*) override {}
@@ -190,11 +190,9 @@ void CCPRGeometryView::onDrawContent(SkCanvas* canvas) {
         const GrBackendFormat format =
                 ctx->priv().caps()->getBackendFormatFromGrColorType(GrColorType::kAlpha_F16,
                                                                            GrSRGBEncoded::kNo);
-        sk_sp<GrRenderTargetContext> ccbuff =
-                ctx->priv().makeDeferredRenderTargetContext(format, SkBackingFit::kApprox,
-                                                                   this->width(), this->height(),
-                                                                   kAlpha_half_GrPixelConfig,
-                                                                   nullptr);
+        sk_sp<GrRenderTargetContext> ccbuff = ctx->priv().makeDeferredRenderTargetContext(
+                format, SkBackingFit::kApprox, this->width(), this->height(),
+                kAlpha_half_GrPixelConfig, GrColorType::kAlpha_8, nullptr);
         SkASSERT(ccbuff);
         ccbuff->clear(nullptr, SK_PMColor4fTRANSPARENT,
                       GrRenderTargetContext::CanClearFullscreen::kYes);
@@ -338,7 +336,8 @@ void CCPRGeometryView::DrawCoverageCountOp::onExecute(GrOpFlushState* state,
         GR_GL_CALL(glGpu->glInterface(), Enable(GR_GL_LINE_SMOOTH));
     }
 
-    GrPipeline pipeline(GrScissorTest::kDisabled, SkBlendMode::kPlus);
+    GrPipeline pipeline(GrScissorTest::kDisabled, SkBlendMode::kPlus,
+                        state->drawOpArgs().fOutputSwizzle);
 
     std::unique_ptr<GrCCCoverageProcessor> proc;
     if (state->caps().shaderCaps()->geometryShaderSupport()) {

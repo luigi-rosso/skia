@@ -6,9 +6,11 @@
  */
 
 #include "src/gpu/GrDataUtils.h"
-
-#include "include/private/GrColor.h"
+#include "src/core/SkColorSpaceXformSteps.h"
+#include "src/core/SkTLazy.h"
+#include "src/core/SkTraceEvent.h"
 #include "src/core/SkUtils.h"
+#include "src/gpu/GrColor.h"
 
 struct ETC1Block {
     uint32_t fHigh;
@@ -111,10 +113,14 @@ static int num_ETC1_blocks(int w, int h) {
     return w * h;
 }
 
-size_t GrETC1CompressedDataSize(int width, int height) {
-    int numBlocks = num_ETC1_blocks(width, height);
-
-    return numBlocks * sizeof(ETC1Block);
+size_t GrCompressedDataSize(SkImage::CompressionType type, int width, int height) {
+    switch (type) {
+        case SkImage::kETC1_CompressionType:
+            int numBlocks = num_ETC1_blocks(width, height);
+            return numBlocks * sizeof(ETC1Block);
+    }
+    SK_ABORT("Unexpected compression type");
+    return 0;
 }
 
 // Fill in 'dest' with ETC1 blocks derived from 'colorf'
@@ -211,12 +217,6 @@ static bool fill_buffer_with_color(GrPixelConfig config, int width, int height,
             sk_memset32((uint32_t *) dest, color, width * height);
             break;
         }
-        case kSBGRA_8888_GrPixelConfig: {
-            GrColor swizzled = GrColorPackRGBA(b, g, r, a);
-
-            sk_memset32((uint32_t *) dest, swizzled, width * height);
-            break;
-        }
         case kRGBA_1010102_GrPixelConfig: {
             uint32_t r10 = SkScalarRoundToInt(colorf.fR * 1023.0f);
             uint32_t g10 = SkScalarRoundToInt(colorf.fG * 1023.0f);
@@ -262,7 +262,6 @@ static bool fill_buffer_with_color(GrPixelConfig config, int width, int height,
             sk_memset64((uint64_t *) dest, rgbaHalf, width * height);
             break;
         }
-        // Experimental (for P016 and P010)
         case kR_16_GrPixelConfig: {
             uint16_t r16 = SkScalarRoundToInt(colorf.fR * 65535.0f);
             sk_memset16((uint16_t*) dest, r16, width * height);
@@ -277,6 +276,26 @@ static bool fill_buffer_with_color(GrPixelConfig config, int width, int height,
             sk_memset32((uint32_t*) dest, rg1616, width * height);
             break;
         }
+        // Experimental (for Y416 and mutant P016/P010)
+        case kRGBA_16161616_GrPixelConfig: {
+            uint64_t r16 = SkScalarRoundToInt(colorf.fR * 65535.0f);
+            uint64_t g16 = SkScalarRoundToInt(colorf.fG * 65535.0f);
+            uint64_t b16 = SkScalarRoundToInt(colorf.fB * 65535.0f);
+            uint64_t a16 = SkScalarRoundToInt(colorf.fA * 65535.0f);
+
+            uint64_t rgba16161616 = (a16 << 48) | (b16 << 32) | (g16 << 16) | r16;
+            sk_memset64((uint64_t*) dest, rgba16161616, width * height);
+            break;
+        }
+        case kRG_half_GrPixelConfig: {
+            uint32_t rHalf = SkFloatToHalf(colorf.fR);
+            uint32_t gHalf = SkFloatToHalf(colorf.fG);
+
+            uint32_t rgHalf = (rHalf << 16) | gHalf;
+
+            sk_memset32((uint32_t *) dest, rgHalf, width * height);
+            break;
+        }
         default:
             return false;
             break;
@@ -285,22 +304,14 @@ static bool fill_buffer_with_color(GrPixelConfig config, int width, int height,
     return true;
 }
 
-size_t GrComputeTightCombinedBufferSize(GrCompression compression, size_t bytesPerPixel,
-                                        int baseWidth, int baseHeight,
-                                        SkTArray<size_t>* individualMipOffsets,
-                                        int mipLevelCount) {
+size_t GrComputeTightCombinedBufferSize(size_t bytesPerPixel, int baseWidth, int baseHeight,
+                                        SkTArray<size_t>* individualMipOffsets, int mipLevelCount) {
     SkASSERT(individualMipOffsets && !individualMipOffsets->count());
     SkASSERT(mipLevelCount >= 1);
 
     individualMipOffsets->push_back(0);
 
     size_t combinedBufferSize = baseWidth * bytesPerPixel * baseHeight;
-    if (GrCompression::kETC1 == compression) {
-        SkASSERT(0 == bytesPerPixel);
-        bytesPerPixel = 4; // munge Bpp to make the following code work (and not assert)
-        combinedBufferSize = GrETC1CompressedDataSize(baseWidth, baseHeight);
-    }
-
     int currentWidth = baseWidth;
     int currentHeight = baseHeight;
 
@@ -314,12 +325,7 @@ size_t GrComputeTightCombinedBufferSize(GrCompression compression, size_t bytesP
         currentWidth = SkTMax(1, currentWidth / 2);
         currentHeight = SkTMax(1, currentHeight / 2);
 
-        size_t trimmedSize;
-        if (GrCompression::kETC1 == compression) {
-            trimmedSize = GrETC1CompressedDataSize(currentWidth, currentHeight);
-        } else {
-            trimmedSize = currentWidth * bytesPerPixel * currentHeight;
-        }
+        size_t trimmedSize = currentWidth * bytesPerPixel * currentHeight;
         const size_t alignmentDiff = combinedBufferSize % desiredAlignment;
         if (alignmentDiff != 0) {
             combinedBufferSize += desiredAlignment - alignmentDiff;
@@ -334,11 +340,11 @@ size_t GrComputeTightCombinedBufferSize(GrCompression compression, size_t bytesP
     return combinedBufferSize;
 }
 
-void GrFillInData(GrCompression compression, GrPixelConfig config,
-                  int baseWidth, int baseHeight,
+void GrFillInData(GrPixelConfig config, int baseWidth, int baseHeight,
                   const SkTArray<size_t>& individualMipOffsets, char* dstPixels,
                   const SkColor4f& colorf) {
-
+    TRACE_EVENT0("skia.gpu", TRACE_FUNC);
+    SkASSERT(!GrPixelConfigIsCompressed(config));
     int mipLevels = individualMipOffsets.count();
 
     int currentWidth = baseWidth;
@@ -346,16 +352,215 @@ void GrFillInData(GrCompression compression, GrPixelConfig config,
     for (int currentMipLevel = 0; currentMipLevel < mipLevels; ++currentMipLevel) {
         size_t offset = individualMipOffsets[currentMipLevel];
 
-        if (GrCompression::kETC1 == compression) {
-            // TODO: compute the ETC1 block for 'colorf' just once
-            fillin_ETC1_with_color(currentWidth, currentHeight, colorf, &(dstPixels[offset]));
-        } else {
-            fill_buffer_with_color(config, currentWidth, currentHeight, colorf,
-                                   &(dstPixels[offset]));
-        }
-
+        fill_buffer_with_color(config, currentWidth, currentHeight, colorf, &(dstPixels[offset]));
         currentWidth = SkTMax(1, currentWidth / 2);
         currentHeight = SkTMax(1, currentHeight / 2);
     }
 }
 
+void GrFillInCompressedData(SkImage::CompressionType type, int baseWidth, int baseHeight,
+                            char* dstPixels, const SkColor4f& colorf) {
+    TRACE_EVENT0("skia.gpu", TRACE_FUNC);
+    int currentWidth = baseWidth;
+    int currentHeight = baseHeight;
+    if (SkImage::kETC1_CompressionType == type) {
+        fillin_ETC1_with_color(currentWidth, currentHeight, colorf, dstPixels);
+    }
+}
+
+static GrSwizzle get_load_and_get_swizzle(GrColorType ct, SkRasterPipeline::StockStage* load,
+                                          bool* isNormalized) {
+    GrSwizzle swizzle("rgba");
+    *isNormalized = true;
+    switch (ct) {
+        case GrColorType::kAlpha_8:          *load = SkRasterPipeline::load_a8;       break;
+        case GrColorType::kBGR_565:          *load = SkRasterPipeline::load_565;      break;
+        case GrColorType::kABGR_4444:        *load = SkRasterPipeline::load_4444;     break;
+        case GrColorType::kRGBA_8888:        *load = SkRasterPipeline::load_8888;     break;
+        case GrColorType::kRG_88:            *load = SkRasterPipeline::load_rg88;     break;
+        case GrColorType::kRGBA_1010102:     *load = SkRasterPipeline::load_1010102;  break;
+        case GrColorType::kAlpha_F16:        *load = SkRasterPipeline::load_af16;     break;
+        case GrColorType::kRGBA_F16_Clamped: *load = SkRasterPipeline::load_f16;      break;
+        case GrColorType::kRG_1616:          *load = SkRasterPipeline::load_rg1616;   break;
+        case GrColorType::kRGBA_16161616:    *load = SkRasterPipeline::load_16161616; break;
+
+        case GrColorType::kRG_F16:           *load = SkRasterPipeline::load_rgf16;
+                                             *isNormalized = false;
+                                             break;
+        case GrColorType::kRGBA_F16:         *load = SkRasterPipeline::load_f16;
+                                             *isNormalized = false;
+                                             break;
+        case GrColorType::kRG_F32:           *load = SkRasterPipeline::load_rgf32;
+                                             *isNormalized = false;
+                                             break;
+        case GrColorType::kRGBA_F32:         *load = SkRasterPipeline::load_f32;
+                                             *isNormalized = false;
+                                             break;
+        case GrColorType::kR_16:             *load = SkRasterPipeline::load_a16;
+                                             swizzle = GrSwizzle("a001");
+                                             break;
+        case GrColorType::kGray_8:           *load = SkRasterPipeline::load_a8;
+                                             swizzle = GrSwizzle("aaa1");
+                                             break;
+        case GrColorType::kBGRA_8888:        *load = SkRasterPipeline::load_8888;
+                                             swizzle = GrSwizzle("bgra");
+                                             break;
+        case GrColorType::kRGB_888x:         *load = SkRasterPipeline::load_8888;
+                                             swizzle = GrSwizzle("rgb1");
+                                             break;
+
+        case GrColorType::kUnknown:
+            SK_ABORT("unexpected CT");
+    }
+    return swizzle;
+}
+
+static GrSwizzle get_dst_swizzle_and_store(GrColorType ct, SkRasterPipeline::StockStage* store,
+                                           bool* isNormalized) {
+    GrSwizzle swizzle("rgba");
+    *isNormalized = true;
+    switch (ct) {
+        case GrColorType::kAlpha_8:          *store = SkRasterPipeline::store_a8;       break;
+        case GrColorType::kBGR_565:          *store = SkRasterPipeline::store_565;      break;
+        case GrColorType::kABGR_4444:        *store = SkRasterPipeline::store_4444;     break;
+        case GrColorType::kRGBA_8888:        *store = SkRasterPipeline::store_8888;     break;
+        case GrColorType::kRG_88:            *store = SkRasterPipeline::store_rg88;     break;
+        case GrColorType::kRGBA_1010102:     *store = SkRasterPipeline::store_1010102;  break;
+        case GrColorType::kRGBA_F16_Clamped: *store = SkRasterPipeline::store_f16;      break;
+        case GrColorType::kRG_1616:          *store = SkRasterPipeline::store_rg1616;   break;
+        case GrColorType::kRGBA_16161616:    *store = SkRasterPipeline::store_16161616; break;
+
+        case GrColorType::kRG_F16:           *store = SkRasterPipeline::store_rgf16;
+                                             *isNormalized = false;
+                                             break;
+        case GrColorType::kAlpha_F16:        *store = SkRasterPipeline::store_af16;
+                                             *isNormalized = false;
+                                             break;
+        case GrColorType::kRGBA_F16:         *store = SkRasterPipeline::store_f16;
+                                             *isNormalized = false;
+                                             break;
+        case GrColorType::kRG_F32:           *store = SkRasterPipeline::store_rgf32;
+                                             *isNormalized = false;
+                                             break;
+        case GrColorType::kRGBA_F32:         *store = SkRasterPipeline::store_f32;
+                                             *isNormalized = false;
+                                             break;
+        case GrColorType::kR_16:             swizzle = GrSwizzle("000r");
+                                             *store = SkRasterPipeline::store_a16;
+                                             break;
+        case GrColorType::kBGRA_8888:        swizzle = GrSwizzle("bgra");
+                                             *store = SkRasterPipeline::store_8888;
+                                             break;
+        case GrColorType::kRGB_888x:         swizzle = GrSwizzle("rgb1");
+                                             *store = SkRasterPipeline::store_8888;
+                                             break;
+
+        case GrColorType::kGray_8:  // not currently supported as output
+        case GrColorType::kUnknown:
+            SK_ABORT("unexpected CT");
+    }
+    return swizzle;
+}
+
+static inline void append_clamp_gamut(SkRasterPipeline* pipeline) {
+    // SkRasterPipeline may not know our color type and also doesn't like caller to directly
+    // append clamp_gamut. Fake it out.
+    static SkImageInfo fakeII = SkImageInfo::MakeN32Premul(1, 1);
+    pipeline->append_gamut_clamp_if_normalized(fakeII);
+}
+
+bool GrConvertPixels(const GrPixelInfo& dstInfo, void* dst, const GrPixelInfo& srcInfo,
+                     const void* src, GrSwizzle swizzle) {
+    TRACE_EVENT0("skia.gpu", TRACE_FUNC);
+
+    if (dstInfo.fWidth != srcInfo.fWidth || srcInfo.fHeight != dstInfo.fHeight) {
+        return false;
+    }
+    if (dstInfo.fWidth <= 0 || dstInfo.fHeight <= 0) {
+        return false;
+    }
+    if (GrColorTypeComponentFlags(dstInfo.fColorInfo.fColorType) & kGray_SkColorTypeComponentFlag) {
+        // We don't currently support conversion to Gray.
+        return false;
+    }
+    size_t srcBpp = GrColorTypeBytesPerPixel(srcInfo.fColorInfo.fColorType);
+    size_t dstBpp = GrColorTypeBytesPerPixel(dstInfo.fColorInfo.fColorType);
+    if (!srcBpp || !dstBpp) {
+        // Either src or dst is compressed or kUnknown.
+        return false;
+    }
+    // SkRasterPipeline operates on row-pixels not row-bytes.
+    SkASSERT(dstInfo.fRowBytes % dstBpp == 0);
+    SkASSERT(srcInfo.fRowBytes % srcBpp == 0);
+
+    SkRasterPipeline::StockStage load;
+    bool srcIsNormalized;
+    auto loadSwizzle =
+            get_load_and_get_swizzle(srcInfo.fColorInfo.fColorType, &load, &srcIsNormalized);
+    loadSwizzle = GrSwizzle::Concat(loadSwizzle, swizzle);
+
+    SkRasterPipeline::StockStage store;
+    bool dstIsNormalized;
+    auto storeSwizzle =
+            get_dst_swizzle_and_store(dstInfo.fColorInfo.fColorType, &store, &dstIsNormalized);
+
+    bool alphaOrCSConversion =
+            (srcInfo.fColorInfo.fAlphaType != dstInfo.fColorInfo.fAlphaType &&
+             srcInfo.fColorInfo.fAlphaType != kOpaque_SkAlphaType) ||
+            !SkColorSpace::Equals(srcInfo.fColorInfo.fColorSpace, dstInfo.fColorInfo.fColorSpace);
+
+    bool clampGamut;
+    SkTLazy<SkColorSpaceXformSteps> steps;
+    GrSwizzle loadStoreSwizzle;
+    if (alphaOrCSConversion) {
+        steps.init(srcInfo.fColorInfo.fColorSpace, srcInfo.fColorInfo.fAlphaType,
+                   dstInfo.fColorInfo.fColorSpace, dstInfo.fColorInfo.fAlphaType);
+        clampGamut = dstIsNormalized && dstInfo.fColorInfo.fAlphaType == kPremul_SkAlphaType;
+    } else {
+        clampGamut = dstIsNormalized && !srcIsNormalized &&
+                     dstInfo.fColorInfo.fAlphaType == kPremul_SkAlphaType;
+        if (!clampGamut) {
+            loadStoreSwizzle = GrSwizzle::Concat(loadSwizzle, storeSwizzle);
+        }
+    }
+    int cnt = 1;
+    int height = srcInfo.fHeight;
+    SkRasterPipeline_MemoryCtx srcCtx{const_cast<void*>(src), SkToInt(srcInfo.fRowBytes / srcBpp)},
+                               dstCtx{                  dst , SkToInt(dstInfo.fRowBytes / dstBpp)};
+
+    if (srcInfo.fOrigin != dstInfo.fOrigin) {
+        // It *almost* works to point the src at the last row and negate the stride and run the
+        // whole rectangle. However, SkRasterPipeline::run()'s control loop uses size_t loop
+        // variables so it winds up relying on unsigned overflow math. It works out in practice
+        // but UBSAN says "no!" as it's technically undefined and in theory a compiler could emit
+        // code that didn't do what is intended. So we go one row at a time. :(
+        srcCtx.pixels = static_cast<char*>(srcCtx.pixels) + srcInfo.fRowBytes * (height - 1);
+        std::swap(cnt, height);
+    }
+    for (int i = 0; i < cnt; ++i) {
+        SkRasterPipeline_<256> pipeline;
+        pipeline.append(load, &srcCtx);
+
+        if (alphaOrCSConversion) {
+            loadSwizzle.apply(&pipeline);
+            steps->apply(&pipeline, srcIsNormalized);
+            if (clampGamut) {
+                append_clamp_gamut(&pipeline);
+            }
+            storeSwizzle.apply(&pipeline);
+        } else {
+            if (clampGamut) {
+                loadSwizzle.apply(&pipeline);
+                append_clamp_gamut(&pipeline);
+                storeSwizzle.apply(&pipeline);
+            } else {
+                loadStoreSwizzle.apply(&pipeline);
+            }
+        }
+        pipeline.append(store, &dstCtx);
+        pipeline.run(0, 0, srcInfo.fWidth, height);
+        srcCtx.pixels = static_cast<char*>(srcCtx.pixels) - srcInfo.fRowBytes;
+        dstCtx.pixels = static_cast<char*>(dstCtx.pixels) + dstInfo.fRowBytes;
+    }
+    return true;
+}

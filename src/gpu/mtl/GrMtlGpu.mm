@@ -168,6 +168,7 @@ GrMtlCommandBuffer* GrMtlGpu::commandBuffer() {
 
 void GrMtlGpu::submitCommandBuffer(SyncQueue sync) {
     if (fCmdBuffer) {
+        fResourceProvider.addBufferCompletionHandler(fCmdBuffer);
         fCmdBuffer->commit(SyncQueue::kForce_SyncQueue == sync);
         delete fCmdBuffer;
         fCmdBuffer = nullptr;
@@ -401,7 +402,7 @@ GrStencilAttachment* GrMtlGpu::createStencilAttachmentForRenderTarget(const GrRe
     SkASSERT(width >= rt->width());
     SkASSERT(height >= rt->height());
 
-    int samples = rt->numStencilSamples();
+    int samples = rt->numSamples();
 
     const GrMtlCaps::StencilFormat& sFmt = this->mtlCaps().preferredStencilFormat();
 
@@ -719,9 +720,6 @@ static bool mtl_format_to_pixel_config(MTLPixelFormat format, GrPixelConfig* con
         case MTLPixelFormatRGBA8Unorm_sRGB:
             *config = kSRGBA_8888_GrPixelConfig;
             return true;
-        case MTLPixelFormatBGRA8Unorm_sRGB:
-            *config = kSBGRA_8888_GrPixelConfig;
-            return true;
         case MTLPixelFormatRGB10A2Unorm:
             *config = kRGBA_1010102_GrPixelConfig;
             return true;
@@ -753,12 +751,19 @@ static bool mtl_format_to_pixel_config(MTLPixelFormat format, GrPixelConfig* con
             *config = kRGB_ETC1_GrPixelConfig;
             return true;
 #endif
-        // Experimental (for P016 and P010)
         case MTLPixelFormatR16Unorm:
             *config = kR_16_GrPixelConfig;
             return true;
         case MTLPixelFormatRG16Unorm:
             *config = kRG_1616_GrPixelConfig;
+            return true;
+
+        // Experimental (for Y416 and mutant P016/P010)
+        case MTLPixelFormatRGBA16Unorm:
+            *config = kRGBA_16161616_GrPixelConfig;
+            return true;
+        case MTLPixelFormatRG16Float:
+            *config = kRG_half_GrPixelConfig;
             return true;
         default:
             return false;
@@ -773,7 +778,7 @@ GrBackendTexture GrMtlGpu::createBackendTexture(int w, int h,
                                                 GrMipMapped mipMapped,
                                                 GrRenderable renderable,
                                                 const void* pixels, size_t rowBytes,
-                                                const SkColor4f* color) {
+                                                const SkColor4f* color, GrProtected isProtected) {
     if (w > this->caps()->maxTextureSize() || h > this->caps()->maxTextureSize()) {
         return GrBackendTexture();
     }
@@ -863,7 +868,7 @@ void GrMtlGpu::testingOnly_flushGpuAndSync() {
 
 static int get_surface_sample_cnt(GrSurface* surf) {
     if (const GrRenderTarget* rt = surf->asRenderTarget()) {
-        return rt->numColorSamples();
+        return rt->numSamples();
     }
     return 0;
 }

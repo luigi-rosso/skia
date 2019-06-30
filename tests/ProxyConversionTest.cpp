@@ -12,12 +12,12 @@
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrRenderTarget.h"
 #include "include/gpu/GrTexture.h"
-#include "include/private/GrRenderTargetProxy.h"
-#include "include/private/GrSurfaceProxy.h"
-#include "include/private/GrTextureProxy.h"
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrProxyProvider.h"
+#include "src/gpu/GrRenderTargetProxy.h"
+#include "src/gpu/GrSurfaceProxy.h"
+#include "src/gpu/GrTextureProxy.h"
 
 static sk_sp<GrSurfaceProxy> make_wrapped_rt(GrProxyProvider* provider,
                                              GrGpu* gpu,
@@ -33,7 +33,7 @@ static sk_sp<GrSurfaceProxy> make_wrapped_rt(GrProxyProvider* provider,
 }
 
 void clean_up_wrapped_rt(GrGpu* gpu, sk_sp<GrSurfaceProxy> proxy) {
-    SkASSERT(proxy->isUnique_debugOnly());
+    SkASSERT(proxy->unique());
     SkASSERT(proxy->peekRenderTarget());
     GrBackendRenderTarget rt = proxy->peekRenderTarget()->getBackendRenderTarget();
     proxy.reset();

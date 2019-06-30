@@ -18,7 +18,6 @@
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrContext.h"
-#include "include/private/GrTextureProxy.h"
 #include "include/private/GrTypesPriv.h"
 #include "src/core/SkIPoint16.h"
 #include "src/gpu/GrCaps.h"
@@ -30,6 +29,7 @@
 #include "src/gpu/GrOnFlushResourceProvider.h"
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrRenderTargetContext.h"
+#include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/GrXferProcessor.h"
 #include "src/gpu/ops/GrDrawOp.h"
 #include "src/gpu/ops/GrOp.h"
@@ -187,7 +187,6 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrAtlasTextOpPreparation, reporter, ctxInfo) 
 
     auto gpu = context->priv().getGpu();
     auto resourceProvider = context->priv().resourceProvider();
-    auto resourceCache = context->priv().getResourceCache();
     auto drawingManager = context->priv().drawingManager();
     auto textContext = drawingManager->getTextContext();
     auto opMemoryPool = context->priv().opMemoryPool();
@@ -195,11 +194,9 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrAtlasTextOpPreparation, reporter, ctxInfo) 
     GrBackendFormat format =
             context->priv().caps()->getBackendFormatFromColorType(kRGBA_8888_SkColorType);
 
-    auto rtc =  context->priv().makeDeferredRenderTargetContext(format,
-                                                                SkBackingFit::kApprox,
-                                                                32, 32,
-                                                                kRGBA_8888_GrPixelConfig,
-                                                                nullptr);
+    auto rtc = context->priv().makeDeferredRenderTargetContext(format, SkBackingFit::kApprox, 32,
+                                                               32, kRGBA_8888_GrPixelConfig,
+                                                               GrColorType::kRGBA_8888, nullptr);
 
     SkPaint paint;
     paint.setColor(SK_ColorRED);
@@ -211,16 +208,17 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrAtlasTextOpPreparation, reporter, ctxInfo) 
 
     std::unique_ptr<GrDrawOp> op = textContext->createOp_TestingOnly(
             context, textContext, rtc.get(), paint, font, SkMatrix::I(), text, 16, 16);
-    op->finalize(*context->priv().caps(), nullptr, GrFSAAType::kNone, GrClampType::kAuto);
+    bool hasMixedSampledCoverage = false;
+    op->finalize(*context->priv().caps(), nullptr, hasMixedSampledCoverage, GrClampType::kAuto);
 
     TestingUploadTarget uploadTarget;
 
-    GrOpFlushState flushState(gpu, resourceProvider, resourceCache,
-                              uploadTarget.writeableTokenTracker());
+    GrOpFlushState flushState(gpu, resourceProvider, uploadTarget.writeableTokenTracker());
     GrOpFlushState::OpArgs opArgs = {
         op.get(),
         rtc->asRenderTargetProxy(),
         nullptr,
+        rtc->asRenderTargetProxy()->outputSwizzle(),
         GrXferProcessor::DstProxy(nullptr, SkIPoint::Make(0, 0))
     };
 

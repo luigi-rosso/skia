@@ -5,10 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/GrColor.h"
 #include "src/core/SkClipOpPriv.h"
 #include "src/gpu/GrAppliedClip.h"
 #include "src/gpu/GrClip.h"
+#include "src/gpu/GrColor.h"
 #include "src/gpu/GrDrawingManager.h"
 #include "src/gpu/GrFixedClip.h"
 #include "src/gpu/GrPathRenderer.h"
@@ -837,13 +837,12 @@ bool GrReducedClip::drawStencilClipMask(GrRecordingContext* context,
 
     // walk through each clip element and perform its set op with the existing clip.
     for (ElementList::Iter iter(fMaskElements); iter.get(); iter.next()) {
-        using AATypeFlags = GrPathRenderer::AATypeFlags;
         const Element* element = iter.get();
-        bool doStencilMSAA =
-                element->isAA() && GrFSAAType::kNone != renderTargetContext->fsaaType();
+        // MIXED SAMPLES TODO: We can use stencil with mixed samples as well.
+        bool doStencilMSAA = element->isAA() && renderTargetContext->numSamples() > 1;
         // Since we are only drawing to the stencil buffer, we can use kMSAA even if the render
         // target is mixed sampled.
-        auto pathAATypeFlags = (doStencilMSAA) ? AATypeFlags::kMSAA : AATypeFlags::kNone;
+        auto pathAAType = (doStencilMSAA) ? GrAAType::kMSAA : GrAAType::kNone;
         bool fillInverted = false;
 
         // This will be used to determine whether the clip shape can be rendered into the
@@ -870,7 +869,7 @@ bool GrReducedClip::drawStencilClipMask(GrRecordingContext* context,
             canDrawArgs.fClipConservativeBounds = &stencilClip.fixedClip().scissorRect();
             canDrawArgs.fViewMatrix = &SkMatrix::I();
             canDrawArgs.fShape = &shape;
-            canDrawArgs.fAATypeFlags = pathAATypeFlags;
+            canDrawArgs.fAAType = pathAAType;
             canDrawArgs.fHasUserStencilSettings = false;
             canDrawArgs.fTargetIsWrappedVkSecondaryCB = renderTargetContext->wrapsVkSecondaryCB();
 
@@ -921,7 +920,7 @@ bool GrReducedClip::drawStencilClipMask(GrRecordingContext* context,
                                                           &stencilClip.fixedClip().scissorRect(),
                                                           &SkMatrix::I(),
                                                           &shape,
-                                                          pathAATypeFlags,
+                                                          pathAAType,
                                                           false};
                         pr->drawPath(args);
                     } else {
@@ -958,7 +957,7 @@ bool GrReducedClip::drawStencilClipMask(GrRecordingContext* context,
                                                       &stencilClip.fixedClip().scissorRect(),
                                                       &SkMatrix::I(),
                                                       &shape,
-                                                      pathAATypeFlags,
+                                                      pathAAType,
                                                       false};
                     pr->drawPath(args);
                 }

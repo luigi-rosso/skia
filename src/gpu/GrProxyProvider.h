@@ -10,8 +10,8 @@
 
 #include "include/gpu/GrTypes.h"
 #include "include/private/GrResourceKey.h"
-#include "include/private/GrTextureProxy.h"
 #include "src/core/SkTDynamicHash.h"
+#include "src/gpu/GrTextureProxy.h"
 
 class GrImageContext;
 class GrBackendRenderTarget;
@@ -96,9 +96,11 @@ public:
     }
 
     /*
-     * Create a texture proxy with data. It's assumed that the data is packed tightly.
+     * Create a texture proxy from compressed texture data.
      */
-    sk_sp<GrTextureProxy> createProxy(sk_sp<SkData>, const GrSurfaceDesc& desc);
+    sk_sp<GrTextureProxy> createCompressedTextureProxy(int width, int height, SkBudgeted budgeted,
+                                                       SkImage::CompressionType compressionType,
+                                                       sk_sp<SkData> data);
 
     // These match the definitions in SkImage & GrTexture.h, for whence they came
     typedef void* ReleaseContext;
@@ -117,14 +119,14 @@ public:
      */
     sk_sp<GrTextureProxy> wrapRenderableBackendTexture(const GrBackendTexture&, GrSurfaceOrigin,
                                                        int sampleCnt, GrWrapOwnership,
-                                                       GrWrapCacheable, ReleaseProc,
-                                                       ReleaseContext);
+                                                       GrWrapCacheable, ReleaseProc = nullptr,
+                                                       ReleaseContext = nullptr);
 
     /*
      * Create a render target proxy that wraps a backend render target
      */
     sk_sp<GrSurfaceProxy> wrapBackendRenderTarget(const GrBackendRenderTarget&, GrSurfaceOrigin,
-                                                  ReleaseProc, ReleaseContext);
+                                                  ReleaseProc = nullptr, ReleaseContext = nullptr);
 
     /*
      * Create a render target proxy that wraps a backend texture

@@ -195,6 +195,14 @@ struct SK_API GrContextOptions {
       */
      ShaderErrorHandler* fShaderErrorHandler = nullptr;
 
+    /**
+     * Specifies the number of samples Ganesh should use when performing internal draws with MSAA or
+     * mixed samples (hardware capabilities permitting).
+     *
+     * If 0, Ganesh will disable internal code paths that use multisampling.
+     */
+    int  fInternalMultisampleCount = 4;
+
 #if GR_TEST_UTILS
     /**
      * Private options that are only meant for testing within Skia's tools.
@@ -210,11 +218,6 @@ struct SK_API GrContextOptions {
      * Prevents use of dual source blending, to test that all xfer modes work correctly without it.
      */
     bool fSuppressDualSourceBlending = false;
-
-    /**
-     * If true, the caps will never report driver support for path rendering.
-     */
-    bool fSuppressPathRendering = false;
 
     /**
      * If true, the caps will never support geometry shaders.

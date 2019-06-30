@@ -341,7 +341,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ColorTypeBackendAllocationTest, reporter, ctx
                                                        GrMipMapped mipMapped,
                                                        GrRenderable renderable) {
                         return context->createBackendTexture(32, 32, colorType,
-                                                             mipMapped, renderable);
+                                                             mipMapped, renderable,
+                                                             GrProtected::kNo);
                     };
 
                     test_wrapping(context, reporter, uninitCreateMtd,
@@ -414,8 +415,6 @@ DEF_GPUTEST_FOR_ALL_GL_CONTEXTS(GLBackendAllocationTest, reporter, ctxInfo) {
           kRGBA_8888_GrPixelConfig,         SkColors::kBlue     },
         { kBGRA_8888_SkColorType,           GR_GL_BGRA8,
           kBGRA_8888_GrPixelConfig,         SkColors::kBlue     },
-        { kBGRA_8888_SkColorType,           GR_GL_SRGB8_ALPHA8,
-          kSBGRA_8888_GrPixelConfig,        SkColors::kCyan     },
 
         { kRGBA_1010102_SkColorType,        GR_GL_RGB10_A2,
           // TODO: readback is busted when alpha = 0.5f (perhaps premul vs. unpremul)
@@ -454,12 +453,17 @@ DEF_GPUTEST_FOR_ALL_GL_CONTEXTS(GLBackendAllocationTest, reporter, ctxInfo) {
           kRGB_ETC1_GrPixelConfig,          SkColors::kRed      },
         { kUnknown_SkColorType,             GR_GL_COMPRESSED_ETC1_RGB8,
           kRGB_ETC1_GrPixelConfig,          SkColors::kRed      },
-
-        // Experimental (for P016 and P010)
         { kUnknown_SkColorType,             GR_GL_R16,
           kR_16_GrPixelConfig,              SkColors::kRed      },
         { kUnknown_SkColorType,             GR_GL_RG16,
-          kRG_1616_GrPixelConfig,           SkColors::kYellow      },
+          kRG_1616_GrPixelConfig,           SkColors::kYellow   },
+
+        // Experimental (for Y416 and mutant P016/P010)
+        { kUnknown_SkColorType,             GR_GL_RGBA16,
+          kRGBA_16161616_GrPixelConfig,     SkColors::kLtGray   },
+        { kUnknown_SkColorType,             GR_GL_RG16F,
+          kRG_half_GrPixelConfig,           SkColors::kYellow   },
+
     };
 
     for (auto combo : combinations) {
@@ -478,7 +482,7 @@ DEF_GPUTEST_FOR_ALL_GL_CONTEXTS(GLBackendAllocationTest, reporter, ctxInfo) {
             // We current disallow uninitialized ETC1 textures in the GL backend
             continue;
         }
-        if (!glCaps->isConfigTexturable(combo.fConfig)) {
+        if (!glCaps->isFormatTexturable(combo.fColorType, format)) {
             continue;
         }
 
@@ -513,7 +517,8 @@ DEF_GPUTEST_FOR_ALL_GL_CONTEXTS(GLBackendAllocationTest, reporter, ctxInfo) {
                                                     GrMipMapped mipMapped,
                                                     GrRenderable renderable) {
                         return context->createBackendTexture(32, 32, format,
-                                                             mipMapped, renderable);
+                                                             mipMapped, renderable,
+                                                             GrProtected::kNo);
                     };
 
                     test_wrapping(context, reporter, uninitCreateMtd,
@@ -575,7 +580,6 @@ DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkBackendAllocationTest, reporter, ctxInfo) {
         { kRGB_888x_SkColorType,     VK_FORMAT_R8G8B8_UNORM,             SkColors::kCyan      },
 
         { kBGRA_8888_SkColorType,    VK_FORMAT_B8G8R8A8_UNORM,           SkColors::kBlue      },
-        { kBGRA_8888_SkColorType,    VK_FORMAT_B8G8R8A8_SRGB,            SkColors::kCyan      },
 
         { kRGBA_1010102_SkColorType, VK_FORMAT_A2B10G10R10_UNORM_PACK32, { 0.5f, 0, 0, 1.0f } },
         { kRGB_565_SkColorType,      VK_FORMAT_R5G6B5_UNORM_PACK16,      SkColors::kRed       },
@@ -600,10 +604,12 @@ DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkBackendAllocationTest, reporter, ctxInfo) {
         { kUnknown_SkColorType,      VK_FORMAT_R8G8_UNORM,               { 0.5f, 0.5f, 0, 0 } },
         { kUnknown_SkColorType,      VK_FORMAT_R16_SFLOAT,               { 1.0f, 0, 0, 0.5f } },
         { kUnknown_SkColorType,      VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK,  SkColors::kRed       },
-
-        // Experimental (for P016 and P010)
         { kUnknown_SkColorType,      VK_FORMAT_R16_UNORM,                SkColors::kRed       },
         { kUnknown_SkColorType,      VK_FORMAT_R16G16_UNORM,             SkColors::kYellow    },
+
+        // Experimental (for Y416 and mutant P016/P010)
+        { kUnknown_SkColorType,      VK_FORMAT_R16G16B16A16_UNORM,       SkColors::kLtGray    },
+        { kUnknown_SkColorType,      VK_FORMAT_R16G16_SFLOAT,            SkColors::kYellow    },
     };
 
     for (auto combo : combinations) {
@@ -636,7 +642,8 @@ DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkBackendAllocationTest, reporter, ctxInfo) {
                                                     GrRenderable renderable) {
                         GrBackendTexture beTex = context->createBackendTexture(32, 32, format,
                                                                                mipMapped,
-                                                                               renderable);
+                                                                               renderable,
+                                                                               GrProtected::kNo);
                         GrVkImageInfo vkII;
                         if (!beTex.getVkImageInfo(&vkII)) {
                             return GrBackendTexture();

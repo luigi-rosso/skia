@@ -2,13 +2,13 @@
 #ifndef ParagraphImpl_DEFINED
 #define ParagraphImpl_DEFINED
 
-#include "modules/skparagraph/src/TextLine.h"
-#include "modules/skparagraph/src/Run.h"
 #include "include/core/SkPicture.h"
-#include "include/private//SkTHash.h"
+#include "include/private/SkTHash.h"
 #include "modules/skparagraph/include/Paragraph.h"
 #include "modules/skparagraph/include/ParagraphStyle.h"
 #include "modules/skparagraph/include/TextStyle.h"
+#include "modules/skparagraph/src/Run.h"
+#include "modules/skparagraph/src/TextLine.h"
 
 class SkCanvas;
 
@@ -32,6 +32,8 @@ public:
             : Paragraph(std::move(style), std::move(fonts))
             , fText(text)
             , fTextSpan(fText.c_str(), fText.size())
+            , fDirtyLayout(true)
+            , fOldWidth(0)
             , fPicture(nullptr) {
         fTextStyles.reserve(blocks.size());
         for (auto& block : blocks) {
@@ -81,6 +83,8 @@ public:
     }
     LineMetrics strutMetrics() const { return fStrutMetrics; }
 
+    void markDirty() override { fDirtyLayout = true; }
+
 private:
     friend class ParagraphBuilder;
 
@@ -103,6 +107,9 @@ private:
     SkTArray<Cluster, true> fClusters;
     SkTArray<TextLine> fLines;
     LineMetrics fStrutMetrics;
+
+    bool fDirtyLayout;
+    SkScalar fOldWidth;
 
     // Painting
     sk_sp<SkPicture> fPicture;

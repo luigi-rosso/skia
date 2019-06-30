@@ -17,8 +17,8 @@
 #include "include/gpu/GrTexture.h"
 #include "include/gpu/gl/GrGLTypes.h"
 #include "include/private/GrGLTypesPriv.h"
-#include "include/private/GrTextureProxy.h"
 #include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/gl/GrGLCaps.h"
 #include "src/gpu/gl/GrGLTexture.h"
 #include "src/image/SkImage_Base.h"
@@ -49,7 +49,7 @@ DEF_GPUTEST_FOR_ALL_GL_CONTEXTS(GLTextureParameters, reporter, ctxInfo) {
     GrContext* context = ctxInfo.grContext();
 
     GrBackendTexture backendTex = context->createBackendTexture(
-            1, 1, kRGBA_8888_SkColorType, GrMipMapped::kNo, GrRenderable::kNo);
+            1, 1, kRGBA_8888_SkColorType, GrMipMapped::kNo, GrRenderable::kNo, GrProtected::kNo);
     REPORTER_ASSERT(reporter, backendTex.isValid());
 
     GrGLTextureInfo info;

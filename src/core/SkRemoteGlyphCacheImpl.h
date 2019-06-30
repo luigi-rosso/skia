@@ -37,16 +37,12 @@ public:
 
     SkVector rounding() const override;
 
-    const SkGlyph& getGlyphMetrics(SkGlyphID glyphID, SkPoint position) override;
-
     SkSpan<const SkGlyphPos> prepareForDrawing(const SkGlyphID glyphIDs[],
                                                const SkPoint positions[],
                                                size_t n,
                                                int maxDimension,
                                                PreparationDetail detail,
                                                SkGlyphPos results[]) override;
-
-    const SkPath* preparePath(SkGlyph* glyph) override;
 
     void onAboutToExitScope() override {}
 

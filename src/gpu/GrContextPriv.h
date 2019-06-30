@@ -74,6 +74,8 @@ public:
     void addOnFlushCallbackObject(GrOnFlushCallbackObject*);
 
     sk_sp<GrSurfaceContext> makeWrappedSurfaceContext(sk_sp<GrSurfaceProxy>,
+                                                      GrColorType,
+                                                      SkAlphaType,
                                                       sk_sp<SkColorSpace> = nullptr,
                                                       const SkSurfaceProps* = nullptr);
 
@@ -83,6 +85,8 @@ public:
                                                        GrMipMapped,
                                                        SkBackingFit,
                                                        SkBudgeted,
+                                                       GrColorType,
+                                                       SkAlphaType,
                                                        sk_sp<SkColorSpace> colorSpace = nullptr,
                                                        const SkSurfaceProps* = nullptr);
 
@@ -92,16 +96,19 @@ public:
      * renderTargetContexts created via this entry point.
      */
     sk_sp<GrRenderTargetContext> makeDeferredRenderTargetContext(
-                                            const GrBackendFormat& format,
-                                            SkBackingFit fit,
-                                            int width, int height,
-                                            GrPixelConfig config,
-                                            sk_sp<SkColorSpace> colorSpace,
-                                            int sampleCnt = 1,
-                                            GrMipMapped = GrMipMapped::kNo,
-                                            GrSurfaceOrigin origin = kBottomLeft_GrSurfaceOrigin,
-                                            const SkSurfaceProps* surfaceProps = nullptr,
-                                            SkBudgeted = SkBudgeted::kYes);
+            const GrBackendFormat& format,
+            SkBackingFit fit,
+            int width,
+            int height,
+            GrPixelConfig config,
+            GrColorType,
+            sk_sp<SkColorSpace> colorSpace,
+            int sampleCnt = 1,
+            GrMipMapped = GrMipMapped::kNo,
+            GrSurfaceOrigin origin = kBottomLeft_GrSurfaceOrigin,
+            const SkSurfaceProps* surfaceProps = nullptr,
+            SkBudgeted = SkBudgeted::kYes,
+            GrProtected isProtected = GrProtected::kNo);
 
     /*
      * This method will attempt to create a renderTargetContext that has, at least, the number of
@@ -110,16 +117,18 @@ public:
      * SRGB-ness will be preserved.
      */
     sk_sp<GrRenderTargetContext> makeDeferredRenderTargetContextWithFallback(
-                                            const GrBackendFormat& format,
-                                            SkBackingFit fit,
-                                            int width, int height,
-                                            GrPixelConfig config,
-                                            sk_sp<SkColorSpace> colorSpace,
-                                            int sampleCnt = 1,
-                                            GrMipMapped = GrMipMapped::kNo,
-                                            GrSurfaceOrigin origin = kBottomLeft_GrSurfaceOrigin,
-                                            const SkSurfaceProps* surfaceProps = nullptr,
-                                            SkBudgeted budgeted = SkBudgeted::kYes);
+            const GrBackendFormat& format,
+            SkBackingFit fit,
+            int width,
+            int height,
+            GrPixelConfig config,
+            GrColorType,
+            sk_sp<SkColorSpace> colorSpace,
+            int sampleCnt = 1,
+            GrMipMapped = GrMipMapped::kNo,
+            GrSurfaceOrigin origin = kBottomLeft_GrSurfaceOrigin,
+            const SkSurfaceProps* surfaceProps = nullptr,
+            SkBudgeted budgeted = SkBudgeted::kYes);
 
     GrAuditTrail* auditTrail() { return fContext->auditTrail(); }
 
@@ -128,37 +137,42 @@ public:
      */
     static sk_sp<GrContext> MakeDDL(const sk_sp<GrContextThreadSafeProxy>&);
 
-    sk_sp<GrTextureContext> makeBackendTextureContext(const GrBackendTexture& tex,
-                                                      GrSurfaceOrigin origin,
-                                                      sk_sp<SkColorSpace> colorSpace);
+    sk_sp<GrTextureContext> makeBackendTextureContext(const GrBackendTexture&,
+                                                      GrSurfaceOrigin,
+                                                      GrColorType,
+                                                      SkAlphaType,
+                                                      sk_sp<SkColorSpace>);
 
     // These match the definitions in SkSurface & GrSurface.h, for whence they came
     typedef void* ReleaseContext;
     typedef void (*ReleaseProc)(ReleaseContext);
 
     sk_sp<GrRenderTargetContext> makeBackendTextureRenderTargetContext(
-                                                         const GrBackendTexture& tex,
-                                                         GrSurfaceOrigin origin,
-                                                         int sampleCnt,
-                                                         sk_sp<SkColorSpace> colorSpace,
-                                                         const SkSurfaceProps* = nullptr,
-                                                         ReleaseProc = nullptr,
-                                                         ReleaseContext = nullptr);
+            const GrBackendTexture& tex,
+            GrSurfaceOrigin origin,
+            int sampleCnt,
+            GrColorType,
+            sk_sp<SkColorSpace> colorSpace,
+            const SkSurfaceProps* = nullptr,
+            ReleaseProc = nullptr,
+            ReleaseContext = nullptr);
 
     sk_sp<GrRenderTargetContext> makeBackendRenderTargetRenderTargetContext(
-                                                              const GrBackendRenderTarget&,
-                                                              GrSurfaceOrigin origin,
-                                                              sk_sp<SkColorSpace> colorSpace,
-                                                              const SkSurfaceProps* = nullptr,
-                                                              ReleaseProc = nullptr,
-                                                              ReleaseContext = nullptr);
+            const GrBackendRenderTarget&,
+            GrSurfaceOrigin origin,
+            GrColorType,
+            sk_sp<SkColorSpace> colorSpace,
+            const SkSurfaceProps* = nullptr,
+            ReleaseProc = nullptr,
+            ReleaseContext = nullptr);
 
     sk_sp<GrRenderTargetContext> makeBackendTextureAsRenderTargetRenderTargetContext(
-                                                                 const GrBackendTexture& tex,
-                                                                 GrSurfaceOrigin origin,
-                                                                 int sampleCnt,
-                                                                 sk_sp<SkColorSpace> colorSpace,
-                                                                 const SkSurfaceProps* = nullptr);
+            const GrBackendTexture& tex,
+            GrSurfaceOrigin origin,
+            int sampleCnt,
+            GrColorType,
+            sk_sp<SkColorSpace> colorSpace,
+            const SkSurfaceProps* = nullptr);
 
     sk_sp<GrRenderTargetContext> makeVulkanSecondaryCBRenderTargetContext(
             const SkImageInfo&, const GrVkDrawableInfo&, const SkSurfaceProps* = nullptr);

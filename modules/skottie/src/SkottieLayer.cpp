@@ -15,13 +15,13 @@
 #include "modules/skottie/src/SkottieAdapter.h"
 #include "modules/skottie/src/SkottieJson.h"
 #include "modules/skottie/src/SkottieValue.h"
+#include "modules/skottie/src/effects/Effects.h"
 #include "modules/sksg/include/SkSGClipEffect.h"
 #include "modules/sksg/include/SkSGDraw.h"
 #include "modules/sksg/include/SkSGGroup.h"
 #include "modules/sksg/include/SkSGImage.h"
 #include "modules/sksg/include/SkSGMaskEffect.h"
 #include "modules/sksg/include/SkSGMerge.h"
-#include "modules/sksg/include/SkSGOpacityEffect.h"
 #include "modules/sksg/include/SkSGPaint.h"
 #include "modules/sksg/include/SkSGPath.h"
 #include "modules/sksg/include/SkSGRect.h"
@@ -306,13 +306,13 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachAssetRef(
 }
 
 sk_sp<sksg::RenderNode> AnimationBuilder::attachSolidLayer(const skjson::ObjectValue& jlayer,
-                                                           const LayerInfo&,
+                                                           LayerInfo* layer_info,
                                                            AnimatorScope*) const {
-    const auto size = SkSize::Make(ParseDefault<float>(jlayer["sw"], 0.0f),
-                                   ParseDefault<float>(jlayer["sh"], 0.0f));
+    layer_info->fSize = SkSize::Make(ParseDefault<float>(jlayer["sw"], 0.0f),
+                                     ParseDefault<float>(jlayer["sh"], 0.0f));
     const skjson::StringValue* hex_str = jlayer["sc"];
     uint32_t c;
-    if (size.isEmpty() ||
+    if (layer_info->fSize.isEmpty() ||
         !hex_str ||
         *hex_str->begin() != '#' ||
         !SkParse::FindHex(hex_str->begin() + 1, &c)) {
@@ -325,7 +325,7 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachSolidLayer(const skjson::ObjectV
     auto solid_paint = sksg::Color::Make(color);
     solid_paint->setAntiAlias(true);
 
-    return sksg::Draw::Make(sksg::Rect::Make(SkRect::MakeSize(size)),
+    return sksg::Draw::Make(sksg::Rect::Make(SkRect::MakeSize(layer_info->fSize)),
                             std::move(solid_paint));
 }
 
@@ -357,7 +357,7 @@ AnimationBuilder::loadImageAsset(const skjson::ObjectValue& jimage) const {
 }
 
 sk_sp<sksg::RenderNode> AnimationBuilder::attachImageAsset(const skjson::ObjectValue& jimage,
-                                                           const LayerInfo& layer_info,
+                                                           LayerInfo* layer_info,
                                                            AnimatorScope* ascope) const {
     const auto* asset_info = this->loadImageAsset(jimage);
     if (!asset_info) {
@@ -397,13 +397,16 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachImageAsset(const skjson::ObjectV
 
         ascope->push_back(skstd::make_unique<MultiFrameAnimator>(asset_info->fAsset,
                                                                  image_node,
-                                                                 -layer_info.fInPoint,
+                                                                 -layer_info->fInPoint,
                                                                  1 / fFrameRate));
     }
 
     const auto asset_size = SkISize::Make(
             asset_info->fSize.width()  > 0 ? asset_info->fSize.width()  : image->width(),
             asset_info->fSize.height() > 0 ? asset_info->fSize.height() : image->height());
+
+    // Image layers are sized explicitly.
+    layer_info->fSize = asset_size;
 
     if (asset_size == image->bounds().size()) {
         // No resize needed.
@@ -417,7 +420,7 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachImageAsset(const skjson::ObjectV
 }
 
 sk_sp<sksg::RenderNode> AnimationBuilder::attachImageLayer(const skjson::ObjectValue& jlayer,
-                                                           const LayerInfo& layer_info,
+                                                           LayerInfo* layer_info,
                                                            AnimatorScope* ascope) const {
     return this->attachAssetRef(jlayer, ascope,
         [this, &layer_info] (const skjson::ObjectValue& jimage, AnimatorScope* ascope) {
@@ -426,8 +429,7 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachImageLayer(const skjson::ObjectV
 }
 
 sk_sp<sksg::RenderNode> AnimationBuilder::attachNullLayer(const skjson::ObjectValue& layer,
-                                                          const LayerInfo&,
-                                                          AnimatorScope*) const {
+                                                          LayerInfo*, AnimatorScope*) const {
     // Null layers are used solely to drive dependent transforms,
     // but we use free-floating sksg::Matrices for that purpose.
     return nullptr;
@@ -543,9 +545,10 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachLayer(const skjson::ObjectValue*
         return nullptr;
     }
 
-    const LayerInfo layer_info = {
+    LayerInfo layer_info = {
+        fSize,
         ParseDefault<float>((*jlayer)["ip"], 0.0f),
-        ParseDefault<float>((*jlayer)["op"], 0.0f)
+        ParseDefault<float>((*jlayer)["op"], 0.0f),
     };
     if (layer_info.fInPoint >= layer_info.fOutPoint) {
         this->log(Logger::Level::kError, nullptr,
@@ -556,19 +559,26 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachLayer(const skjson::ObjectValue*
     const AutoPropertyTracker apt(this, *jlayer);
 
     using LayerBuilder = sk_sp<sksg::RenderNode> (AnimationBuilder::*)(const skjson::ObjectValue&,
-                                                                       const LayerInfo&,
+                                                                       LayerInfo*,
                                                                        AnimatorScope*) const;
+
+    // AE is annoyingly inconsistent in how effects interact with layer transforms: depending on
+    // the layer type, effects are applied before or after the content is transformed.
+    //
+    // Empirically, pre-rendered layers (for some loose meaning of "pre-rendered") are in the
+    // former category (effects are subject to transformation), while the remaining types are in
+    // the latter.
     enum : uint32_t {
-        kTransformEffects = 1, // The layer transform applies to its effects also.
+        kTransformEffects = 1, // The layer transform also applies to its effects.
     };
 
     static constexpr struct {
         LayerBuilder fBuilder;
         uint32_t     fFlags;
     } gLayerBuildInfo[] = {
-        { &AnimationBuilder::attachPrecompLayer,                 0 },  // 'ty': 0 -> precomp
+        { &AnimationBuilder::attachPrecompLayer, kTransformEffects },  // 'ty': 0 -> precomp
         { &AnimationBuilder::attachSolidLayer  , kTransformEffects },  // 'ty': 1 -> solid
-        { &AnimationBuilder::attachImageLayer  ,                 0 },  // 'ty': 2 -> image
+        { &AnimationBuilder::attachImageLayer  , kTransformEffects },  // 'ty': 2 -> image
         { &AnimationBuilder::attachNullLayer   ,                 0 },  // 'ty': 3 -> null
         { &AnimationBuilder::attachShapeLayer  ,                 0 },  // 'ty': 4 -> shape
         { &AnimationBuilder::attachTextLayer   ,                 0 },  // 'ty': 5 -> text
@@ -598,7 +608,7 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachLayer(const skjson::ObjectValue*
     AnimatorScope layer_animators;
 
     // Build the layer content fragment.
-    auto layer = (this->*(build_info.fBuilder))(*jlayer, layer_info, &layer_animators);
+    auto layer = (this->*(build_info.fBuilder))(*jlayer, &layer_info, &layer_animators);
 
     // Clip layers with explicit dimensions.
     float w = 0, h = 0;
@@ -625,7 +635,8 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachLayer(const skjson::ObjectValue*
 
     // Optional layer effects.
     if (const skjson::ArrayValue* jeffects = (*jlayer)["ef"]) {
-        layer = this->attachLayerEffects(*jeffects, &layer_animators, std::move(layer));
+        layer = EffectBuilder(this, layer_info.fSize, &layer_animators)
+                    .attachEffects(*jeffects, std::move(layer));
     }
 
     // Attach the transform after effects, when needed.
@@ -642,47 +653,44 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachLayer(const skjson::ObjectValue*
     // Optional blend mode.
     layer = this->attachBlendMode(*jlayer, std::move(layer));
 
+    if (!layer) {
+        return nullptr;
+    }
+
     class LayerController final : public sksg::GroupAnimator {
     public:
         LayerController(sksg::AnimatorList&& layer_animators,
-                        sk_sp<sksg::OpacityEffect> controlNode,
+                        sk_sp<sksg::RenderNode> layer,
                         float in, float out)
             : INHERITED(std::move(layer_animators))
-            , fControlNode(std::move(controlNode))
+            , fLayerNode(std::move(layer))
             , fIn(in)
             , fOut(out) {}
 
         void onTick(float t) override {
             const auto active = (t >= fIn && t < fOut);
 
-            // Keep the layer fully transparent except for its [in..out] lifespan.
-            // (note: opacity == 0 disables rendering, while opacity == 1 is a noop)
-            fControlNode->setOpacity(active ? 1 : 0);
+            fLayerNode->setVisible(active);
 
             // Dispatch ticks only while active.
             if (active) this->INHERITED::onTick(t);
         }
 
     private:
-        const sk_sp<sksg::OpacityEffect> fControlNode;
-        const float                      fIn,
-                                         fOut;
+        const sk_sp<sksg::RenderNode> fLayerNode;
+        const float                   fIn,
+                                      fOut;
 
         using INHERITED = sksg::GroupAnimator;
     };
 
-    auto controller_node = sksg::OpacityEffect::Make(std::move(layer));
-    if (!controller_node) {
-        return nullptr;
-    }
-
     layerCtx->fScope->push_back(
-        skstd::make_unique<LayerController>(std::move(layer_animators), controller_node,
+        skstd::make_unique<LayerController>(std::move(layer_animators), layer,
                                             layer_info.fInPoint, layer_info.fOutPoint));
 
     if (ParseDefault<bool>((*jlayer)["td"], false)) {
         // This layer is a matte.  We apply it as a mask to the next layer.
-        layerCtx->fCurrentMatte = std::move(controller_node);
+        layerCtx->fCurrentMatte = std::move(layer);
         return nullptr;
     }
 
@@ -695,14 +703,14 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachLayer(const skjson::ObjectValue*
         const auto matteType = ParseDefault<size_t>((*jlayer)["tt"], 1) - 1;
 
         if (matteType < SK_ARRAY_COUNT(gMaskModes)) {
-            return sksg::MaskEffect::Make(std::move(controller_node),
+            return sksg::MaskEffect::Make(std::move(layer),
                                           std::move(layerCtx->fCurrentMatte),
                                           gMaskModes[matteType]);
         }
         layerCtx->fCurrentMatte.reset();
     }
 
-    return std::move(controller_node);
+    return layer;
 }
 
 sk_sp<sksg::RenderNode> AnimationBuilder::attachComposition(const skjson::ObjectValue& jcomp,

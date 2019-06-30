@@ -5,7 +5,6 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkFloatBits.h"
 #include "src/sksl/SkSLByteCodeGenerator.h"
 
 #include <algorithm>
@@ -29,7 +28,9 @@ ByteCodeGenerator::ByteCodeGenerator(const Context* context, const Program* prog
 
 
 int ByteCodeGenerator::SlotCount(const Type& type) {
-    if (type.kind() == Type::kStruct_Kind) {
+    if (type.kind() == Type::kOther_Kind) {
+        return 0;
+    } else if (type.kind() == Type::kStruct_Kind) {
         int slots = 0;
         for (const auto& f : type.fields()) {
             slots += SlotCount(*f.fType);
@@ -212,7 +213,6 @@ int ByteCodeGenerator::getLocation(const Variable& var) {
     }
 }
 
-// TODO: Elide Add 0 and Mul 1 sequences
 int ByteCodeGenerator::getLocation(const Expression& expr, Variable::Storage* storage) {
     switch (expr.fKind) {
         case Expression::kFieldAccess_Kind: {
@@ -223,9 +223,11 @@ int ByteCodeGenerator::getLocation(const Expression& expr, Variable::Storage* st
                 offset += SlotCount(*f.fBase->fType.fields()[i].fType);
             }
             if (baseAddr < 0) {
-                this->write(ByteCodeInstruction::kPushImmediate);
-                this->write32(offset);
-                this->write(ByteCodeInstruction::kAddI);
+                if (offset != 0) {
+                    this->write(ByteCodeInstruction::kPushImmediate);
+                    this->write32(offset);
+                    this->write(ByteCodeInstruction::kAddI);
+                }
                 return -1;
             } else {
                 return baseAddr + offset;
@@ -238,15 +240,35 @@ int ByteCodeGenerator::getLocation(const Expression& expr, Variable::Storage* st
             if (i.fIndex->isConstant()) {
                 offset = i.fIndex->getConstantInt() * stride;
             } else {
+                if (i.fIndex->hasSideEffects()) {
+                    // Having a side-effect in an indexer is technically safe for an rvalue,
+                    // but with lvalues we have to evaluate the indexer twice, so make it an error.
+                    fErrors.error(i.fIndex->fOffset,
+                            "Index expressions with side-effects not supported in byte code.");
+                    return 0;
+                }
                 this->writeExpression(*i.fIndex);
-                this->write(ByteCodeInstruction::kPushImmediate);
-                this->write32(stride);
-                this->write(ByteCodeInstruction::kMultiplyI);
+                if (stride != 1) {
+                    this->write(ByteCodeInstruction::kPushImmediate);
+                    this->write32(stride);
+                    this->write(ByteCodeInstruction::kMultiplyI);
+                }
             }
             int baseAddr = this->getLocation(*i.fBase, storage);
+
+            // Are both components known statically?
             if (baseAddr >= 0 && offset >= 0) {
                 return baseAddr + offset;
             }
+
+            // At least one component is dynamic (and on the stack).
+
+            // If the other component is zero, we're done
+            if (baseAddr == 0 || offset == 0) {
+                return -1;
+            }
+
+            // Push the non-dynamic component (if any) to the stack, then add the two
             if (baseAddr >= 0) {
                 this->write(ByteCodeInstruction::kPushImmediate);
                 this->write32(baseAddr);
@@ -264,9 +286,11 @@ int ByteCodeGenerator::getLocation(const Expression& expr, Variable::Storage* st
             int baseAddr = this->getLocation(*s.fBase, storage);
             int offset = s.fComponents[0];
             if (baseAddr < 0) {
-                this->write(ByteCodeInstruction::kPushImmediate);
-                this->write32(offset);
-                this->write(ByteCodeInstruction::kAddI);
+                if (offset != 0) {
+                    this->write(ByteCodeInstruction::kPushImmediate);
+                    this->write32(offset);
+                    this->write(ByteCodeInstruction::kAddI);
+                }
                 return -1;
             } else {
                 return baseAddr + offset;
@@ -589,9 +613,15 @@ void ByteCodeGenerator::writeVariableExpression(const Expression& expr) {
     }
 }
 
+static inline uint32_t float_to_bits(float x) {
+    uint32_t u;
+    memcpy(&u, &x, sizeof(uint32_t));
+    return u;
+}
+
 void ByteCodeGenerator::writeFloatLiteral(const FloatLiteral& f) {
     this->write(ByteCodeInstruction::kPushImmediate);
-    this->write32(SkFloat2Bits(f.fValue));
+    this->write32(float_to_bits(f.fValue));
 }
 
 void ByteCodeGenerator::writeIntrinsicCall(const FunctionCall& c) {
@@ -630,15 +660,63 @@ void ByteCodeGenerator::writeIntrinsicCall(const FunctionCall& c) {
 }
 
 void ByteCodeGenerator::writeFunctionCall(const FunctionCall& f) {
-    for (const auto& arg : f.fArguments) {
-        this->writeExpression(*arg);
-    }
+    // Builtins have simple signatures...
     if (f.fFunction.fBuiltin) {
+        for (const auto& arg : f.fArguments) {
+            this->writeExpression(*arg);
+        }
         this->writeIntrinsicCall(f);
         return;
     }
+
+    // Otherwise, we may need to deal with out parameters, so the sequence is trickier...
+    if (int returnCount = SlotCount(f.fType)) {
+        this->write(ByteCodeInstruction::kReserve);
+        this->write8(returnCount);
+    }
+
+    int argCount = f.fArguments.size();
+    std::vector<std::unique_ptr<LValue>> lvalues;
+    for (int i = 0; i < argCount; ++i) {
+        const auto& param = f.fFunction.fParameters[i];
+        const auto& arg = f.fArguments[i];
+        if (param->fModifiers.fFlags & Modifiers::kOut_Flag) {
+            lvalues.emplace_back(this->getLValue(*arg));
+            lvalues.back()->load();
+        } else {
+            this->writeExpression(*arg);
+        }
+    }
+
     this->write(ByteCodeInstruction::kCall);
     fCallTargets.emplace_back(this, f.fFunction);
+
+    // After the called function returns, the stack will still contain our arguments. We have to
+    // pop them (storing any out parameters back to their lvalues as we go). We glob together slot
+    // counts for all parameters that aren't out-params, so we can pop them in one big chunk.
+    int popCount = 0;
+    auto pop = [&]() {
+        if (popCount > 4) {
+            this->write(ByteCodeInstruction::kPopN);
+            this->write8(popCount);
+        } else if (popCount > 0) {
+            this->write(vector_instruction(ByteCodeInstruction::kPop, popCount));
+        }
+        popCount = 0;
+    };
+
+    for (int i = argCount - 1; i >= 0; --i) {
+        const auto& param = f.fFunction.fParameters[i];
+        const auto& arg = f.fArguments[i];
+        if (param->fModifiers.fFlags & Modifiers::kOut_Flag) {
+            pop();
+            lvalues.back()->store(true);
+            lvalues.pop_back();
+        } else {
+            popCount += SlotCount(arg->fType);
+        }
+    }
+    pop();
 }
 
 void ByteCodeGenerator::writeIntLiteral(const IntLiteral& i) {
@@ -659,7 +737,7 @@ bool ByteCodeGenerator::writePrefixExpression(const PrefixExpression& p, bool di
             std::unique_ptr<LValue> lvalue = this->getLValue(*p.fOperand);
             lvalue->load();
             this->write(ByteCodeInstruction::kPushImmediate);
-            this->write32(type_category(p.fType) == TypeCategory::kFloat ? SkFloat2Bits(1.0f) : 1);
+            this->write32(type_category(p.fType) == TypeCategory::kFloat ? float_to_bits(1.0f) : 1);
             if (p.fOperator == Token::Kind::PLUSPLUS) {
                 this->writeTypedInstruction(p.fType,
                                             ByteCodeInstruction::kAddI,
@@ -703,7 +781,7 @@ bool ByteCodeGenerator::writePostfixExpression(const PostfixExpression& p, bool 
                 this->write(ByteCodeInstruction::kDup);
             }
             this->write(ByteCodeInstruction::kPushImmediate);
-            this->write32(type_category(p.fType) == TypeCategory::kFloat ? SkFloat2Bits(1.0f) : 1);
+            this->write32(type_category(p.fType) == TypeCategory::kFloat ? float_to_bits(1.0f) : 1);
             if (p.fOperator == Token::Kind::PLUSPLUS) {
                 this->writeTypedInstruction(p.fType,
                                             ByteCodeInstruction::kAddI,
@@ -823,7 +901,7 @@ void ByteCodeGenerator::writeExpression(const Expression& e, bool discard) {
         if (count > 4) {
             this->write(ByteCodeInstruction::kPopN);
             this->write8(count);
-        } else {
+        } else if (count != 0) {
             this->write(vector_instruction(ByteCodeInstruction::kPop, count));
         }
         discard = false;

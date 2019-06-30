@@ -8,15 +8,15 @@
 #include "tests/TestUtils.h"
 
 #include "include/encode/SkPngEncoder.h"
-#include "include/private/GrSurfaceProxy.h"
-#include "include/private/GrTextureProxy.h"
 #include "include/utils/SkBase64.h"
 #include "src/core/SkUtils.h"
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrDrawingManager.h"
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrSurfaceContext.h"
+#include "src/gpu/GrSurfaceProxy.h"
 #include "src/gpu/GrTextureContext.h"
+#include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/SkGr.h"
 
 void test_read_pixels(skiatest::Reporter* reporter,
@@ -72,15 +72,15 @@ void test_write_pixels(skiatest::Reporter* reporter,
     test_read_pixels(reporter, dstContext, pixels.get(), testName);
 }
 
-void test_copy_from_surface(skiatest::Reporter* reporter, GrContext* context,
-                            GrSurfaceProxy* proxy, uint32_t expectedPixelValues[],
+void test_copy_from_surface(skiatest::Reporter* reporter, GrContext* context, GrSurfaceProxy* proxy,
+                            GrColorType colorType, uint32_t expectedPixelValues[],
                             const char* testName) {
-    sk_sp<GrTextureProxy> dstProxy = GrSurfaceProxy::Copy(context,  proxy, GrMipMapped::kNo,
+    sk_sp<GrTextureProxy> dstProxy = GrSurfaceProxy::Copy(context, proxy, GrMipMapped::kNo,
                                                           SkBackingFit::kExact, SkBudgeted::kYes);
     SkASSERT(dstProxy);
 
-    sk_sp<GrSurfaceContext> dstContext =
-            context->priv().makeWrappedSurfaceContext(std::move(dstProxy));
+    sk_sp<GrSurfaceContext> dstContext = context->priv().makeWrappedSurfaceContext(
+            std::move(dstProxy), colorType, kPremul_SkAlphaType);
     SkASSERT(dstContext.get());
 
     test_read_pixels(reporter, dstContext.get(), expectedPixelValues, testName);

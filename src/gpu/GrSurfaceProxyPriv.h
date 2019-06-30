@@ -8,7 +8,7 @@
 #ifndef GrSurfaceProxyPriv_DEFINED
 #define GrSurfaceProxyPriv_DEFINED
 
-#include "include/private/GrSurfaceProxy.h"
+#include "src/gpu/GrSurfaceProxy.h"
 
 #include "src/gpu/GrResourceProvider.h"
 
@@ -17,13 +17,7 @@
     data members or virtual methods. */
 class GrSurfaceProxyPriv {
 public:
-    // Beware! Woe betide anyone whosoever calls this method.
-    // The refs on proxies and their backing GrSurfaces shift around based on whether the proxy
-    // is instantiated or not. Additionally, the lifetime of a proxy (and a GrSurface) also
-    // depends on the read and write refs (So this method can validly return 0).
     int32_t getProxyRefCnt() const { return fProxy->getProxyRefCnt(); }
-
-    int32_t getTotalRefs() const { return fProxy->getTotalRefs(); }
 
     void computeScratchKey(GrScratchKey* key) const { return fProxy->computeScratchKey(key); }
 

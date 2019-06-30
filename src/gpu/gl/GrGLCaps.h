@@ -60,12 +60,8 @@ public:
          * GL_MAX_SAMPLES value.
          */
         kES_EXT_MsToTexture_MSFBOType,
-        /**
-         * GL_NV_framebuffer_mixed_samples.
-         */
-        kMixedSamples_MSFBOType,
 
-        kLast_MSFBOType = kMixedSamples_MSFBOType
+        kLast_MSFBOType = kES_EXT_MsToTexture_MSFBOType
     };
 
     enum BlitFramebufferFlags {
@@ -110,13 +106,26 @@ public:
     GrGLCaps(const GrContextOptions& contextOptions, const GrGLContextInfo& ctxInfo,
              const GrGLInterface* glInterface);
 
+    bool isFormatSRGB(const GrBackendFormat& format) const override;
+
+    bool isFormatTexturable(SkColorType, const GrBackendFormat&) const override;
+
     bool isConfigTexturable(GrPixelConfig config) const override {
-        return SkToBool(fConfigTable[config].fFlags & ConfigInfo::kTextureable_Flag);
+        GrGLenum glFormat = this->configSizedInternalFormat(config);
+        if (!glFormat) {
+            return false;
+        }
+        return SkToBool(this->getFormatInfo(glFormat).fFlags & FormatInfo::kTextureable_Flag);
     }
 
+    int getRenderTargetSampleCount(int requestedCount,
+                                   SkColorType, const GrBackendFormat&) const override;
     int getRenderTargetSampleCount(int requestedCount, GrPixelConfig config) const override;
+
+    int maxRenderTargetSampleCount(SkColorType, const GrBackendFormat&) const override;
     int maxRenderTargetSampleCount(GrPixelConfig config) const override;
 
+    bool isFormatCopyable(SkColorType, const GrBackendFormat&) const override;
     bool isConfigCopyable(GrPixelConfig config) const override {
         // In GL we have three ways to be able to copy. CopyTexImage, blit, and draw. CopyTexImage
         // requires the src to be an FBO attachment, blit requires both src and dst to be FBO
@@ -125,8 +134,14 @@ public:
         return this->canConfigBeFBOColorAttachment(config);
     }
 
+    bool canFormatBeFBOColorAttachment(GrGLenum format) const;
+
     bool canConfigBeFBOColorAttachment(GrPixelConfig config) const {
-        return SkToBool(fConfigTable[config].fFlags & ConfigInfo::kFBOColorAttachment_Flag);
+        GrGLenum format = this->configSizedInternalFormat(config);
+        if (!format) {
+            return false;
+        }
+        return this->canFormatBeFBOColorAttachment(format);
     }
 
     bool isConfigTexSupportEnabled(GrPixelConfig config) const {
@@ -223,8 +238,7 @@ public:
     bool usesMSAARenderBuffers() const {
         return kNone_MSFBOType != fMSFBOType &&
                kES_IMG_MsToTexture_MSFBOType != fMSFBOType &&
-               kES_EXT_MsToTexture_MSFBOType != fMSFBOType &&
-               kMixedSamples_MSFBOType != fMSFBOType;
+               kES_EXT_MsToTexture_MSFBOType != fMSFBOType;
     }
 
     /**
@@ -306,8 +320,9 @@ public:
     /// Use indices or vertices in CPU arrays rather than VBOs for dynamic content.
     bool useNonVBOVertexAndIndexDynamicData() const { return fUseNonVBOVertexAndIndexDynamicData; }
 
-    bool surfaceSupportsReadPixels(const GrSurface*) const override;
-    GrColorType supportedReadPixelsColorType(GrPixelConfig, GrColorType) const override;
+    ReadFlags surfaceSupportsReadPixels(const GrSurface*) const override;
+    SupportedRead supportedReadPixelsColorType(GrPixelConfig, const GrBackendFormat&,
+                                               GrColorType) const override;
 
     /// Does ReadPixels support reading readConfig pixels from a FBO that is surfaceConfig?
     bool readPixelsSupported(GrPixelConfig surfaceConfig,
@@ -403,6 +418,7 @@ public:
                             bool* rectsMustMatch, bool* disallowSubrect) const override;
 
     bool programBinarySupport() const { return fProgramBinarySupport; }
+    bool programParameterSupport() const { return fProgramParameterSupport; }
 
     bool samplerObjectSupport() const { return fSamplerObjectSupport; }
 
@@ -416,6 +432,7 @@ public:
 
     GrBackendFormat getBackendFormatFromGrColorType(GrColorType ct,
                                                     GrSRGBEncoded srgbEncoded) const override;
+    GrBackendFormat getBackendFormatFromCompressionType(SkImage::CompressionType) const override;
 
     GrSwizzle getTextureSwizzle(const GrBackendFormat&, GrColorType) const override;
     GrSwizzle getOutputSwizzle(const GrBackendFormat&, GrColorType) const override;
@@ -452,8 +469,8 @@ private:
     void initBlendEqationSupport(const GrGLContextInfo&);
     void initStencilSupport(const GrGLContextInfo&);
     // This must be called after initFSAASupport().
-    void initConfigTable(const GrContextOptions&, const GrGLContextInfo&, const GrGLInterface*,
-                         GrShaderCaps*);
+    void initConfigTable(const GrContextOptions&, const GrGLContextInfo&, const GrGLInterface*);
+    void initFormatTable(const GrContextOptions&, const GrGLContextInfo&, const GrGLInterface*);
     bool onSurfaceSupportsWritePixels(const GrSurface*) const override;
     bool onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
                           const SkIRect& srcRect, const SkIPoint& dstPoint) const override;
@@ -496,6 +513,7 @@ private:
     bool fUseBufferDataNullHint                : 1;
     bool fClearTextureSupport : 1;
     bool fProgramBinarySupport : 1;
+    bool fProgramParameterSupport : 1;
     bool fSamplerObjectSupport : 1;
     bool fFBFetchRequiresEnablePerSample : 1;
 
@@ -568,16 +586,19 @@ private:
         // Index fStencilFormats.
         int fStencilFormatIndex;
 
+        // If data from a surface of this config is read back to a GrColorType with all four
+        // color channels this indicates how each channel should be interpreted. May contain
+        // 0s and 1s.
+        GrSwizzle fRGBAReadSwizzle = GrSwizzle("rgba");
+
         SkTDArray<int> fColorSampleCounts;
 
         enum {
-            kTextureable_Flag             = 0x1,
-            kRenderable_Flag              = 0x2,
-            kRenderableWithMSAA_Flag      = 0x4,
+            kRenderable_Flag              = 0x1,
+            kRenderableWithMSAA_Flag      = 0x2,
             /** kFBOColorAttachment means that even if the config cannot be a GrRenderTarget, we can
                 still attach it to a FBO for blitting or reading pixels. */
-            kFBOColorAttachment_Flag      = 0x8,
-            kCanUseTexStorage_Flag        = 0x10,
+            kCanUseTexStorage_Flag        = 0x4,
         };
         uint32_t fFlags;
 
@@ -587,6 +608,23 @@ private:
     };
 
     ConfigInfo fConfigTable[kGrPixelConfigCnt];
+
+    struct FormatInfo {
+        enum {
+            kTextureable_Flag                = 0x1,
+            /** kFBOColorAttachment means that even if the format cannot be a GrRenderTarget, we can
+                still attach it to a FBO for blitting or reading pixels. */
+            kFBOColorAttachment_Flag         = 0x2,
+            kFBOColorAttachmentWithMSAA_Flag = 0x4,
+        };
+        uint32_t fFlags = 0;
+    };
+
+    static const size_t kNumGLFormats = 21;
+    FormatInfo fFormatTable[kNumGLFormats];
+
+    FormatInfo& getFormatInfo(GrGLenum glFormat);
+    const FormatInfo& getFormatInfo(GrGLenum glFormat) const;
 
     typedef GrCaps INHERITED;
 };

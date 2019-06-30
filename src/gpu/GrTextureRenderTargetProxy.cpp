@@ -23,13 +23,17 @@ GrTextureRenderTargetProxy::GrTextureRenderTargetProxy(const GrCaps& caps,
                                                        const GrSurfaceDesc& desc,
                                                        GrSurfaceOrigin origin,
                                                        GrMipMapped mipMapped,
+                                                       const GrSwizzle& texSwizzle,
+                                                       const GrSwizzle& outSwizzle,
                                                        SkBackingFit fit,
                                                        SkBudgeted budgeted,
                                                        GrInternalSurfaceFlags surfaceFlags)
-        : GrSurfaceProxy(format, desc, origin, fit, budgeted, surfaceFlags)
+        : GrSurfaceProxy(format, desc, origin, texSwizzle, fit, budgeted, surfaceFlags)
         // for now textures w/ data are always wrapped
-        , GrRenderTargetProxy(caps, format, desc, origin, fit, budgeted, surfaceFlags)
-        , GrTextureProxy(format, desc, origin, mipMapped, fit, budgeted, surfaceFlags) {}
+        , GrRenderTargetProxy(caps, format, desc, origin, texSwizzle, outSwizzle, fit, budgeted,
+                              surfaceFlags)
+        , GrTextureProxy(format, desc, origin, mipMapped, texSwizzle, fit, budgeted, surfaceFlags) {
+}
 
 // Lazy-callback version
 GrTextureRenderTargetProxy::GrTextureRenderTargetProxy(LazyInstantiateCallback&& callback,
@@ -38,32 +42,36 @@ GrTextureRenderTargetProxy::GrTextureRenderTargetProxy(LazyInstantiateCallback&&
                                                        const GrSurfaceDesc& desc,
                                                        GrSurfaceOrigin origin,
                                                        GrMipMapped mipMapped,
+                                                       const GrSwizzle& texSwizzle,
+                                                       const GrSwizzle& outSwizzle,
                                                        SkBackingFit fit,
                                                        SkBudgeted budgeted,
                                                        GrInternalSurfaceFlags surfaceFlags)
-        : GrSurfaceProxy(std::move(callback), lazyType, format, desc, origin, fit, budgeted,
-                         surfaceFlags)
+        : GrSurfaceProxy(std::move(callback), lazyType, format, desc, origin, texSwizzle, fit,
+                         budgeted, surfaceFlags)
         // Since we have virtual inheritance, we initialize GrSurfaceProxy directly. Send null
         // callbacks to the texture and RT proxies simply to route to the appropriate constructors.
-        , GrRenderTargetProxy(LazyInstantiateCallback(), lazyType, format, desc, origin, fit,
-                              budgeted, surfaceFlags, WrapsVkSecondaryCB::kNo)
+        , GrRenderTargetProxy(LazyInstantiateCallback(), lazyType, format, desc, origin, texSwizzle,
+                              outSwizzle, fit, budgeted, surfaceFlags, WrapsVkSecondaryCB::kNo)
         , GrTextureProxy(LazyInstantiateCallback(), lazyType, format, desc, origin, mipMapped,
-                         fit, budgeted, surfaceFlags) {}
+                         texSwizzle, fit, budgeted, surfaceFlags) {}
 
 // Wrapped version
 // This class is virtually derived from GrSurfaceProxy (via both GrTextureProxy and
 // GrRenderTargetProxy) so its constructor must be explicitly called.
 GrTextureRenderTargetProxy::GrTextureRenderTargetProxy(sk_sp<GrSurface> surf,
-                                                       GrSurfaceOrigin origin)
-        : GrSurfaceProxy(surf, origin, SkBackingFit::kExact)
-        , GrRenderTargetProxy(surf, origin)
-        , GrTextureProxy(surf, origin) {
+                                                       GrSurfaceOrigin origin,
+                                                       const GrSwizzle& texSwizzle,
+                                                       const GrSwizzle& outSwizzle)
+        : GrSurfaceProxy(surf, origin, texSwizzle, SkBackingFit::kExact)
+        , GrRenderTargetProxy(surf, origin, texSwizzle, outSwizzle)
+        , GrTextureProxy(surf, origin, texSwizzle) {
     SkASSERT(surf->asTexture());
     SkASSERT(surf->asRenderTarget());
 }
 
 size_t GrTextureRenderTargetProxy::onUninstantiatedGpuMemorySize() const {
-    int colorSamplesPerPixel = this->numColorSamples();
+    int colorSamplesPerPixel = this->numSamples();
     if (colorSamplesPerPixel > 1) {
         // Add one to account for the resolve buffer.
         ++colorSamplesPerPixel;
@@ -83,7 +91,7 @@ bool GrTextureRenderTargetProxy::instantiate(GrResourceProvider* resourceProvide
 
     const GrUniqueKey& key = this->getUniqueKey();
 
-    if (!this->instantiateImpl(resourceProvider, this->numStencilSamples(), this->needsStencil(),
+    if (!this->instantiateImpl(resourceProvider, this->numSamples(), this->needsStencil(),
                                kDescFlags, this->mipMapped(), key.isValid() ? &key : nullptr)) {
         return false;
     }
@@ -91,8 +99,8 @@ bool GrTextureRenderTargetProxy::instantiate(GrResourceProvider* resourceProvide
         SkASSERT(key == this->getUniqueKey());
     }
 
-    SkASSERT(fTarget->asRenderTarget());
-    SkASSERT(fTarget->asTexture());
+    SkASSERT(this->peekRenderTarget());
+    SkASSERT(this->peekTexture());
 
     return true;
 }
@@ -101,7 +109,7 @@ sk_sp<GrSurface> GrTextureRenderTargetProxy::createSurface(
                                                     GrResourceProvider* resourceProvider) const {
     static constexpr GrSurfaceDescFlags kDescFlags = kRenderTarget_GrSurfaceFlag;
 
-    sk_sp<GrSurface> surface = this->createSurfaceImpl(resourceProvider, this->numStencilSamples(),
+    sk_sp<GrSurface> surface = this->createSurfaceImpl(resourceProvider, this->numSamples(),
                                                        this->needsStencil(), kDescFlags,
                                                        this->mipMapped());
     if (!surface) {
@@ -122,7 +130,7 @@ void GrTextureRenderTargetProxy::onValidateSurface(const GrSurface* surface) {
 
     // Anything checked here should also be checking the GrRenderTargetProxy version
     SkASSERT(surface->asRenderTarget());
-    SkASSERT(surface->asRenderTarget()->numStencilSamples() == this->numStencilSamples());
+    SkASSERT(surface->asRenderTarget()->numSamples() == this->numSamples());
 
     SkASSERT(surface->asTexture()->texturePriv().textureType() == this->textureType());
 

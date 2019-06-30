@@ -9,8 +9,6 @@
 
 #include "include/gpu/GrTexture.h"
 #include "include/gpu/mock/GrMockTypes.h"
-#include "include/private/GrSurfaceProxy.h"
-#include "include/private/GrTextureProxy.h"
 #include "src/core/SkExchange.h"
 #include "src/core/SkMakeUnique.h"
 #include "src/core/SkRectPriv.h"
@@ -22,7 +20,9 @@
 #include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrRenderTargetContext.h"
 #include "src/gpu/GrRenderTargetContextPriv.h"
+#include "src/gpu/GrSurfaceProxy.h"
 #include "src/gpu/GrSurfaceProxyPriv.h"
+#include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/GrTextureProxyPriv.h"
 #include "src/gpu/mock/GrMockGpu.h"
 
@@ -110,8 +110,8 @@ public:
 
         const char* name() const override { return "LazyProxyTest::Op"; }
         FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
-        GrProcessorSet::Analysis finalize(
-                const GrCaps&, const GrAppliedClip* clip, GrFSAAType, GrClampType) override {
+        GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip* clip,
+                                          bool hasMixedSampledCoverage, GrClampType) override {
             return GrProcessorSet::EmptySetAnalysis();
         }
         void onPrepare(GrOpFlushState*) override {}
@@ -210,15 +210,15 @@ DEF_GPUTEST(LazyProxyTest, reporter, /* options */) {
         GrBackendFormat format =
             ctx->priv().caps()->getBackendFormatFromColorType(kRGBA_8888_SkColorType);
         sk_sp<GrRenderTargetContext> rtc = ctx->priv().makeDeferredRenderTargetContext(
-                                                             format, SkBackingFit::kExact, 100, 100,
-                                                             kRGBA_8888_GrPixelConfig, nullptr);
+                format, SkBackingFit::kExact, 100, 100, kRGBA_8888_GrPixelConfig,
+                GrColorType::kRGBA_8888, nullptr);
         REPORTER_ASSERT(reporter, rtc);
         format =
                 ctx->priv().caps()->getBackendFormatFromGrColorType(GrColorType::kAlpha_F16,
                                                                            GrSRGBEncoded::kNo);
         sk_sp<GrRenderTargetContext> mockAtlas = ctx->priv().makeDeferredRenderTargetContext(
-                                                     format, SkBackingFit::kExact, 10, 10,
-                                                     kAlpha_half_GrPixelConfig, nullptr);
+                format, SkBackingFit::kExact, 10, 10, kAlpha_half_GrPixelConfig,
+                GrColorType::kAlpha_F16, nullptr);
         REPORTER_ASSERT(reporter, mockAtlas);
         rtc->priv().testingOnly_addDrawOp(LazyProxyTest::Clip(&test, mockAtlas->asTextureProxy()),
                         LazyProxyTest::Op::Make(ctx.get(), proxyProvider, &test, nullTexture));
@@ -353,8 +353,8 @@ private:
 
     const char* name() const override { return "LazyFailedInstantiationTestOp"; }
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
-    GrProcessorSet::Analysis finalize(
-            const GrCaps&, const GrAppliedClip*, GrFSAAType, GrClampType) override {
+    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*,
+                                      bool hasMixedSampledCoverage, GrClampType) override {
         return GrProcessorSet::EmptySetAnalysis();
     }
     void onPrepare(GrOpFlushState*) override {}
@@ -378,8 +378,8 @@ DEF_GPUTEST(LazyProxyFailedInstantiationTest, reporter, /* options */) {
                 ctx->priv().caps()->getBackendFormatFromColorType(kRGBA_8888_SkColorType);
     for (bool failInstantiation : {false, true}) {
         sk_sp<GrRenderTargetContext> rtc = ctx->priv().makeDeferredRenderTargetContext(
-                                                     format, SkBackingFit::kExact, 100, 100,
-                                                     kRGBA_8888_GrPixelConfig, nullptr);
+                format, SkBackingFit::kExact, 100, 100, kRGBA_8888_GrPixelConfig,
+                GrColorType::kRGBA_8888, nullptr);
         REPORTER_ASSERT(reporter, rtc);
 
         rtc->clear(nullptr, SkPMColor4f::FromBytes_RGBA(0xbaaaaaad),
@@ -422,8 +422,8 @@ private:
 
     const char* name() const override { return "LazyDeinstantiateTestOp"; }
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
-    GrProcessorSet::Analysis finalize(
-            const GrCaps&, const GrAppliedClip*, GrFSAAType, GrClampType) override {
+    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*,
+                                      bool hasMixedSampledCoverage, GrClampType) override {
         return GrProcessorSet::EmptySetAnalysis();
     }
     void onPrepare(GrOpFlushState*) override {}
@@ -449,8 +449,8 @@ DEF_GPUTEST(LazyProxyDeinstantiateTest, reporter, /* options */) {
     using LazyType = GrSurfaceProxy::LazyInstantiationType;
     for (auto lazyType : {LazyType::kSingleUse, LazyType::kMultipleUse, LazyType::kDeinstantiate}) {
         sk_sp<GrRenderTargetContext> rtc = ctx->priv().makeDeferredRenderTargetContext(
-                format, SkBackingFit::kExact, 100, 100,
-                kRGBA_8888_GrPixelConfig, nullptr);
+                format, SkBackingFit::kExact, 100, 100, kRGBA_8888_GrPixelConfig,
+                GrColorType::kRGBA_8888, nullptr);
         REPORTER_ASSERT(reporter, rtc);
 
         rtc->clear(nullptr, SkPMColor4f::FromBytes_RGBA(0xbaaaaaad),

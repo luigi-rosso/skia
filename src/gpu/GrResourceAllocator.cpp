@@ -7,16 +7,16 @@
 
 #include "src/gpu/GrResourceAllocator.h"
 
-#include "include/private/GrOpList.h"
-#include "include/private/GrRenderTargetProxy.h"
-#include "include/private/GrSurfaceProxy.h"
-#include "include/private/GrTextureProxy.h"
 #include "src/gpu/GrDeinstantiateProxyTracker.h"
 #include "src/gpu/GrGpuResourcePriv.h"
+#include "src/gpu/GrOpList.h"
+#include "src/gpu/GrRenderTargetProxy.h"
 #include "src/gpu/GrResourceCache.h"
 #include "src/gpu/GrResourceProvider.h"
 #include "src/gpu/GrSurfacePriv.h"
+#include "src/gpu/GrSurfaceProxy.h"
 #include "src/gpu/GrSurfaceProxyPriv.h"
+#include "src/gpu/GrTextureProxy.h"
 
 #if GR_TRACK_INTERVAL_CREATION
     #include <atomic>
@@ -44,10 +44,10 @@ void GrResourceAllocator::determineRecyclability() {
             continue;
         }
 
-        if (cur->uses() >= cur->proxy()->priv().getTotalRefs()) {
+        if (cur->uses() >= cur->proxy()->priv().getProxyRefCnt()) {
             // All the refs on the proxy are known to the resource allocator thus no one
             // should be holding onto it outside of Ganesh.
-            SkASSERT(cur->uses() == cur->proxy()->priv().getTotalRefs());
+            SkASSERT(cur->uses() == cur->proxy()->priv().getProxyRefCnt());
             cur->markAsRecyclable();
         }
     }
@@ -154,6 +154,8 @@ void GrResourceAllocator::addInterval(GrSurfaceProxy* proxy, unsigned int start,
                     GrSurfaceProxy::LazyInstantiationType::kDeinstantiate) {
                     fDeinstantiateTracker->addProxy(proxy);
                 }
+            } else {
+                fLazyInstantiationError = true;
             }
         }
     }
@@ -378,7 +380,8 @@ void GrResourceAllocator::forceIntermediateFlush(int* stopIndex) {
 
 bool GrResourceAllocator::assign(int* startIndex, int* stopIndex, AssignError* outError) {
     SkASSERT(outError);
-    *outError = AssignError::kNoError;
+    *outError = fLazyInstantiationError ? AssignError::kFailedProxyInstantiation
+                                        : AssignError::kNoError;
 
     SkASSERT(fNumOpLists == fEndOfOpListOpIndices.count());
 
@@ -498,15 +501,13 @@ void GrResourceAllocator::dumpIntervals() {
     unsigned int min = std::numeric_limits<unsigned int>::max();
     unsigned int max = 0;
     for(const Interval* cur = fIntvlList.peekHead(); cur; cur = cur->next()) {
-        SkDebugf("{ %3d,%3d }: [%2d, %2d] - proxyRefs:%d surfaceRefs:%d R:%d W:%d\n",
+        SkDebugf("{ %3d,%3d }: [%2d, %2d] - proxyRefs:%d surfaceRefs:%d\n",
                  cur->proxy()->uniqueID().asUInt(),
                  cur->proxy()->isInstantiated() ? cur->proxy()->underlyingUniqueID().asUInt() : -1,
                  cur->start(),
                  cur->end(),
                  cur->proxy()->priv().getProxyRefCnt(),
-                 cur->proxy()->getBackingRefCnt_TestOnly(),
-                 cur->proxy()->getPendingReadCnt_TestOnly(),
-                 cur->proxy()->getPendingWriteCnt_TestOnly());
+                 cur->proxy()->testingOnly_getBackingRefCnt());
         min = SkTMin(min, cur->start());
         max = SkTMax(max, cur->end());
     }

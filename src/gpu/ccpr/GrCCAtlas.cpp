@@ -8,7 +8,6 @@
 #include "src/gpu/ccpr/GrCCAtlas.h"
 
 #include "include/gpu/GrTexture.h"
-#include "include/private/GrTextureProxy.h"
 #include "src/core/SkIPoint16.h"
 #include "src/core/SkMakeUnique.h"
 #include "src/core/SkMathPriv.h"
@@ -17,6 +16,7 @@
 #include "src/gpu/GrProxyProvider.h"
 #include "src/gpu/GrRectanizer_skyline.h"
 #include "src/gpu/GrRenderTargetContext.h"
+#include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/ccpr/GrCCPathCache.h"
 #include <atomic>
 
@@ -199,9 +199,10 @@ sk_sp<GrRenderTargetContext> GrCCAtlas::makeRenderTargetContext(
         SkASSERT(backingTexture->height() == fHeight);
         fBackingTexture = std::move(backingTexture);
     }
-
+    auto colorType = (CoverageType::kFP16_CoverageCount == fCoverageType) ? GrColorType::kAlpha_F16
+                                                                          : GrColorType::kAlpha_8;
     sk_sp<GrRenderTargetContext> rtc =
-            onFlushRP->makeRenderTargetContext(fTextureProxy, nullptr, nullptr);
+            onFlushRP->makeRenderTargetContext(fTextureProxy, colorType, nullptr, nullptr);
     if (!rtc) {
         SkDebugf("WARNING: failed to allocate a %ix%i atlas. Some paths will not be drawn.\n",
                  fWidth, fHeight);

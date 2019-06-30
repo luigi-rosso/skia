@@ -9,7 +9,7 @@
 #define GrCCClipPath_DEFINED
 
 #include "include/core/SkPath.h"
-#include "include/private/GrTextureProxy.h"
+#include "src/gpu/GrTextureProxy.h"
 
 struct GrCCPerFlushResourceSpecs;
 class GrCCAtlas;
@@ -33,7 +33,7 @@ public:
         //
         // This assert also guarantees there won't be a lazy proxy callback with a dangling pointer
         // back into this class, since no proxy will exist after we destruct, if the assert passes.
-        SkASSERT(!fAtlasLazyProxy || fAtlasLazyProxy->isUnique_debugOnly());
+        SkASSERT(!fAtlasLazyProxy || fAtlasLazyProxy->unique());
     }
 
     bool isInitialized() const { return fAtlasLazyProxy != nullptr; }

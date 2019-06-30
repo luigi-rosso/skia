@@ -20,8 +20,6 @@
 #include "include/gpu/GrSamplerState.h"
 #include "include/gpu/GrTypes.h"
 #include "include/private/GrRecordingContext.h"
-#include "include/private/GrSurfaceProxy.h"
-#include "include/private/GrTextureProxy.h"
 #include "include/private/GrTypesPriv.h"
 #include "include/private/SkColorData.h"
 #include "src/gpu/GrBuffer.h"
@@ -45,6 +43,8 @@
 #include "src/gpu/GrResourceProvider.h"
 #include "src/gpu/GrShaderCaps.h"
 #include "src/gpu/GrShaderVar.h"
+#include "src/gpu/GrSurfaceProxy.h"
+#include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/glsl/GrGLSLGeometryProcessor.h"
 #include "src/gpu/glsl/GrGLSLPrimitiveProcessor.h"
@@ -61,7 +61,7 @@ class GrGLSLProgramDataManager;
 namespace skiagm {
 
 static constexpr GrGeometryProcessor::Attribute gVertex =
-        {"vertex", kFloat2_GrVertexAttribType, kFloat2_GrSLType};
+        {"position", kFloat2_GrVertexAttribType, kFloat2_GrSLType};
 
 /**
  * This is a GPU-backend specific test. It ensures that SkSL properly identifies clockwise-winding
@@ -104,7 +104,7 @@ class GLSLClockwiseTestProcessor : public GrGLSLGeometryProcessor {
     void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override {
         const ClockwiseTestProcessor& proc = args.fGP.cast<ClockwiseTestProcessor>();
         args.fVaryingHandler->emitAttributes(proc);
-        gpArgs->fPositionVar.set(kFloat2_GrSLType, "vertex");
+        gpArgs->fPositionVar.set(kFloat2_GrSLType, "position");
         args.fFragBuilder->codeAppendf(
                 "%s = sk_Clockwise ? half4(0,1,0,1) : half4(1,0,0,1);", args.fOutputColor);
         if (!proc.fReadSkFragCoord) {
@@ -143,8 +143,8 @@ private:
 
     const char* name() const override { return "ClockwiseTestOp"; }
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
-    GrProcessorSet::Analysis finalize(
-            const GrCaps&, const GrAppliedClip*, GrFSAAType, GrClampType) override {
+    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*,
+                                      bool hasMixedSampledCoverage, GrClampType) override {
         return GrProcessorSet::EmptySetAnalysis();
     }
     void onPrepare(GrOpFlushState*) override {}
@@ -160,7 +160,8 @@ private:
         if (!vertexBuffer) {
             return;
         }
-        GrPipeline pipeline(GrScissorTest::kDisabled, SkBlendMode::kPlus);
+        GrPipeline pipeline(GrScissorTest::kDisabled, SkBlendMode::kPlus,
+                            flushState->drawOpArgs().fOutputSwizzle);
         GrMesh mesh(GrPrimitiveType::kTriangleStrip);
         mesh.setNonIndexedNonInstanced(4);
         mesh.setVertexData(std::move(vertexBuffer));
@@ -186,9 +187,9 @@ void ClockwiseGM::onDraw(GrContext* ctx, GrRenderTargetContext* rtc, SkCanvas* c
 
     // Draw the test to an off-screen, top-down render target.
     if (auto topLeftRTC = ctx->priv().makeDeferredRenderTargetContext(
-            rtc->asSurfaceProxy()->backendFormat(), SkBackingFit::kExact, 100, 200,
-            rtc->asSurfaceProxy()->config(), nullptr, 1, GrMipMapped::kNo,
-            kTopLeft_GrSurfaceOrigin, nullptr, SkBudgeted::kYes)) {
+                rtc->asSurfaceProxy()->backendFormat(), SkBackingFit::kExact, 100, 200,
+                rtc->asSurfaceProxy()->config(), rtc->colorSpaceInfo().colorType(), nullptr, 1,
+                GrMipMapped::kNo, kTopLeft_GrSurfaceOrigin, nullptr, SkBudgeted::kYes)) {
         topLeftRTC->clear(nullptr, SK_PMColor4fTRANSPARENT,
                           GrRenderTargetContext::CanClearFullscreen::kYes);
         topLeftRTC->priv().testingOnly_addDrawOp(ClockwiseTestOp::Make(ctx, false, 0));
@@ -203,9 +204,9 @@ void ClockwiseGM::onDraw(GrContext* ctx, GrRenderTargetContext* rtc, SkCanvas* c
 
     // Draw the test to an off-screen, bottom-up render target.
     if (auto topLeftRTC = ctx->priv().makeDeferredRenderTargetContext(
-            rtc->asSurfaceProxy()->backendFormat(), SkBackingFit::kExact, 100, 200,
-            rtc->asSurfaceProxy()->config(), nullptr, 1, GrMipMapped::kNo,
-            kBottomLeft_GrSurfaceOrigin, nullptr, SkBudgeted::kYes)) {
+                rtc->asSurfaceProxy()->backendFormat(), SkBackingFit::kExact, 100, 200,
+                rtc->asSurfaceProxy()->config(), rtc->colorSpaceInfo().colorType(), nullptr, 1,
+                GrMipMapped::kNo, kBottomLeft_GrSurfaceOrigin, nullptr, SkBudgeted::kYes)) {
         topLeftRTC->clear(nullptr, SK_PMColor4fTRANSPARENT,
                           GrRenderTargetContext::CanClearFullscreen::kYes);
         topLeftRTC->priv().testingOnly_addDrawOp(ClockwiseTestOp::Make(ctx, false, 0));

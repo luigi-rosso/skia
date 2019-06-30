@@ -39,46 +39,33 @@ public:
              std::unique_ptr<SkScalerContext> scaler,
              const SkFontMetrics&);
 
-    /** Return true if glyph is cached. */
-    bool isGlyphCached(SkGlyphID glyphID, SkFixed x, SkFixed y) const;
-
-    /**  Return a glyph that has no information if it is not already filled out. */
-    SkGlyph* getRawGlyphByID(SkPackedGlyphID);
-
-    /** Returns a glyph with all fields valid except fImage and fPath, which may be null. If they
-        are null, call findImage or findPath for those. If they are not null, then they are valid.
-
-        This call is potentially slower than the matching ...Advance call. If you only need the
-        fAdvance/fDevKern fields, call those instead.
-    */
-    const SkGlyph& getGlyphIDMetrics(SkGlyphID);
-
-    /** These are variants that take the device position of the glyph. Call these only if you are
-        drawing in subpixel mode. Passing 0, 0 is effectively the same as calling the variants
-        w/o the extra params, though a tiny bit slower.
-    */
-    const SkGlyph& getGlyphIDMetrics(SkGlyphID, SkFixed x, SkFixed y);
-
-    const SkGlyph& getGlyphIDMetrics(SkPackedGlyphID id);
-
     // Return a glyph. Create it if it doesn't exist, and initialize the glyph with metrics and
-    // advances.
-    SkGlyph* glyph(SkPackedGlyphID id);
-    SkGlyph* glyph(SkGlyphID);
+    // advances using a scaler.
+    SkGlyph* glyph(SkPackedGlyphID packedID);
+    SkGlyph* glyph(SkGlyphID glyphID);
+    SkGlyph* glyph(SkGlyphID, SkPoint);
+
+    // Return a glyph.  Create it if it doesn't exist, and initialize with the prototype.
+    SkGlyph* glyphFromPrototype(const SkGlyphPrototype& p, void* image = nullptr);
 
     // Return a glyph or nullptr if it does not exits in the strike.
     SkGlyph* glyphOrNull(SkPackedGlyphID id) const;
 
-    // Return a glyph. Create it if it doesn't exist, but zero the data.
-    SkGlyph* uninitializedGlyph(SkPackedGlyphID id);
+    const void* prepareImage(SkGlyph* glyph);
+
+    // Lookup (or create if needed) the toGlyph using toID. If that glyph is not initialized with
+    // an image, then use the information in from to initialize the width, height top, left,
+    // format and image of the toGlyph. This is mainly used preserving the glyph if it was
+    // created by a search of desperation.
+    SkGlyph* mergeGlyphAndImage(SkPackedGlyphID toID, const SkGlyph& from);
 
     // If the path has never been set, then use the scaler context to add the glyph.
-    const SkPath* preparePath(SkGlyph*) override;
+    const SkPath* preparePath(SkGlyph*);
 
     // If the path has never been set, then add a path to glyph.
     const SkPath* preparePath(SkGlyph* glyph, const SkPath* path);
 
-    void getAdvances(SkSpan<const SkGlyphID>, SkPoint[]);
+    SkSpan<SkPoint> getAdvances(SkSpan<const SkGlyphID>, SkPoint[]);
 
     /** Returns the number of glyphs for this strike.
     */
@@ -86,15 +73,6 @@ public:
 
     /** Return the number of glyphs currently cached. */
     int countCachedGlyphs() const;
-
-    /** Return the image associated with the glyph. If it has not been generated this will
-        trigger that.
-    */
-    const void* findImage(const SkGlyph&);
-
-    /** Initializes the image associated with the glyph with |data|.
-     */
-    void initializeImage(const volatile void* data, size_t size, SkGlyph*);
 
     /** If the advance axis intersects the glyph's path, append the positions scaled and offset
         to the array (if non-null), and set the count to the updated array length.
@@ -110,7 +88,6 @@ public:
      */
     const SkGlyph* getCachedGlyphAnySubPix(SkGlyphID,
                                            SkPackedGlyphID vetoID = SkPackedGlyphID()) const;
-    void initializeGlyphFromFallback(SkGlyph* glyph, const SkGlyph&);
 
     /** Return the vertical metrics for this strike.
     */
@@ -127,8 +104,6 @@ public:
     }
 
     SkVector rounding() const override;
-
-    const SkGlyph& getGlyphMetrics(SkGlyphID glyphID, SkPoint position) override;
 
     const SkDescriptor& getDescriptor() const override;
 
@@ -186,6 +161,10 @@ private:
     };
 
     SkGlyph* makeGlyph(SkPackedGlyphID);
+
+    // Metrics will hold a mutex while doing its work. This is one of the few places that will
+    // need a mutex.
+    SkSpan<const SkGlyph*> metrics(SkSpan<const SkGlyphID>glyphIDs, const SkGlyph* result[]);
 
     const SkAutoDescriptor                 fDesc;
     const std::unique_ptr<SkScalerContext> fScalerContext;

@@ -9,6 +9,7 @@
 
 #include "include/core/SkPoint3.h"
 #include "include/private/SkVx.h"
+#include "src/core/SkUtils.h"   // sk_unaligned_load
 #include "src/sksl/SkSLByteCode.h"
 #include "src/sksl/SkSLByteCodeGenerator.h"
 #include "src/sksl/SkSLExternalValue.h"
@@ -18,22 +19,15 @@
 namespace SkSL {
 namespace Interpreter {
 
-constexpr int VecWidth = 16;
+constexpr int VecWidth = ByteCode::kVecWidth;
 
 using F32 = skvx::Vec<VecWidth, float>;
 using I32 = skvx::Vec<VecWidth, int32_t>;
 using U32 = skvx::Vec<VecWidth, uint32_t>;
 
-template <typename T>
-static T unaligned_load(const void* ptr) {
-    T val;
-    memcpy(&val, ptr, sizeof(val));
-    return val;
-}
-
 #define READ8() (*(ip++))
-#define READ16() (ip += 2, unaligned_load<uint16_t>(ip - 2))
-#define READ32() (ip += 4, unaligned_load<uint32_t>(ip - 4))
+#define READ16() (ip += 2, sk_unaligned_load<uint16_t>(ip - 2))
+#define READ32() (ip += 4, sk_unaligned_load<uint32_t>(ip - 4))
 
 #define VECTOR_DISASSEMBLE(op, text)                          \
     case ByteCodeInstruction::op: printf(text); break;        \
@@ -82,6 +76,7 @@ static const uint8_t* disassemble_instruction(const uint8_t* ip) {
         VECTOR_DISASSEMBLE(kConvertStoF, "convertstof")
         VECTOR_DISASSEMBLE(kConvertUtoF, "convertutof")
         VECTOR_DISASSEMBLE(kCos, "cos")
+        case ByteCodeInstruction::kCross: printf("cross"); break;
         VECTOR_MATRIX_DISASSEMBLE(kDivideF, "dividef")
         VECTOR_DISASSEMBLE(kDivideS, "divideS")
         VECTOR_DISASSEMBLE(kDivideU, "divideu")
@@ -151,6 +146,7 @@ static const uint8_t* disassemble_instruction(const uint8_t* ip) {
         VECTOR_DISASSEMBLE(kRemainderF, "remainderf")
         VECTOR_DISASSEMBLE(kRemainderS, "remainders")
         VECTOR_DISASSEMBLE(kRemainderU, "remainderu")
+        case ByteCodeInstruction::kReserve: printf("reserve %d", READ8()); break;
         case ByteCodeInstruction::kReturn: printf("return %d", READ8()); break;
         case ByteCodeInstruction::kScalarToMatrix: {
             int cols = READ8();
@@ -339,6 +335,7 @@ struct StackFrame {
     const uint8_t* fCode;
     const uint8_t* fIP;
     VValue* fStack;
+    int fParameterCount;
 };
 
 static F32 mix(F32 start, F32 end, F32 t) {
@@ -351,8 +348,14 @@ static T vec_mod(T a, T b) {
     return a - skvx::trunc(a / b) * b;
 }
 
-void innerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue* stack,
-              float* outReturn, I32 initMask, VValue globals[]) {
+static void innerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue* stack,
+                     float* outReturn[], VValue globals[], bool stripedOutput, int N,
+                     int baseIndex) {
+    // Needs to be the first N non-negative integers, at least as large as VecWidth
+    static const Interpreter::I32 gLanes = {
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15
+    };
+
     VValue* sp = stack + f->fParameterCount + f->fLocalCount - 1;
 
     auto POP =  [&]           { SkASSERT(sp     >= stack); return *(sp--); };
@@ -366,7 +369,7 @@ void innerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue* stack
     I32 maskStack[16];  // Combined masks (eg maskStack[0] & maskStack[1] & ...)
     I32 contStack[16];  // Continue flags for loops
     I32 loopStack[16];  // Loop execution masks
-    condStack[0] = maskStack[0] = initMask;
+    condStack[0] = maskStack[0] = (gLanes < N);
     contStack[0] = I32( 0);
     loopStack[0] = I32(~0);
     I32* condPtr = condStack;
@@ -409,19 +412,16 @@ void innerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue* stack
                 break;
 
             case ByteCodeInstruction::kCall: {
-                // Precursor code has pushed all parameters to the stack. Update our bottom of
-                // stack to point at the first parameter, and our sp to point past those parameters
-                // (plus space for locals).
+                // Precursor code reserved space for the return value, and pushed all parameters to
+                // the stack. Update our bottom of stack to point at the first parameter, and our
+                // sp to point past those parameters (plus space for locals).
                 int target = READ8();
                 const ByteCodeFunction* fun = byteCode->fFunctions[target].get();
                 if (skvx::any(mask())) {
-                    frames.push_back({ code, ip, stack });
+                    frames.push_back({ code, ip, stack, fun->fParameterCount });
                     ip = code = fun->fCode.data();
                     stack = sp - fun->fParameterCount + 1;
                     sp = stack + fun->fParameterCount + fun->fLocalCount - 1;
-                } else {
-                    sp -= fun->fParameterCount;
-                    sp += fun->fReturnCount;
                 }
                 break;
             }
@@ -433,8 +433,8 @@ void innerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue* stack
                 ExternalValue* v = byteCode->fExternalValues[target];
                 sp -= argumentCount - 1;
 
-                int32_t tmpArgs[4];
-                int32_t tmpReturn[4];
+                float tmpArgs[4];
+                float tmpReturn[4];
                 SkASSERT(argumentCount <= (int)SK_ARRAY_COUNT(tmpArgs));
                 SkASSERT(returnCount <= (int)SK_ARRAY_COUNT(tmpReturn));
 
@@ -442,11 +442,11 @@ void innerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue* stack
                 for (int i = 0; i < VecWidth; ++i) {
                     if (m[i]) {
                         for (int j = 0; j < argumentCount; ++j) {
-                            tmpArgs[j] = sp[j].fSigned[i];
+                            tmpArgs[j] = sp[j].fFloat[i];
                         }
-                        v->call(tmpArgs, tmpReturn);
+                        v->call(baseIndex + i, tmpArgs, tmpReturn);
                         for (int j = 0; j < returnCount; ++j) {
-                            sp[j].fSigned[i] = tmpReturn[j];
+                            sp[j].fFloat[i] = tmpReturn[j];
                         }
                     }
                 }
@@ -699,16 +699,15 @@ void innerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue* stack
             case ByteCodeInstruction::kReadExternal2:
             case ByteCodeInstruction::kReadExternal3:
             case ByteCodeInstruction::kReadExternal4: {
-                // TODO: Support striped external values, or passing lane index? This model is odd.
                 int count = (int)inst - (int)ByteCodeInstruction::kReadExternal + 1;
                 int src = READ8();
-                int32_t tmp[4];
+                float tmp[4];
                 I32 m = mask();
                 for (int i = 0; i < VecWidth; ++i) {
                     if (m[i]) {
-                        byteCode->fExternalValues[src]->read(tmp);
+                        byteCode->fExternalValues[src]->read(baseIndex + i, tmp);
                         for (int j = 0; j < count; ++j) {
-                            sp[j + 1].fSigned[i] = tmp[j];
+                            sp[j + 1].fFloat[i] = tmp[j];
                         }
                     }
                 }
@@ -720,33 +719,44 @@ void innerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue* stack
             VECTOR_BINARY_FN(kRemainderS, fSigned, vec_mod<I32>)
             VECTOR_BINARY_FN(kRemainderU, fUnsigned, vec_mod<U32>)
 
+            case ByteCodeInstruction::kReserve:
+                sp += READ8();
+                break;
+
             case ByteCodeInstruction::kReturn: {
                 int count = READ8();
                 if (frames.empty()) {
                     if (outReturn) {
-                        // TODO: This can be smarter, knowing that mask is left-justified
-                        I32 m = mask();
                         VValue* src = sp - count + 1;
-                        for (int i = 0; i < count; ++i) {
-                            for (int j = 0; j < VecWidth; ++j) {
-                                if (m[j]) {
-                                    outReturn[count * j] = src->fFloat[j];
-                                }
+                        if (stripedOutput) {
+                            for (int i = 0; i < count; ++i) {
+                                memcpy(outReturn[i], &src->fFloat, N * sizeof(float));
+                                ++src;
                             }
-                            ++outReturn;
-                            ++src;
+                        } else {
+                            float* outPtr = outReturn[0];
+                            for (int i = 0; i < count; ++i) {
+                                for (int j = 0; j < N; ++j) {
+                                    outPtr[count * j] = src->fFloat[j];
+                                }
+                                ++outPtr;
+                                ++src;
+                            }
                         }
                     }
                     return;
                 } else {
-                    // When we were called, 'stack' was positioned at the old top-of-stack (where
-                    // our parameters were placed). So copy our return values to that same spot.
-                    memmove(stack, sp - count + 1, count * sizeof(VValue));
+                    // When we were called, the caller reserved stack space for their copy of our
+                    // return value, then 'stack' was positioned after that, where our parameters
+                    // were placed. Copy our return values to their reserved area.
+                    memcpy(stack - count, sp - count + 1, count * sizeof(VValue));
 
-                    // Now move the stack pointer to the end of the just-pushed return values,
-                    // and restore everything else.
+                    // Now move the stack pointer to the end of the passed-in parameters. This odd
+                    // calling convention requires the caller to pop the arguments after calling,
+                    // but allows them to store any out-parameters back during that unwinding.
+                    // After that sequence finishes, the return value will be the top of the stack.
                     const StackFrame& frame(frames.back());
-                    sp = stack + count - 1;
+                    sp = stack + frame.fParameterCount - 1;
                     stack = frame.fStack;
                     code = frame.fCode;
                     ip = frame.fIP;
@@ -899,15 +909,15 @@ void innerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue* stack
             case ByteCodeInstruction::kWriteExternal4: {
                 int count = (int)inst - (int)ByteCodeInstruction::kWriteExternal + 1;
                 int target = READ8();
-                int32_t tmp[4];
+                float tmp[4];
                 I32 m = mask();
                 sp -= count;
                 for (int i = 0; i < VecWidth; ++i) {
                     if (m[i]) {
                         for (int j = 0; j < count; ++j) {
-                            tmp[j] = sp[j + 1].fSigned[i];
+                            tmp[j] = sp[j + 1].fFloat[i];
                         }
-                        byteCode->fExternalValues[target]->write(tmp);
+                        byteCode->fExternalValues[target]->write(baseIndex + i, tmp);
                     }
                 }
                 break;
@@ -943,8 +953,9 @@ void innerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue* stack
             }
 
             case ByteCodeInstruction::kLoopBegin:
-                *(++contPtr) =  0;
-                *(++loopPtr) = ~0;
+                contPtr[1] = 0;
+                loopPtr[1] = loopPtr[0];
+                ++contPtr; ++loopPtr;
                 break;
             case ByteCodeInstruction::kLoopNext:
                 *loopPtr |= *contPtr;
@@ -988,12 +999,7 @@ void ByteCode::run(const ByteCodeFunction* f, float* args, float* outReturn, int
 #ifdef TRACE
     f->disassemble();
 #endif
-    Interpreter::VValue smallStack[128];
-
-    // Needs to be the first N non-negative integers, at least as large as VecWidth
-    static const Interpreter::I32 gLanes = {
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15
-    };
+    Interpreter::VValue stack[128];
 
     SkASSERT(uniformCount == (int)fInputSlots.size());
     Interpreter::VValue globals[32];
@@ -1002,11 +1008,10 @@ void ByteCode::run(const ByteCodeFunction* f, float* args, float* outReturn, int
         globals[slot].fFloat = *uniforms++;
     }
 
-    while (N) {
-        Interpreter::VValue* stack = smallStack;
+    int baseIndex = 0;
 
+    while (N) {
         int w = std::min(N, Interpreter::VecWidth);
-        N -= w;
 
         // Transpose args into stack
         {
@@ -1020,8 +1025,9 @@ void ByteCode::run(const ByteCodeFunction* f, float* args, float* outReturn, int
             }
         }
 
-        auto mask = w > gLanes;
-        innerRun(this, f, stack, outReturn, mask, globals);
+        bool stripedOutput = false;
+        float** outArray = outReturn ? &outReturn : nullptr;
+        innerRun(this, f, stack, outArray, globals, stripedOutput, w, baseIndex);
 
         // Transpose out parameters back
         {
@@ -1043,7 +1049,66 @@ void ByteCode::run(const ByteCodeFunction* f, float* args, float* outReturn, int
         }
 
         args += f->fParameterCount * w;
-        outReturn += f->fReturnCount * w;
+        if (outReturn) {
+            outReturn += f->fReturnCount * w;
+        }
+        N -= w;
+        baseIndex += w;
+    }
+}
+
+void ByteCode::runStriped(const ByteCodeFunction* f, float* args[], int nargs, int N,
+                          const float* uniforms, int uniformCount,
+                          float* outArgs[], int outCount) const {
+#ifdef TRACE
+    f->disassemble();
+#endif
+    Interpreter::VValue stack[128];
+
+    // innerRun just takes outArgs, so clear it if the count is zero
+    if (outCount == 0) {
+        outArgs = nullptr;
+    }
+
+    SkASSERT(nargs == f->fParameterCount);
+    SkASSERT(outCount == f->fReturnCount);
+    SkASSERT(uniformCount == (int)fInputSlots.size());
+    Interpreter::VValue globals[32];
+    SkASSERT((int)SK_ARRAY_COUNT(globals) >= fGlobalCount);
+    for (uint8_t slot : fInputSlots) {
+        globals[slot].fFloat = *uniforms++;
+    }
+
+    int baseIndex = 0;
+
+    while (N) {
+        int w = std::min(N, Interpreter::VecWidth);
+
+        // Copy args into stack
+        for (int i = 0; i < nargs; ++i) {
+            memcpy(stack + i, args[i], w * sizeof(float));
+        }
+
+        bool stripedOutput = true;
+        innerRun(this, f, stack, outArgs, globals, stripedOutput, w, baseIndex);
+
+        // Copy out parameters back
+        int slot = 0;
+        for (const auto& p : f->fParameters) {
+            if (p.fIsOutParameter) {
+                for (int i = slot; i < slot + p.fSlotCount; ++i) {
+                    memcpy(args[i], stack + i, w * sizeof(float));
+                }
+            }
+            slot += p.fSlotCount;
+        }
+
+        // Step each argument pointer ahead
+        for (int i = 0; i < nargs; ++i) {
+            args[i] += w;
+        }
+        N -= w;
+        baseIndex += w;
     }
 }
 

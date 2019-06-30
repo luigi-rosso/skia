@@ -256,6 +256,10 @@ static SkSurface_Base* asSB(SkSurface* surface) {
     return static_cast<SkSurface_Base*>(surface);
 }
 
+static const SkSurface_Base* asConstSB(const SkSurface* surface) {
+    return static_cast<const SkSurface_Base*>(surface);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 SkSurface::SkSurface(int width, int height, const SkSurfaceProps* props)
@@ -272,6 +276,11 @@ SkSurface::SkSurface(const SkImageInfo& info, const SkSurfaceProps* props)
     SkASSERT(fWidth > 0);
     SkASSERT(fHeight > 0);
     fGenerationID = 0;
+}
+
+SkImageInfo SkSurface::imageInfo() {
+    // TODO: do we need to go through canvas for this?
+    return this->getCanvas()->imageInfo();
 }
 
 uint32_t SkSurface::generationID() {
@@ -309,6 +318,10 @@ sk_sp<SkImage> SkSurface::makeImageSnapshot(const SkIRect& srcBounds) {
 
 sk_sp<SkSurface> SkSurface::makeSurface(const SkImageInfo& info) {
     return asSB(this)->onNewSurface(info);
+}
+
+sk_sp<SkSurface> SkSurface::makeSurface(int width, int height) {
+    return this->makeSurface(this->imageInfo().makeWH(width, height));
 }
 
 void SkSurface::draw(SkCanvas* canvas, SkScalar x, SkScalar y,
@@ -444,7 +457,11 @@ bool SkSurface::wait(int numSemaphores, const GrBackendSemaphore* waitSemaphores
 }
 
 bool SkSurface::characterize(SkSurfaceCharacterization* characterization) const {
-    return asSB(const_cast<SkSurface*>(this))->onCharacterize(characterization);
+    return asConstSB(this)->onCharacterize(characterization);
+}
+
+bool SkSurface::isCompatible(const SkSurfaceCharacterization& characterization) const {
+    return asConstSB(this)->onIsCompatible(characterization);
 }
 
 bool SkSurface::draw(SkDeferredDisplayList* ddl) {

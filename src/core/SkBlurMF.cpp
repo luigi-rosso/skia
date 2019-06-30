@@ -20,7 +20,6 @@
 
 #if SK_SUPPORT_GPU
 #include "include/private/GrRecordingContext.h"
-#include "include/private/GrTextureProxy.h"
 #include "src/gpu/GrClip.h"
 #include "src/gpu/GrFragmentProcessor.h"
 #include "src/gpu/GrRecordingContextPriv.h"
@@ -28,6 +27,7 @@
 #include "src/gpu/GrResourceProvider.h"
 #include "src/gpu/GrShaderCaps.h"
 #include "src/gpu/GrStyle.h"
+#include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/effects/GrTextureDomain.h"
 #include "src/gpu/effects/generated/GrCircleBlurFragmentProcessor.h"
 #include "src/gpu/effects/generated/GrRRectBlurEffect.h"
@@ -884,6 +884,7 @@ sk_sp<GrTextureProxy> SkBlurMaskFilterImpl::filterMaskGPU(GrRecordingContext* co
     sk_sp<GrRenderTargetContext> renderTargetContext(
               SkGpuBlurUtils::GaussianBlur(context,
                                            srcProxy,
+                                           SkIPoint::Make(0, 0),
                                            nullptr,
                                            clipRect,
                                            SkIRect::EmptyIRect(),

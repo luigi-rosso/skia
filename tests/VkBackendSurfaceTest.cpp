@@ -19,9 +19,9 @@
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrTexture.h"
 #include "include/gpu/vk/GrVkTypes.h"
-#include "include/private/GrTextureProxy.h"
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrRenderTargetContext.h"
+#include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/SkGpuDevice.h"
 #include "src/gpu/vk/GrVkGpu.h"
 #include "src/gpu/vk/GrVkImageLayout.h"
@@ -331,7 +331,10 @@ DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkPrepareForExternalIOQueueTransitionTest, report
     }
 }
 
-
+// This test is disabled because it executes illegal vulkan calls which cause the validations layers
+// to fail and makes us assert. Once fixed to use a valid vulkan call sequence it should be
+// renenabled, see skbug.com/8936.
+#if 0
 // Test to make sure we transition from the EXTERNAL queue even when no layout transition is needed.
 DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkTransitionExternalQueueTest, reporter, ctxInfo) {
     GrContext* context = ctxInfo.grContext();
@@ -383,5 +386,6 @@ DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkTransitionExternalQueueTest, reporter, ctxInfo)
     gpu->testingOnly_flushGpuAndSync();
     context->deleteBackendTexture(backendTex);
 }
+#endif
 
 #endif

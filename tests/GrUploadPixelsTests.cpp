@@ -9,8 +9,8 @@
 
 #include "include/core/SkTypes.h"
 
-#include "include/private/GrSurfaceProxy.h"
 #include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrSurfaceProxy.h"
 #include "src/gpu/SkGr.h"
 #include "tests/Test.h"
 #include "tests/TestUtils.h"
@@ -29,10 +29,12 @@ void basic_texture_test(skiatest::Reporter* reporter, GrContext* context, SkColo
     fill_pixel_data(kWidth, kHeight, srcBuffer.get());
 
     auto proxy = sk_gpu_test::MakeTextureProxyFromData(context, renderable, kWidth, kHeight, ct,
+                                                       kPremul_SkAlphaType,
                                                        kTopLeft_GrSurfaceOrigin, srcBuffer, 0);
     REPORTER_ASSERT(reporter, proxy);
     if (proxy) {
-        sk_sp<GrSurfaceContext> sContext = context->priv().makeWrappedSurfaceContext(proxy);
+        sk_sp<GrSurfaceContext> sContext = context->priv().makeWrappedSurfaceContext(
+                proxy, SkColorTypeToGrColorType(ct), kPremul_SkAlphaType);
 
         SkImageInfo dstInfo = SkImageInfo::Make(kWidth, kHeight, ct, kPremul_SkAlphaType);
 
@@ -59,10 +61,12 @@ void basic_texture_test(skiatest::Reporter* reporter, GrContext* context, SkColo
     }
 
     proxy = sk_gpu_test::MakeTextureProxyFromData(context, renderable, kWidth, kHeight, ct,
-                                                  kBottomLeft_GrSurfaceOrigin, srcBuffer, 0);
+                                                  kPremul_SkAlphaType, kBottomLeft_GrSurfaceOrigin,
+                                                  srcBuffer, 0);
     REPORTER_ASSERT(reporter, proxy);
     if (proxy) {
-        sk_sp<GrSurfaceContext> sContext = context->priv().makeWrappedSurfaceContext(proxy);
+        sk_sp<GrSurfaceContext> sContext = context->priv().makeWrappedSurfaceContext(
+                proxy, SkColorTypeToGrColorType(ct), kPremul_SkAlphaType);
 
         SkImageInfo dstInfo = SkImageInfo::Make(kWidth, kHeight, ct, kPremul_SkAlphaType);
 

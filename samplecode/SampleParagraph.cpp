@@ -1,5 +1,4 @@
 // Copyright 2019 Google LLC.
-#include "Sample.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorFilter.h"
 #include "include/core/SkColorPriv.h"
@@ -15,9 +14,11 @@
 #include "include/effects/SkGradientShader.h"
 #include "include/utils/SkRandom.h"
 #include "modules/skparagraph/include/Paragraph.h"
+#include "modules/skparagraph/include/TypefaceFontProvider.h"
 #include "modules/skparagraph/src/ParagraphBuilderImpl.h"
 #include "modules/skparagraph/src/ParagraphImpl.h"
-#include "modules/skparagraph/src/TypefaceFontProvider.h"
+#include "modules/skparagraph/utils/TestFontCollection.h"
+#include "samplecode/Sample.h"
 #include "src/core/SkOSFile.h"
 #include "src/shaders/SkColorShader.h"
 #include "src/utils/SkUTF.h"
@@ -31,29 +32,6 @@ sk_sp<SkShader> setgrad(const SkRect& r, SkColor c0, SkColor c1) {
     SkPoint pts[] = {{r.fLeft, r.fTop}, {r.fRight, r.fTop}};
     return SkGradientShader::MakeLinear(pts, colors, nullptr, 2, SkTileMode::kClamp);
 }
-
-class TestFontCollection : public FontCollection {
-public:
-    TestFontCollection() : fResourceDir(GetResourcePath("fonts").c_str()) {
-        auto fontProvider = sk_make_sp<TypefaceFontProvider>();
-
-        SkOSFile::Iter iter(fResourceDir.c_str());
-        SkString path;
-        while (iter.next(&path)) {
-            SkString file_path;
-            file_path.printf("%s/%s", fResourceDir.c_str(), path.c_str());
-            fontProvider->registerTypeface(SkTypeface::MakeFromFile(file_path.c_str()));
-        }
-
-        this->setTestFontManager(std::move(fontProvider));
-        this->disableFontFallback();
-    }
-
-    ~TestFontCollection() = default;
-
-private:
-    std::string fResourceDir;
-};
 }  // namespace
 
 class ParagraphView1 : public Sample {
@@ -279,7 +257,9 @@ protected:
         TextStyle defaultStyle;
         defaultStyle.setFontSize(20);
         paraStyle.setTextStyle(defaultStyle);
-        ParagraphBuilderImpl builder(paraStyle, sk_make_sp<TestFontCollection>());
+        auto fontCollection = sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str());
+        SkASSERT(fontCollection->fontsFound() != 0);
+        ParagraphBuilderImpl builder(paraStyle, fontCollection);
 
         SkPaint foreground;
         foreground.setColor(fg);
@@ -632,7 +612,9 @@ protected:
         const char* logo5 = "google_lo";
         const char* logo6 = "go";
         {
-            ParagraphBuilderImpl builder(paraStyle, sk_make_sp<TestFontCollection>());
+            auto fontCollection = sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str());
+            SkASSERT(fontCollection->fontsFound() != 0);
+            ParagraphBuilderImpl builder(paraStyle, fontCollection);
 
             builder.pushStyle(style0);
             builder.addText(logo1);
@@ -728,7 +710,9 @@ protected:
 
         paraStyle.setEllipsis(ellipsis);
 
-        ParagraphBuilderImpl builder(paraStyle, sk_make_sp<TestFontCollection>());
+        auto fontCollection = sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str());
+        SkASSERT(fontCollection->fontsFound() != 0);
+        ParagraphBuilderImpl builder(paraStyle, fontCollection);
 
         if (text.empty()) {
             const std::u16string text0 = u"\u202Dabc";
@@ -894,7 +878,9 @@ protected:
         const char* logo5 = "Ski";
         const char* logo6 = "a";
         {
-            ParagraphBuilderImpl builder(paraStyle, sk_make_sp<TestFontCollection>());
+            auto fontCollection = sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str());
+            SkASSERT(fontCollection->fontsFound() != 0);
+            ParagraphBuilderImpl builder(paraStyle, fontCollection);
 
             builder.pushStyle(style0);
             builder.addText(logo1);
@@ -934,7 +920,9 @@ protected:
         const char* logo15 = "S";
         const char* logo16 = "S";
         {
-            ParagraphBuilderImpl builder(paraStyle, sk_make_sp<TestFontCollection>());
+            auto fontCollection = sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str());
+            SkASSERT(fontCollection->fontsFound() != 0);
+            ParagraphBuilderImpl builder(paraStyle, fontCollection);
 
             builder.pushStyle(style0);
             builder.addText(logo11);
@@ -1011,7 +999,9 @@ protected:
         textStyle.setFontStyle(SkFontStyle(SkFontStyle::kMedium_Weight, SkFontStyle::kNormal_Width,
                                            SkFontStyle::kUpright_Slant));
 
-        ParagraphBuilderImpl builder(paragraphStyle, sk_make_sp<TestFontCollection>());
+        auto fontCollection = sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str());
+        SkASSERT(fontCollection->fontsFound() != 0);
+        ParagraphBuilderImpl builder(paragraphStyle, fontCollection);
         builder.pushStyle(textStyle);
         builder.addText(line);
         builder.pop();
@@ -1087,7 +1077,9 @@ protected:
         textStyle.setFontStyle(SkFontStyle(SkFontStyle::kMedium_Weight, SkFontStyle::kNormal_Width,
                                            SkFontStyle::kUpright_Slant));
 
-        ParagraphBuilderImpl builder(paragraphStyle, sk_make_sp<TestFontCollection>());
+        auto fontCollection = sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str());
+        SkASSERT(fontCollection->fontsFound() != 0);
+        ParagraphBuilderImpl builder(paragraphStyle, fontCollection);
         builder.pushStyle(textStyle);
         builder.addText(line);
         builder.pop();
@@ -1185,7 +1177,9 @@ protected:
         textStyle.setFontStyle(SkFontStyle(SkFontStyle::kMedium_Weight, SkFontStyle::kNormal_Width,
                                            SkFontStyle::kUpright_Slant));
 
-        ParagraphBuilderImpl builder(paragraphStyle, sk_make_sp<TestFontCollection>());
+        auto fontCollection = sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str());
+        SkASSERT(fontCollection->fontsFound() != 0);
+        ParagraphBuilderImpl builder(paragraphStyle, fontCollection);
         builder.pushStyle(textStyle);
         builder.addText(text);
         builder.pop();
@@ -1250,7 +1244,9 @@ protected:
         const char* text = "English English 字典 字典 😀😃😄 😀😃😄";
         ParagraphStyle paragraph_style;
         paragraph_style.turnHintingOff();
-        ParagraphBuilderImpl builder(paragraph_style, sk_make_sp<TestFontCollection>());
+        auto fontCollection = sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str());
+        SkASSERT(fontCollection->fontsFound() != 0);
+        ParagraphBuilderImpl builder(paragraph_style, fontCollection);
 
         TextStyle text_style;
         text_style.setFontFamilies({SkString("Roboto"), SkString("Noto Color Emoji"),
@@ -1291,30 +1287,79 @@ protected:
 
     void onDrawContent(SkCanvas* canvas) override {
         canvas->drawColor(SK_ColorWHITE);
-
-        const char* text = "\n";
-
+/*
+        const char* text =
+                "// Create a raised button.\n"
+                "RaisedButton(\n"
+                "  child: const Text('BUTTON TITLE'),\n"
+                "  onPressed: () {\n"
+                "    // Perform some action\n"
+                "  },\n"
+                ");\n"
+                "\n"
+                "// Create a disabled button.\n"
+                "// Buttons are disabled when onPressed isn't\n"
+                "// specified or is null.\n"
+                "const RaisedButton(\n"
+                "  child: Text('BUTTON TITLE'),\n"
+                "  onPressed: null,\n"
+                ");\n"
+                "\n"
+                "// Create a button with an icon and a\n"
+                "// title.\n"
+                "RaisedButton.icon(\n"
+                "  icon: const Icon(Icons.add, size: 18.0),\n"
+                "  label: const Text('BUTTON TITLE'),\n"
+                "  onPressed: () {\n"
+                "    // Perform some action\n"
+                "  },\n"
+                ");";
         ParagraphStyle paragraph_style;
         paragraph_style.turnHintingOff();
         ParagraphBuilderImpl builder(paragraph_style, sk_make_sp<FontCollection>());
 
         TextStyle text_style;
-        text_style.setFontFamilies({SkString("???")});
-        text_style.setFontStyle(SkFontStyle::Bold());
+        text_style.setFontFamilies({});
         text_style.setColor(SK_ColorBLACK);
-        text_style.setFontSize(50);
+        text_style.setFontSize(20);
         builder.pushStyle(text_style);
         builder.addText(text);
         builder.pop();
 
         auto paragraph = builder.Build();
-        paragraph->layout(1000);
+        paragraph->layout(500);
+
         auto result =
                 paragraph->getRectsForRange(0, 1, RectHeightStyle::kTight, RectWidthStyle::kTight);
         SkPaint paint;
         paint.setColor(SK_ColorLTGRAY);
         canvas->drawRect(result[0].rect, paint);
         paragraph->paint(canvas, 0, 0);
+        */
+        std::vector<uint16_t> text;
+        for (uint16_t i = 0; i < 64; ++i) {
+            text.push_back(i % 5 == 0 ? ' ' : i);
+        }
+        std::u16string u16_text(text.data(), text.data() + text.size());
+        TextStyle default_style;
+        default_style.setFontFamilies({SkString("Roboto")});
+        ParagraphStyle paragraph_style;
+        paragraph_style.setTextStyle(default_style);
+        TextStyle text_style;
+        text_style.setFontFamilies({SkString("Roboto")});
+        text_style.setColor(SK_ColorBLACK);
+        auto fontCollection = sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str());
+        SkASSERT(fontCollection->fontsFound() != 0);
+        ParagraphBuilderImpl builder(paragraph_style, fontCollection);
+        builder.pushStyle(text_style);
+        builder.addText(u16_text);
+        builder.pop();
+        auto paragraph = builder.Build();
+        size_t count = 10;
+        while (--count > 0) {
+            paragraph->layout(300);
+            paragraph->paint(canvas, 0, 0);
+        }
     }
 
 private:

@@ -8,7 +8,6 @@
 #include "src/gpu/GrBlurUtils.h"
 
 #include "include/private/GrRecordingContext.h"
-#include "include/private/GrTextureProxy.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrFixedClip.h"
 #include "src/gpu/GrProxyProvider.h"
@@ -17,6 +16,7 @@
 #include "src/gpu/GrRenderTargetContextPriv.h"
 #include "src/gpu/GrSoftwarePathRenderer.h"
 #include "src/gpu/GrStyle.h"
+#include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/effects/generated/GrSimpleTextureEffect.h"
 #include "src/gpu/geometry/GrShape.h"
 
@@ -178,10 +178,10 @@ static sk_sp<GrTextureProxy> create_mask_GPU(GrRecordingContext* context,
     GrBackendFormat format =
             context->priv().caps()->getBackendFormatFromColorType(kAlpha_8_SkColorType);
     sk_sp<GrRenderTargetContext> rtContext(
-        context->priv().makeDeferredRenderTargetContextWithFallback(
-            format, SkBackingFit::kApprox, maskRect.width(), maskRect.height(),
-            kAlpha_8_GrPixelConfig, nullptr, sampleCnt, GrMipMapped::kNo,
-            kTopLeft_GrSurfaceOrigin));
+            context->priv().makeDeferredRenderTargetContextWithFallback(
+                    format, SkBackingFit::kApprox, maskRect.width(), maskRect.height(),
+                    kAlpha_8_GrPixelConfig, GrColorType::kAlpha_8, nullptr, sampleCnt,
+                    GrMipMapped::kNo, kTopLeft_GrSurfaceOrigin));
     if (!rtContext) {
         return nullptr;
     }
@@ -402,7 +402,7 @@ static void draw_shape_with_mask_filter(GrRecordingContext* context,
                                                         maskRect,
                                                         viewMatrix,
                                                         *shape,
-                                                        renderTargetContext->numColorSamples()));
+                                                        renderTargetContext->numSamples()));
             if (maskProxy) {
                 filteredMask = maskFilter->filterMaskGPU(context,
                                                          std::move(maskProxy),

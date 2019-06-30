@@ -103,6 +103,9 @@ public:
      */
     sk_sp<GrTexture> createTexture(const GrSurfaceDesc& desc, SkBudgeted);
 
+    sk_sp<GrTexture> createCompressedTexture(int width, int height, SkImage::CompressionType,
+                                             SkBudgeted, const void* data, size_t dataSize);
+
     /**
      * Implements GrResourceProvider::wrapBackendTexture
      */
@@ -388,7 +391,8 @@ public:
     virtual GrBackendTexture createBackendTexture(int w, int h, const GrBackendFormat&,
                                                   GrMipMapped, GrRenderable,
                                                   const void* pixels, size_t rowBytes,
-                                                  const SkColor4f* color) = 0;
+                                                  const SkColor4f* color,
+                                                  GrProtected isProtected) = 0;
 
     /**
      * Frees a texture created by createBackendTexture(). If ownership of the backend
@@ -491,7 +495,9 @@ private:
     // onCreateTexture is called.
     virtual sk_sp<GrTexture> onCreateTexture(const GrSurfaceDesc&, SkBudgeted,
                                              const GrMipLevel texels[], int mipLevelCount) = 0;
-
+    virtual sk_sp<GrTexture> onCreateCompressedTexture(int width, int height,
+                                                       SkImage::CompressionType, SkBudgeted,
+                                                       const void* data) = 0;
     virtual sk_sp<GrTexture> onWrapBackendTexture(const GrBackendTexture&, GrWrapOwnership,
                                                   GrWrapCacheable, GrIOType) = 0;
     virtual sk_sp<GrTexture> onWrapRenderableBackendTexture(const GrBackendTexture&, int sampleCnt,

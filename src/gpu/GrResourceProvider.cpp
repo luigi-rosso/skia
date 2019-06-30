@@ -107,7 +107,7 @@ sk_sp<GrTexture> GrResourceProvider::createTexture(const GrSurfaceDesc& desc,
         auto srcInfo = SkImageInfo::Make(desc.fWidth, desc.fHeight, colorType,
                                          kUnknown_SkAlphaType);
         sk_sp<GrSurfaceContext> sContext = context->priv().makeWrappedSurfaceContext(
-                std::move(proxy));
+                std::move(proxy), SkColorTypeToGrColorType(colorType), kUnknown_SkAlphaType);
         if (!sContext) {
             return nullptr;
         }
@@ -116,6 +116,17 @@ sk_sp<GrTexture> GrResourceProvider::createTexture(const GrSurfaceDesc& desc,
     } else {
         return fGpu->createTexture(desc, budgeted, &mipLevel, 1);
     }
+}
+
+sk_sp<GrTexture> GrResourceProvider::createCompressedTexture(int width, int height,
+                                                             SkImage::CompressionType compression,
+                                                             SkBudgeted budgeted, SkData* data) {
+    ASSERT_SINGLE_OWNER
+    if (this->isAbandoned()) {
+        return nullptr;
+    }
+    return fGpu->createCompressedTexture(width, height, compression, budgeted, data->data(),
+                                         data->size());
 }
 
 sk_sp<GrTexture> GrResourceProvider::createTexture(const GrSurfaceDesc& desc, SkBudgeted budgeted,
@@ -389,7 +400,7 @@ bool GrResourceProvider::attachStencilAttachment(GrRenderTarget* rt) {
         }
 #endif
         GrStencilAttachment::ComputeSharedStencilAttachmentKey(width, height,
-                                                               rt->numStencilSamples(), &sbKey);
+                                                               rt->numSamples(), &sbKey);
         auto stencil = this->findByUniqueKey<GrStencilAttachment>(sbKey);
         if (!stencil) {
             // Need to try and create a new stencil

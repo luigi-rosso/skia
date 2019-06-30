@@ -8,6 +8,7 @@
 #ifndef GrRect_DEFINED
 #define GrRect_DEFINED
 
+#include "include/core/SkMatrix.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkTo.h"
@@ -30,6 +31,12 @@ struct GrIRect16 {
     static GrIRect16 SK_WARN_UNUSED_RESULT MakeXYWH(int16_t x, int16_t y, int16_t w, int16_t h) {
         GrIRect16 r;
         r.set(x, y, x + w, y + h);
+        return r;
+    }
+
+    static GrIRect16 SK_WARN_UNUSED_RESULT Make(const SkIRect& ir) {
+        GrIRect16 r;
+        r.set(ir);
         return r;
     }
 

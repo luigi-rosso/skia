@@ -8,9 +8,9 @@
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrSurface.h"
-#include "include/private/GrSurfaceProxy.h"
 #include "include/private/GrTypesPriv.h"
 #include "src/gpu/GrCaps.h"
+#include "src/gpu/GrSurfaceProxy.h"
 #include "src/gpu/GrWindowRectangles.h"
 #include "src/utils/SkJSONWriter.h"
 
@@ -28,7 +28,7 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fSampleLocationsSupport = false;
     fMultisampleDisableSupport = false;
     fInstanceAttribSupport = false;
-    fUsesMixedSamples = false;
+    fMixedSamplesSupport = false;
     fUsePrimitiveRestart = false;
     fPreferClientSideDynamicBuffers = false;
     fPreferFullscreenClears = false;
@@ -57,6 +57,7 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fMaxPreferredRenderTargetSize = 1;
     fMaxTextureSize = 1;
     fMaxWindowRectangles = 0;
+    fInternalMultisampleCount = 0;
 
     fSuppressPrints = options.fSuppressPrints;
 #if GR_TEST_UTILS
@@ -110,11 +111,15 @@ void GrCaps::applyOptionsOverrides(const GrContextOptions& options) {
         fShaderCaps->fGeometryShaderSupport = false;
     }
 #endif
+
     if (fMaxWindowRectangles > GrWindowRectangles::kMaxWindows) {
         SkDebugf("WARNING: capping window rectangles at %i. HW advertises support for %i.\n",
                  GrWindowRectangles::kMaxWindows, fMaxWindowRectangles);
         fMaxWindowRectangles = GrWindowRectangles::kMaxWindows;
     }
+
+    fInternalMultisampleCount = options.fInternalMultisampleCount;
+
     fAvoidStencilBuffers = options.fAvoidStencilBuffers;
 
     fDriverBugWorkarounds.applyOverrides(options.fDriverBugWorkarounds);
@@ -139,7 +144,6 @@ static const char* pixel_config_name(GrPixelConfig config) {
         case kRG_88_GrPixelConfig: return "RG88";
         case kBGRA_8888_GrPixelConfig: return "BGRA8888";
         case kSRGBA_8888_GrPixelConfig: return "SRGBA8888";
-        case kSBGRA_8888_GrPixelConfig: return "SBGRA8888";
         case kRGBA_1010102_GrPixelConfig: return "RGBA1010102";
         case kRGBA_float_GrPixelConfig: return "RGBAFloat";
         case kRG_float_GrPixelConfig: return "RGFloat";
@@ -148,9 +152,11 @@ static const char* pixel_config_name(GrPixelConfig config) {
         case kRGBA_half_GrPixelConfig: return "RGBAHalf";
         case kRGBA_half_Clamped_GrPixelConfig: return "RGBAHalfClamped";
         case kRGB_ETC1_GrPixelConfig: return "RGBETC1";
-        // Experimental (for P016 and P010)
         case kR_16_GrPixelConfig: return "R16";
         case kRG_1616_GrPixelConfig: return "RG1616";
+        // Experimental (for Y416 and mutant P016/P010)
+        case kRGBA_16161616_GrPixelConfig: return "RGBA16161616";
+        case kRG_half_GrPixelConfig: return "RGHalf";
     }
     SK_ABORT("Invalid pixel config");
     return "<invalid>";
@@ -198,7 +204,7 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Sample Locations Support", fSampleLocationsSupport);
     writer->appendBool("Multisample disable support", fMultisampleDisableSupport);
     writer->appendBool("Instance Attrib Support", fInstanceAttribSupport);
-    writer->appendBool("Uses Mixed Samples", fUsesMixedSamples);
+    writer->appendBool("Mixed Samples Support", fMixedSamplesSupport);
     writer->appendBool("Use primitive restart", fUsePrimitiveRestart);
     writer->appendBool("Prefer client-side dynamic buffers", fPreferClientSideDynamicBuffers);
     writer->appendBool("Prefer fullscreen clears", fPreferFullscreenClears);
@@ -233,6 +239,8 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendS32("Max Render Target Size", fMaxRenderTargetSize);
     writer->appendS32("Max Preferred Render Target Size", fMaxPreferredRenderTargetSize);
     writer->appendS32("Max Window Rectangles", fMaxWindowRectangles);
+    writer->appendS32("Preferred Sample Count for Internal MSAA and Mixed Samples",
+                      fInternalMultisampleCount);
 
     static const char* kBlendEquationSupportNames[] = {
         "Basic",
@@ -307,7 +315,19 @@ size_t GrCaps::transferFromOffsetAlignment(GrColorType bufferColorType) const {
 
 bool GrCaps::canCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
                             const SkIRect& srcRect, const SkIPoint& dstPoint) const {
-    return dst->readOnly() ? false : this->onCanCopySurface(dst, src, srcRect, dstPoint);
+    if (dst->readOnly()) {
+        return false;
+    }
+    // Currently we only ever do copies where the configs are the same. This check really should be
+    // checking if the backend formats, color types, and swizzle are compatible. Our copy always
+    // copies exact byte to byte from src to dst so when need to check the if we do this, the dst
+    // has the expected values stored in the right places taking the swizzle into account. For now
+    // we can be more restrictive and just make sure the configs are the same and if we generalize
+    // copies and swizzles more in the future this can be updated.
+    if (dst->config() != src->config()) {
+        return false;
+    }
+    return this->onCanCopySurface(dst, src, srcRect, dstPoint);
 }
 
 bool GrCaps::validateSurfaceDesc(const GrSurfaceDesc& desc, GrMipMapped mipped) const {
@@ -347,4 +367,10 @@ bool GrCaps::validateSurfaceDesc(const GrSurfaceDesc& desc, GrMipMapped mipped) 
 
 GrBackendFormat GrCaps::getBackendFormatFromColorType(SkColorType ct) const {
     return this->getBackendFormatFromGrColorType(SkColorTypeToGrColorType(ct), GrSRGBEncoded::kNo);
+}
+
+GrCaps::SupportedRead GrCaps::supportedReadPixelsColorType(GrPixelConfig config,
+                                                           const GrBackendFormat&,
+                                                           GrColorType dstColorType) const {
+    return SupportedRead{GrSwizzle::RGBA(), GrPixelConfigToColorType(config)};
 }

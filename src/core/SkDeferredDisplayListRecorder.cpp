@@ -134,7 +134,7 @@ bool SkDeferredDisplayListRecorder::init() {
     desc.fWidth = fCharacterization.width();
     desc.fHeight = fCharacterization.height();
     desc.fConfig = fCharacterization.config();
-    desc.fSampleCnt = fCharacterization.stencilCount();
+    desc.fSampleCnt = fCharacterization.sampleCount();
 
     sk_sp<SkDeferredDisplayList::LazyProxyData> lazyProxyData = fLazyProxyData;
 
@@ -143,10 +143,6 @@ bool SkDeferredDisplayListRecorder::init() {
     // DDL is being replayed into.
 
     GrInternalSurfaceFlags surfaceFlags = GrInternalSurfaceFlags::kNone;
-    if (fContext->priv().caps()->usesMixedSamples() && desc.fSampleCnt > 1 && !usesGLFBO0) {
-        // In GL, FBO 0 never supports mixed samples
-        surfaceFlags |= GrInternalSurfaceFlags::kMixedSampled;
-    }
     if (usesGLFBO0) {
         surfaceFlags |= GrInternalSurfaceFlags::kGLRTFBOIDIs0;
     }
@@ -178,9 +174,11 @@ bool SkDeferredDisplayListRecorder::init() {
             fCharacterization.vulkanSecondaryCBCompatible());
 
     sk_sp<GrSurfaceContext> c = fContext->priv().makeWrappedSurfaceContext(
-                                                                 std::move(proxy),
-                                                                 fCharacterization.refColorSpace(),
-                                                                 &fCharacterization.surfaceProps());
+            std::move(proxy),
+            SkColorTypeToGrColorType(fCharacterization.colorType()),
+            kPremul_SkAlphaType,
+            fCharacterization.refColorSpace(),
+            &fCharacterization.surfaceProps());
     fSurface = SkSurface_Gpu::MakeWrappedRenderTarget(fContext.get(),
                                                       sk_ref_sp(c->asRenderTargetContext()));
     return SkToBool(fSurface.get());

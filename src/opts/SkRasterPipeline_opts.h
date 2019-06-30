@@ -9,6 +9,8 @@
 #define SkRasterPipeline_opts_DEFINED
 
 #include "include/core/SkTypes.h"
+#include "src/core/SkUtils.h"  // unaligned_{load,store}
+#include "src/sksl/SkSLByteCode.h"
 
 // Every function in this file should be marked static and inline using SI.
 #if defined(__clang__)
@@ -17,23 +19,10 @@
     #define SI static inline
 #endif
 
-
-template <typename T, typename P>
-SI T unaligned_load(const P* p) {  // const void* would work too, but const P* helps ARMv7 codegen.
-    T v;
-    memcpy(&v, p, sizeof(v));
-    return v;
-}
-
-template <typename T, typename P>
-SI void unaligned_store(P* p, T v) {
-    memcpy(p, &v, sizeof(v));
-}
-
 template <typename Dst, typename Src>
 SI Dst bit_cast(const Src& src) {
     static_assert(sizeof(Dst) == sizeof(Src), "");
-    return unaligned_load<Dst>(&src);
+    return sk_unaligned_load<Dst>(&src);
 }
 
 template <typename Dst, typename Src>
@@ -380,7 +369,7 @@ namespace SK_OPTS_NS {
     }
     SI U8 pack(U16 v) {
         auto r = _mm_packus_epi16(v,v);
-        return unaligned_load<U8>(&r);
+        return sk_unaligned_load<U8>(&r);
     }
 
     SI F if_then_else(I32 c, F t, F e) { return _mm256_blendv_ps(e,t,c); }
@@ -712,12 +701,12 @@ namespace SK_OPTS_NS {
         auto p = _mm_srai_epi32(_mm_slli_epi32(v, 16), 16);
         p = _mm_packs_epi32(p,p);
     #endif
-        return unaligned_load<U16>(&p);  // We have two copies.  Return (the lower) one.
+        return sk_unaligned_load<U16>(&p);  // We have two copies.  Return (the lower) one.
     }
     SI U8 pack(U16 v) {
         auto r = widen_cast<__m128i>(v);
         r = _mm_packus_epi16(r,r);
-        return unaligned_load<U8>(&r);
+        return sk_unaligned_load<U8>(&r);
     }
 
     SI F if_then_else(I32 c, F t, F e) {
@@ -758,8 +747,8 @@ namespace SK_OPTS_NS {
 
         auto R = _mm_shuffle_epi32(rg, 0x88);  // r0 r1 r2 r3 r0 r1 r2 r3
         auto G = _mm_shuffle_epi32(rg, 0xDD);  // g0 g1 g2 g3 g0 g1 g2 g3
-        *r = unaligned_load<U16>(&R);
-        *g = unaligned_load<U16>(&G);
+        *r = sk_unaligned_load<U16>(&R);
+        *g = sk_unaligned_load<U16>(&G);
     }
     SI void store2(uint16_t* ptr, size_t tail, U16 r, U16 g) {
         U32 rg = _mm_unpacklo_epi16(widen_cast<__m128i>(r), widen_cast<__m128i>(g));
@@ -810,9 +799,9 @@ namespace SK_OPTS_NS {
              G = _mm_srli_si128(R, 8),
              B = _mm_unpackhi_epi16(_02, _13);  // b0 b1 b2 b3 xx xx xx xx
 
-        *r = unaligned_load<U16>(&R);
-        *g = unaligned_load<U16>(&G);
-        *b = unaligned_load<U16>(&B);
+        *r = sk_unaligned_load<U16>(&R);
+        *g = sk_unaligned_load<U16>(&G);
+        *b = sk_unaligned_load<U16>(&B);
     }
 
     SI void load4(const uint16_t* ptr, size_t tail, U16* r, U16* g, U16* b, U16* a) {
@@ -834,10 +823,10 @@ namespace SK_OPTS_NS {
         auto rg = _mm_unpacklo_epi16(_02, _13),  // r0 r1 r2 r3 g0 g1 g2 g3
              ba = _mm_unpackhi_epi16(_02, _13);  // b0 b1 b2 b3 a0 a1 a2 a3
 
-        *r = unaligned_load<U16>((uint16_t*)&rg + 0);
-        *g = unaligned_load<U16>((uint16_t*)&rg + 4);
-        *b = unaligned_load<U16>((uint16_t*)&ba + 0);
-        *a = unaligned_load<U16>((uint16_t*)&ba + 4);
+        *r = sk_unaligned_load<U16>((uint16_t*)&rg + 0);
+        *g = sk_unaligned_load<U16>((uint16_t*)&rg + 4);
+        *b = sk_unaligned_load<U16>((uint16_t*)&ba + 0);
+        *a = sk_unaligned_load<U16>((uint16_t*)&ba + 4);
     }
 
     SI void store4(uint16_t* ptr, size_t tail, U16 r, U16 g, U16 b, U16 a) {
@@ -945,7 +934,7 @@ SI U16 bswap(U16 x) {
     // when generating code for SSE2 and SSE4.1.  We'll do it manually...
     auto v = widen_cast<__m128i>(x);
     v = _mm_slli_epi16(v,8) | _mm_srli_epi16(v,8);
-    return unaligned_load<U16>(&v);
+    return sk_unaligned_load<U16>(&v);
 #else
     return (x<<8) | (x>>8);
 #endif
@@ -1157,7 +1146,7 @@ SI V load(const T* src, size_t tail) {
         return v;
     }
 #endif
-    return unaligned_load<V>(src);
+    return sk_unaligned_load<V>(src);
 }
 
 template <typename V, typename T>
@@ -1177,7 +1166,7 @@ SI void store(T* dst, V v, size_t tail) {
         return;
     }
 #endif
-    unaligned_store(dst, v);
+    sk_unaligned_store(dst, v);
 }
 
 SI F from_byte(U8 b) {
@@ -1274,7 +1263,7 @@ STAGE(seed_shader, Ctx::None) {
     // It's important for speed to explicitly cast(dx) and cast(dy),
     // which has the effect of splatting them to vectors before converting to floats.
     // On Intel this breaks a data dependency on previous loop iterations' registers.
-    r = cast(dx) + unaligned_load<F>(iota);
+    r = cast(dx) + sk_unaligned_load<F>(iota);
     g = cast(dy) + 0.5f;
     b = 1.0f;
     a = 0;
@@ -1284,7 +1273,7 @@ STAGE(seed_shader, Ctx::None) {
 STAGE(dither, const float* rate) {
     // Get [(dx,dy), (dx+1,dy), (dx+2,dy), ...] loaded up in integer vectors.
     uint32_t iota[] = {0,1,2,3,4,5,6,7};
-    U32 X = dx + unaligned_load<U32>(iota),
+    U32 X = dx + sk_unaligned_load<U32>(iota),
         Y = dy;
 
     // We're doing 8x8 ordered dithering, see https://en.wikipedia.org/wiki/Ordered_dithering.
@@ -1339,34 +1328,34 @@ STAGE(white_color, Ctx::None) {
 
 // load registers r,g,b,a from context (mirrors store_rgba)
 STAGE(load_src, const float* ptr) {
-    r = unaligned_load<F>(ptr + 0*N);
-    g = unaligned_load<F>(ptr + 1*N);
-    b = unaligned_load<F>(ptr + 2*N);
-    a = unaligned_load<F>(ptr + 3*N);
+    r = sk_unaligned_load<F>(ptr + 0*N);
+    g = sk_unaligned_load<F>(ptr + 1*N);
+    b = sk_unaligned_load<F>(ptr + 2*N);
+    a = sk_unaligned_load<F>(ptr + 3*N);
 }
 
 // store registers r,g,b,a into context (mirrors load_rgba)
 STAGE(store_src, float* ptr) {
-    unaligned_store(ptr + 0*N, r);
-    unaligned_store(ptr + 1*N, g);
-    unaligned_store(ptr + 2*N, b);
-    unaligned_store(ptr + 3*N, a);
+    sk_unaligned_store(ptr + 0*N, r);
+    sk_unaligned_store(ptr + 1*N, g);
+    sk_unaligned_store(ptr + 2*N, b);
+    sk_unaligned_store(ptr + 3*N, a);
 }
 
 // load registers dr,dg,db,da from context (mirrors store_dst)
 STAGE(load_dst, const float* ptr) {
-    dr = unaligned_load<F>(ptr + 0*N);
-    dg = unaligned_load<F>(ptr + 1*N);
-    db = unaligned_load<F>(ptr + 2*N);
-    da = unaligned_load<F>(ptr + 3*N);
+    dr = sk_unaligned_load<F>(ptr + 0*N);
+    dg = sk_unaligned_load<F>(ptr + 1*N);
+    db = sk_unaligned_load<F>(ptr + 2*N);
+    da = sk_unaligned_load<F>(ptr + 3*N);
 }
 
 // store registers dr,dg,db,da into context (mirrors load_dst)
 STAGE(store_dst, float* ptr) {
-    unaligned_store(ptr + 0*N, dr);
-    unaligned_store(ptr + 1*N, dg);
-    unaligned_store(ptr + 2*N, db);
-    unaligned_store(ptr + 3*N, da);
+    sk_unaligned_store(ptr + 0*N, dr);
+    sk_unaligned_store(ptr + 1*N, dg);
+    sk_unaligned_store(ptr + 2*N, db);
+    sk_unaligned_store(ptr + 3*N, da);
 }
 
 // Most blend modes apply the same logic to each channel.
@@ -1757,7 +1746,7 @@ STAGE(lerp_1_float, const float* c) {
     a = lerp(da, a, *c);
 }
 STAGE(lerp_native, const float scales[]) {
-    auto c = unaligned_load<F>(scales);
+    auto c = sk_unaligned_load<F>(scales);
     r = lerp(dr, r, c);
     g = lerp(dg, g, c);
     b = lerp(db, b, c);
@@ -2205,20 +2194,20 @@ STAGE(mirror_x_1, Ctx::None) { r = clamp_01(abs_( (r-1.0f) - two(floor_((r-1.0f)
 
 STAGE(decal_x, SkRasterPipeline_DecalTileCtx* ctx) {
     auto w = ctx->limit_x;
-    unaligned_store(ctx->mask, cond_to_mask((0 <= r) & (r < w)));
+    sk_unaligned_store(ctx->mask, cond_to_mask((0 <= r) & (r < w)));
 }
 STAGE(decal_y, SkRasterPipeline_DecalTileCtx* ctx) {
     auto h = ctx->limit_y;
-    unaligned_store(ctx->mask, cond_to_mask((0 <= g) & (g < h)));
+    sk_unaligned_store(ctx->mask, cond_to_mask((0 <= g) & (g < h)));
 }
 STAGE(decal_x_and_y, SkRasterPipeline_DecalTileCtx* ctx) {
     auto w = ctx->limit_x;
     auto h = ctx->limit_y;
-    unaligned_store(ctx->mask,
+    sk_unaligned_store(ctx->mask,
                     cond_to_mask((0 <= r) & (r < w) & (0 <= g) & (g < h)));
 }
 STAGE(check_decal_mask, SkRasterPipeline_DecalTileCtx* ctx) {
-    auto mask = unaligned_load<U32>(ctx->mask);
+    auto mask = sk_unaligned_load<U32>(ctx->mask);
     r = bit_cast<F>( bit_cast<U32>(r) & mask );
     g = bit_cast<F>( bit_cast<U32>(g) & mask );
     b = bit_cast<F>( bit_cast<U32>(b) & mask );
@@ -2433,18 +2422,18 @@ STAGE(mask_2pt_conical_nan, SkRasterPipeline_2PtConicalCtx* c) {
     F& t = r;
     auto is_degenerate = (t != t); // NaN
     t = if_then_else(is_degenerate, F(0), t);
-    unaligned_store(&c->fMask, cond_to_mask(!is_degenerate));
+    sk_unaligned_store(&c->fMask, cond_to_mask(!is_degenerate));
 }
 
 STAGE(mask_2pt_conical_degenerates, SkRasterPipeline_2PtConicalCtx* c) {
     F& t = r;
     auto is_degenerate = (t <= 0) | (t != t);
     t = if_then_else(is_degenerate, F(0), t);
-    unaligned_store(&c->fMask, cond_to_mask(!is_degenerate));
+    sk_unaligned_store(&c->fMask, cond_to_mask(!is_degenerate));
 }
 
 STAGE(apply_vector_mask, const uint32_t* ctx) {
-    const U32 mask = unaligned_load<U32>(ctx);
+    const U32 mask = sk_unaligned_load<U32>(ctx);
     r = bit_cast<F>(bit_cast<U32>(r) & mask);
     g = bit_cast<F>(bit_cast<U32>(g) & mask);
     b = bit_cast<F>(bit_cast<U32>(b) & mask);
@@ -2459,17 +2448,17 @@ STAGE(save_xy, SkRasterPipeline_SamplerCtx* c) {
       fy = fract(g + 0.5f);
 
     // Samplers will need to load x and fx, or y and fy.
-    unaligned_store(c->x,  r);
-    unaligned_store(c->y,  g);
-    unaligned_store(c->fx, fx);
-    unaligned_store(c->fy, fy);
+    sk_unaligned_store(c->x,  r);
+    sk_unaligned_store(c->y,  g);
+    sk_unaligned_store(c->fx, fx);
+    sk_unaligned_store(c->fy, fy);
 }
 
 STAGE(accumulate, const SkRasterPipeline_SamplerCtx* c) {
     // Bilinear and bicubic filters are both separable, so we produce independent contributions
     // from x and y, multiplying them together here to get each pixel's total scale factor.
-    auto scale = unaligned_load<F>(c->scalex)
-               * unaligned_load<F>(c->scaley);
+    auto scale = sk_unaligned_load<F>(c->scalex)
+               * sk_unaligned_load<F>(c->scaley);
     dr = mad(scale, r, dr);
     dg = mad(scale, g, dg);
     db = mad(scale, b, db);
@@ -2483,23 +2472,23 @@ STAGE(accumulate, const SkRasterPipeline_SamplerCtx* c) {
 
 template <int kScale>
 SI void bilinear_x(SkRasterPipeline_SamplerCtx* ctx, F* x) {
-    *x = unaligned_load<F>(ctx->x) + (kScale * 0.5f);
-    F fx = unaligned_load<F>(ctx->fx);
+    *x = sk_unaligned_load<F>(ctx->x) + (kScale * 0.5f);
+    F fx = sk_unaligned_load<F>(ctx->fx);
 
     F scalex;
     if (kScale == -1) { scalex = 1.0f - fx; }
     if (kScale == +1) { scalex =        fx; }
-    unaligned_store(ctx->scalex, scalex);
+    sk_unaligned_store(ctx->scalex, scalex);
 }
 template <int kScale>
 SI void bilinear_y(SkRasterPipeline_SamplerCtx* ctx, F* y) {
-    *y = unaligned_load<F>(ctx->y) + (kScale * 0.5f);
-    F fy = unaligned_load<F>(ctx->fy);
+    *y = sk_unaligned_load<F>(ctx->y) + (kScale * 0.5f);
+    F fy = sk_unaligned_load<F>(ctx->fy);
 
     F scaley;
     if (kScale == -1) { scaley = 1.0f - fy; }
     if (kScale == +1) { scaley =        fy; }
-    unaligned_store(ctx->scaley, scaley);
+    sk_unaligned_store(ctx->scaley, scaley);
 }
 
 STAGE(bilinear_nx, SkRasterPipeline_SamplerCtx* ctx) { bilinear_x<-1>(ctx, &r); }
@@ -2525,27 +2514,27 @@ SI F bicubic_far(F t) {
 
 template <int kScale>
 SI void bicubic_x(SkRasterPipeline_SamplerCtx* ctx, F* x) {
-    *x = unaligned_load<F>(ctx->x) + (kScale * 0.5f);
-    F fx = unaligned_load<F>(ctx->fx);
+    *x = sk_unaligned_load<F>(ctx->x) + (kScale * 0.5f);
+    F fx = sk_unaligned_load<F>(ctx->fx);
 
     F scalex;
     if (kScale == -3) { scalex = bicubic_far (1.0f - fx); }
     if (kScale == -1) { scalex = bicubic_near(1.0f - fx); }
     if (kScale == +1) { scalex = bicubic_near(       fx); }
     if (kScale == +3) { scalex = bicubic_far (       fx); }
-    unaligned_store(ctx->scalex, scalex);
+    sk_unaligned_store(ctx->scalex, scalex);
 }
 template <int kScale>
 SI void bicubic_y(SkRasterPipeline_SamplerCtx* ctx, F* y) {
-    *y = unaligned_load<F>(ctx->y) + (kScale * 0.5f);
-    F fy = unaligned_load<F>(ctx->fy);
+    *y = sk_unaligned_load<F>(ctx->y) + (kScale * 0.5f);
+    F fy = sk_unaligned_load<F>(ctx->fy);
 
     F scaley;
     if (kScale == -3) { scaley = bicubic_far (1.0f - fy); }
     if (kScale == -1) { scaley = bicubic_near(1.0f - fy); }
     if (kScale == +1) { scaley = bicubic_near(       fy); }
     if (kScale == +3) { scaley = bicubic_far (       fy); }
-    unaligned_store(ctx->scaley, scaley);
+    sk_unaligned_store(ctx->scaley, scaley);
 }
 
 STAGE(bicubic_n3x, SkRasterPipeline_SamplerCtx* ctx) { bicubic_x<-3>(ctx, &r); }
@@ -2562,6 +2551,38 @@ STAGE(callback, SkRasterPipeline_CallbackCtx* c) {
     store4(c->rgba,0, r,g,b,a);
     c->fn(c, tail ? tail : N);
     load4(c->read_from,0, &r,&g,&b,&a);
+}
+
+STAGE(interpreter, SkRasterPipeline_InterpreterCtx* c) {
+    // If N is less than the interpreter's VecWidth, then we are doing more work than necessary in
+    // the interpreter. This is a known issue, and will be addressed at some point.
+    float rr[N];
+    float gg[N];
+    float bb[N];
+    float aa[N];
+    size_t in_count, out_count;
+
+    float* args[] = { rr, gg, bb, aa };
+
+    sk_unaligned_store(rr, r);  // x if we're a shader
+    sk_unaligned_store(gg, g);  // y if we're a shader
+    if (c->shader_convention) {
+        in_count = 2;   // x, y
+        out_count = 4;  // r, g, b, a
+    } else {
+        in_count = 4;   // r, g, b, a (in/out)
+        sk_unaligned_store(bb, b);
+        sk_unaligned_store(aa, a);
+        out_count = 0;
+    }
+
+    c->byteCode->runStriped(c->fn, args, in_count, tail ? tail : N,
+                            (const float*)c->inputs, c->ninputs, args, out_count);
+
+    r = sk_unaligned_load<F>(rr);
+    g = sk_unaligned_load<F>(gg);
+    b = sk_unaligned_load<F>(bb);
+    a = sk_unaligned_load<F>(aa);
 }
 
 STAGE(gauss_a_to_rgba, Ctx::None) {
@@ -2636,6 +2657,7 @@ STAGE(swizzle, void* ctx) {
             case 'g': *o[i] = ig;   break;
             case 'b': *o[i] = ib;   break;
             case 'a': *o[i] = ia;   break;
+            case '0': *o[i] = F(0); break;
             case '1': *o[i] = F(1); break;
             default:                break;
         }
@@ -2961,7 +2983,7 @@ STAGE_GG(seed_shader, Ctx::None) {
         0.5f, 1.5f, 2.5f, 3.5f, 4.5f, 5.5f, 6.5f, 7.5f,
         8.5f, 9.5f,10.5f,11.5f,12.5f,13.5f,14.5f,15.5f,
     };
-    x = cast<F>(I32(dx)) + unaligned_load<F>(iota);
+    x = cast<F>(I32(dx)) + sk_unaligned_load<F>(iota);
     y = cast<F>(I32(dy)) + 0.5f;
 }
 
@@ -3441,7 +3463,7 @@ SI void store_88_(uint16_t* ptr, size_t tail, U16 r, U16 g) {
 
 STAGE_PP(load_rg88, const SkRasterPipeline_MemoryCtx* ctx) {
     b = 0;
-    a = 1;
+    a = 255;
     load_88_(ptr_at_xy<const uint16_t>(ctx, dx,dy), tail, &r,&g);
 }
 STAGE_PP(store_rg88, const SkRasterPipeline_MemoryCtx* ctx) {
@@ -3491,28 +3513,28 @@ STAGE_PP(luminance_to_alpha, Ctx::None) {
 // ~~~~~~ Coverage scales / lerps ~~~~~~ //
 
 STAGE_PP(load_src, const uint16_t* ptr) {
-    r = unaligned_load<U16>(ptr + 0*N);
-    g = unaligned_load<U16>(ptr + 1*N);
-    b = unaligned_load<U16>(ptr + 2*N);
-    a = unaligned_load<U16>(ptr + 3*N);
+    r = sk_unaligned_load<U16>(ptr + 0*N);
+    g = sk_unaligned_load<U16>(ptr + 1*N);
+    b = sk_unaligned_load<U16>(ptr + 2*N);
+    a = sk_unaligned_load<U16>(ptr + 3*N);
 }
 STAGE_PP(store_src, uint16_t* ptr) {
-    unaligned_store(ptr + 0*N, r);
-    unaligned_store(ptr + 1*N, g);
-    unaligned_store(ptr + 2*N, b);
-    unaligned_store(ptr + 3*N, a);
+    sk_unaligned_store(ptr + 0*N, r);
+    sk_unaligned_store(ptr + 1*N, g);
+    sk_unaligned_store(ptr + 2*N, b);
+    sk_unaligned_store(ptr + 3*N, a);
 }
 STAGE_PP(load_dst, const uint16_t* ptr) {
-    dr = unaligned_load<U16>(ptr + 0*N);
-    dg = unaligned_load<U16>(ptr + 1*N);
-    db = unaligned_load<U16>(ptr + 2*N);
-    da = unaligned_load<U16>(ptr + 3*N);
+    dr = sk_unaligned_load<U16>(ptr + 0*N);
+    dg = sk_unaligned_load<U16>(ptr + 1*N);
+    db = sk_unaligned_load<U16>(ptr + 2*N);
+    da = sk_unaligned_load<U16>(ptr + 3*N);
 }
 STAGE_PP(store_dst, uint16_t* ptr) {
-    unaligned_store(ptr + 0*N, dr);
-    unaligned_store(ptr + 1*N, dg);
-    unaligned_store(ptr + 2*N, db);
-    unaligned_store(ptr + 3*N, da);
+    sk_unaligned_store(ptr + 0*N, dr);
+    sk_unaligned_store(ptr + 1*N, dg);
+    sk_unaligned_store(ptr + 2*N, db);
+    sk_unaligned_store(ptr + 3*N, da);
 }
 
 // ~~~~~~ Coverage scales / lerps ~~~~~~ //
@@ -3532,7 +3554,7 @@ STAGE_PP(lerp_1_float, const float* f) {
     a = lerp(da, a, c);
 }
 STAGE_PP(lerp_native, const uint16_t scales[]) {
-    auto c = unaligned_load<U16>(scales);
+    auto c = sk_unaligned_load<U16>(scales);
     r = lerp(dr, r, c);
     g = lerp(dg, g, c);
     b = lerp(db, b, c);
@@ -3607,19 +3629,19 @@ SI I16 cond_to_mask_16(I32 cond) { return cast<I16>(cond); }
 
 STAGE_GG(decal_x, SkRasterPipeline_DecalTileCtx* ctx) {
     auto w = ctx->limit_x;
-    unaligned_store(ctx->mask, cond_to_mask_16((0 <= x) & (x < w)));
+    sk_unaligned_store(ctx->mask, cond_to_mask_16((0 <= x) & (x < w)));
 }
 STAGE_GG(decal_y, SkRasterPipeline_DecalTileCtx* ctx) {
     auto h = ctx->limit_y;
-    unaligned_store(ctx->mask, cond_to_mask_16((0 <= y) & (y < h)));
+    sk_unaligned_store(ctx->mask, cond_to_mask_16((0 <= y) & (y < h)));
 }
 STAGE_GG(decal_x_and_y, SkRasterPipeline_DecalTileCtx* ctx) {
     auto w = ctx->limit_x;
     auto h = ctx->limit_y;
-    unaligned_store(ctx->mask, cond_to_mask_16((0 <= x) & (x < w) & (0 <= y) & (y < h)));
+    sk_unaligned_store(ctx->mask, cond_to_mask_16((0 <= x) & (x < w) & (0 <= y) & (y < h)));
 }
 STAGE_PP(check_decal_mask, SkRasterPipeline_DecalTileCtx* ctx) {
-    auto mask = unaligned_load<U16>(ctx->mask);
+    auto mask = sk_unaligned_load<U16>(ctx->mask);
     r = r & mask;
     g = g & mask;
     b = b & mask;
@@ -3832,6 +3854,7 @@ STAGE_PP(swizzle, void* ctx) {
             case 'g': *o[i] = ig;       break;
             case 'b': *o[i] = ib;       break;
             case 'a': *o[i] = ia;       break;
+            case '0': *o[i] = U16(0);   break;
             case '1': *o[i] = U16(255); break;
             default:                    break;
         }
@@ -3842,6 +3865,7 @@ STAGE_PP(swizzle, void* ctx) {
 // If a pipeline uses these stages, it'll boot it out of lowp into highp.
 #define NOT_IMPLEMENTED(st) static void (*st)(void) = nullptr;
     NOT_IMPLEMENTED(callback)
+    NOT_IMPLEMENTED(interpreter)
     NOT_IMPLEMENTED(unbounded_set_rgb)
     NOT_IMPLEMENTED(unbounded_uniform_color)
     NOT_IMPLEMENTED(unpremul)

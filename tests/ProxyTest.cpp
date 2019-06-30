@@ -11,14 +11,14 @@
 
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrTexture.h"
-#include "include/private/GrRenderTargetProxy.h"
-#include "include/private/GrTextureProxy.h"
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrProxyProvider.h"
 #include "src/gpu/GrRenderTargetPriv.h"
+#include "src/gpu/GrRenderTargetProxy.h"
 #include "src/gpu/GrResourceProvider.h"
 #include "src/gpu/GrSurfacePriv.h"
 #include "src/gpu/GrSurfaceProxyPriv.h"
+#include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/SkGr.h"
 #include "src/gpu/gl/GrGLDefines.h"
 
@@ -45,7 +45,7 @@ static void check_rendertarget(skiatest::Reporter* reporter,
                                SkBackingFit fit,
                                int expectedMaxWindowRects) {
     REPORTER_ASSERT(reporter, rtProxy->maxWindowRectangles(caps) == expectedMaxWindowRects);
-    REPORTER_ASSERT(reporter, rtProxy->numStencilSamples() == numSamples);
+    REPORTER_ASSERT(reporter, rtProxy->numSamples() == numSamples);
 
     GrSurfaceProxy::UniqueID idBefore = rtProxy->uniqueID();
     bool preinstantiated = rtProxy->isInstantiated();
@@ -69,9 +69,7 @@ static void check_rendertarget(skiatest::Reporter* reporter,
     }
     REPORTER_ASSERT(reporter, rt->config() == rtProxy->config());
 
-    REPORTER_ASSERT(reporter, rt->fsaaType() == rtProxy->fsaaType());
-    REPORTER_ASSERT(reporter, rt->numColorSamples() == rtProxy->numColorSamples());
-    REPORTER_ASSERT(reporter, rt->numStencilSamples() == rtProxy->numStencilSamples());
+    REPORTER_ASSERT(reporter, rt->numSamples() == rtProxy->numSamples());
     REPORTER_ASSERT(reporter, rt->surfacePriv().flags() == rtProxy->testingOnly_getFlags());
 }
 

@@ -141,9 +141,11 @@ static inline MTLVertexFormat attribute_type_to_mtlformat(GrVertexAttribType typ
             return MTLVertexFormatInt;
         case kUint_GrVertexAttribType:
             return MTLVertexFormatUInt;
-        // Experimental (for P016 and P010)
         case kUShort_norm_GrVertexAttribType:
             return MTLVertexFormatUShortNormalized;
+        // Experimental (for Y416)
+        case kUShort4_norm_GrVertexAttribType:
+            return MTLVertexFormatUShort4Normalized;
     }
     SK_ABORT("Unknown vertex attribute type");
     return MTLVertexFormatInvalid;
@@ -348,8 +350,9 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::finalize(GrRenderTarget* renderTa
                                                    desc);
     SkASSERT(!this->primitiveProcessor().willUseGeoShader());
 
-    SkASSERT(vertexLibrary);
-    SkASSERT(fragmentLibrary);
+    if (!vertexLibrary || !fragmentLibrary) {
+        return nullptr;
+    }
 
     id<MTLFunction> vertexFunction = [vertexLibrary newFunctionWithName: @"vertexMain"];
     id<MTLFunction> fragmentFunction = [fragmentLibrary newFunctionWithName: @"fragmentMain"];
@@ -378,6 +381,19 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::finalize(GrRenderTarget* renderTa
     SkASSERT(pipelineDescriptor.vertexDescriptor);
     SkASSERT(pipelineDescriptor.colorAttachments[0]);
 
+#if defined(SK_BUILD_FOR_MAC) && defined(GR_USE_COMPLETION_HANDLER)
+    bool timedout;
+    id<MTLRenderPipelineState> pipelineState = GrMtlNewRenderPipelineStateWithDescriptor(
+                                                     fGpu->device(), pipelineDescriptor, &timedout);
+    if (timedout) {
+        // try a second time
+        pipelineState = GrMtlNewRenderPipelineStateWithDescriptor(
+                                fGpu->device(), pipelineDescriptor, &timedout);
+    }
+    if (!pipelineState) {
+        return nullptr;
+    }
+#else
     NSError* error = nil;
     id<MTLRenderPipelineState> pipelineState =
             [fGpu->device() newRenderPipelineStateWithDescriptor: pipelineDescriptor
@@ -387,6 +403,8 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::finalize(GrRenderTarget* renderTa
                  [[error localizedDescription] cStringUsingEncoding: NSASCIIStringEncoding]);
         return nullptr;
     }
+#endif
+
     uint32_t geomBufferSize = buffer_size(fUniformHandler.fCurrentGeometryUBOOffset,
                                           fUniformHandler.fCurrentGeometryUBOMaxAlignment);
     uint32_t fragBufferSize = buffer_size(fUniformHandler.fCurrentFragmentUBOOffset,
@@ -425,7 +443,7 @@ bool GrMtlPipelineStateBuilder::Desc::Build(Desc* desc,
     desc->fShaderKeyLength = SkToU32(keyLength);
 
     b.add32(renderTarget->config());
-    b.add32(renderTarget->numColorSamples());
+    b.add32(renderTarget->numSamples());
     bool hasStencilAttachment = SkToBool(renderTarget->renderTargetPriv().getStencilAttachment());
     b.add32(hasStencilAttachment ? gpu->mtlCaps().preferredStencilFormat().fInternalFormat
                                  : MTLPixelFormatInvalid);

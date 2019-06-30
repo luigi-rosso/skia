@@ -8,7 +8,6 @@
 #include "include/core/SkTraceMemoryDump.h"
 #include "include/gpu/GrBackendSemaphore.h"
 #include "include/gpu/GrContext.h"
-#include "include/private/GrRenderTargetProxy.h"
 #include "include/private/SkDeferredDisplayList.h"
 #include "include/private/SkImageInfoPriv.h"
 #include "src/core/SkMakeUnique.h"
@@ -18,6 +17,7 @@
 #include "src/gpu/GrMemoryPool.h"
 #include "src/gpu/GrPathRendererChain.h"
 #include "src/gpu/GrProxyProvider.h"
+#include "src/gpu/GrRenderTargetProxy.h"
 #include "src/gpu/GrResourceCache.h"
 #include "src/gpu/GrResourceProvider.h"
 #include "src/gpu/GrSemaphore.h"
@@ -318,9 +318,11 @@ void GrContext::dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) const {
 
 //////////////////////////////////////////////////////////////////////////////
 GrBackendTexture GrContext::createBackendTexture(int width, int height,
-                                                 GrBackendFormat backendFormat,
+                                                 const GrBackendFormat& backendFormat,
                                                  GrMipMapped mipMapped,
-                                                 GrRenderable renderable) {
+                                                 GrRenderable renderable,
+                                                 GrProtected isProtected) {
+    TRACE_EVENT0("skia.gpu", TRACE_FUNC);
     if (!this->asDirectContext()) {
         return GrBackendTexture();
     }
@@ -335,13 +337,14 @@ GrBackendTexture GrContext::createBackendTexture(int width, int height,
 
     return fGpu->createBackendTexture(width, height, backendFormat,
                                       mipMapped, renderable,
-                                      nullptr, 0, nullptr);
+                                      nullptr, 0, nullptr, isProtected);
 }
 
 GrBackendTexture GrContext::createBackendTexture(int width, int height,
                                                  SkColorType colorType,
                                                  GrMipMapped mipMapped,
-                                                 GrRenderable renderable) {
+                                                 GrRenderable renderable,
+                                                 GrProtected isProtected) {
     if (!this->asDirectContext()) {
         return GrBackendTexture();
     }
@@ -355,14 +358,15 @@ GrBackendTexture GrContext::createBackendTexture(int width, int height,
         return GrBackendTexture();
     }
 
-    return this->createBackendTexture(width, height, format, mipMapped, renderable);
+    return this->createBackendTexture(width, height, format, mipMapped, renderable, isProtected);
 }
 
 GrBackendTexture GrContext::createBackendTexture(int width, int height,
-                                                 GrBackendFormat backendFormat,
+                                                 const GrBackendFormat& backendFormat,
                                                  const SkColor4f& color,
                                                  GrMipMapped mipMapped,
                                                  GrRenderable renderable) {
+    TRACE_EVENT0("skia.gpu", TRACE_FUNC);
     if (!this->asDirectContext()) {
         return GrBackendTexture();
     }
@@ -377,7 +381,7 @@ GrBackendTexture GrContext::createBackendTexture(int width, int height,
 
     return fGpu->createBackendTexture(width, height, backendFormat,
                                       mipMapped, renderable,
-                                      nullptr, 0, &color);
+                                      nullptr, 0, &color, GrProtected::kNo);
 }
 
 GrBackendTexture GrContext::createBackendTexture(int width, int height,
@@ -402,6 +406,7 @@ GrBackendTexture GrContext::createBackendTexture(int width, int height,
 }
 
 void GrContext::deleteBackendTexture(GrBackendTexture backendTex) {
+    TRACE_EVENT0("skia.gpu", TRACE_FUNC);
     if (this->abandoned() || !backendTex.isValid()) {
         return;
     }

@@ -18,10 +18,10 @@
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrContext.h"
 #include "include/gpu/GrContextOptions.h"
-#include "include/private/GrColor.h"
 #include "include/private/GrTypesPriv.h"
 #include "include/private/SkColorData.h"
 #include "src/gpu/GrCaps.h"
+#include "src/gpu/GrColor.h"
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrRenderTargetContext.h"
 #include "tests/Test.h"
@@ -62,7 +62,8 @@ sk_sp<GrRenderTargetContext> newRTC(GrContext* context, int w, int h) {
     const GrBackendFormat format =
             context->priv().caps()->getBackendFormatFromColorType(kRGBA_8888_SkColorType);
     return context->priv().makeDeferredRenderTargetContext(format, SkBackingFit::kExact, w, h,
-                                                           kRGBA_8888_GrPixelConfig, nullptr);
+                                                           kRGBA_8888_GrPixelConfig,
+                                                           GrColorType::kRGBA_8888, nullptr);
 }
 
 static void clear_op_test(skiatest::Reporter* reporter, GrContext* context) {

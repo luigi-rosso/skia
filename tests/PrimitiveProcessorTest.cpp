@@ -42,8 +42,8 @@ public:
         return FixedFunctionFlags::kNone;
     }
 
-    GrProcessorSet::Analysis finalize(
-            const GrCaps&, const GrAppliedClip*, GrFSAAType, GrClampType) override {
+    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*,
+                                      bool hasMixedSampledCoverage, GrClampType) override {
         return GrProcessorSet::EmptySetAnalysis();
     }
 
@@ -136,9 +136,9 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(VertexAttributeCount, reporter, ctxInfo) {
             context->priv().caps()->getBackendFormatFromColorType(kRGBA_8888_SkColorType);
 
     sk_sp<GrRenderTargetContext> renderTargetContext(
-            context->priv().makeDeferredRenderTargetContext(format, SkBackingFit::kApprox,
-                                                            1, 1, kRGBA_8888_GrPixelConfig,
-                                                            nullptr));
+            context->priv().makeDeferredRenderTargetContext(format, SkBackingFit::kApprox, 1, 1,
+                                                            kRGBA_8888_GrPixelConfig,
+                                                            GrColorType::kRGBA_8888, nullptr));
     if (!renderTargetContext) {
         ERRORF(reporter, "Could not create render target context.");
         return;

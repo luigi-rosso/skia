@@ -8,7 +8,7 @@
 #ifndef SKSL_STRING
 #define SKSL_STRING
 
-#include "src/sksl/SkSLUtil.h"
+#include "src/sksl/SkSLDefines.h"
 #include <cstring>
 #include <stdarg.h>
 #include <string>
@@ -47,7 +47,7 @@ bool operator==(const char* s1, StringFragment s2);
 
 bool operator!=(const char* s1, StringFragment s2);
 
-class String : public std::string {
+class SK_API String : public std::string {
 public:
     String() = default;
     String(const String&) = default;

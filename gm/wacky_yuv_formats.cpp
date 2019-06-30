@@ -100,10 +100,11 @@ static bool format_has_builtin_alpha(YUVFormat yuvFormat) {
 }
 
 static bool format_cant_be_represented_with_pixmaps(YUVFormat yuvFormat) {
-    return kP016_YUVFormat == yuvFormat ||
-           kP010_YUVFormat == yuvFormat ||
-           kY416_YUVFormat == yuvFormat ||
-           kY410_YUVFormat == yuvFormat;
+    return kP016_YUVFormat == yuvFormat ||      // bc missing SkColorType::kRG_1616 and kR_16
+           kP010_YUVFormat == yuvFormat ||      // bc missing SkColorType::kRG_1616 and kR_16
+           kY416_YUVFormat == yuvFormat ||      // bc missing SkColorType::kRGBA_16161616
+           kNV12_YUVFormat == yuvFormat ||      // bc missing SkColorType::kRG_88
+           kNV21_YUVFormat == yuvFormat;        // bc missing SkColorType::kRG_88
 }
 
 // Helper to setup the SkYUVAIndex array correctly
@@ -999,12 +1000,8 @@ static void make_RGBA_16(const GrCaps* caps,
         }
     }
 
-    // For this to work we need GrColorType::kRGBA_16 support, i.e.:
-    //    GL:  RGBA16 (required in GL 3.0, added by GL_EXT_texture_norm16 for ES3.1)
-    //    Vk:  VK_FORMAT_R16G16B16A16_UNORM
-    //    Mtl: MTLPixelFormatRGBA16Unorm
-//    *format = caps->getBackendFormatFromGrColorType(GrColorType::kRGBA_16161616,
-//                                                    GrSRGBEncoded::kNo);
+    *format = caps->getBackendFormatFromGrColorType(GrColorType::kRGBA_16161616,
+                                                    GrSRGBEncoded::kNo);
     return;
 }
 
@@ -1075,7 +1072,7 @@ static GrBackendTexture create_yuva_texture(GrContext* context, const SkBitmap& 
 
         tex = gpu->createBackendTexture(bm.width(), bm.height(), format,
                                         GrMipMapped::kNo, GrRenderable::kNo,
-                                        pixels, 0, nullptr);
+                                        pixels, 0, nullptr, GrProtected::kNo);
     } else {
         tex = context->priv().createBackendTexture(&bm.pixmap(), 1, GrRenderable::kNo);
     }

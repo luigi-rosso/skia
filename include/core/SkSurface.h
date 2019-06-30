@@ -411,6 +411,17 @@ public:
                                              const SkSurfaceCharacterization& characterization,
                                              SkBudgeted budgeted);
 
+    /** Is this surface compatible with the provided characterization?
+
+        This method can be used to determine if an existing SkSurface is a viable destination
+        for an SkDeferredDisplayList.
+
+        @param characterization  The characterization for which a compatibility check is desired
+        @return                  true if this surface is compatible with the characterization;
+                                 false otherwise
+    */
+    bool isCompatible(const SkSurfaceCharacterization& characterization) const;
+
     /** Returns SkSurface without backing pixels. Drawing to SkCanvas returned from SkSurface
         has no effect. Calling makeImageSnapshot() on returned SkSurface returns nullptr.
 
@@ -431,6 +442,10 @@ public:
         @return  number of pixel rows
     */
     int height() const { return fHeight; }
+
+    /** Returns an ImageInfo describing the surface.
+     */
+    SkImageInfo imageInfo();
 
     /** Returns unique value identifying the content of SkSurface. Returned value changes
         each time the content changes. Content is changed by drawing, or by calling
@@ -541,6 +556,11 @@ public:
         @return           compatible SkSurface or nullptr
     */
     sk_sp<SkSurface> makeSurface(const SkImageInfo& imageInfo);
+
+    /** Calls makeSurface(ImageInfo) with the same ImageInfo as this surface, but with the
+     *  specified width and height.
+     */
+    sk_sp<SkSurface> makeSurface(int width, int height);
 
     /** Returns SkImage capturing SkSurface contents. Subsequent drawing to SkSurface contents
         are not captured. SkImage allocation is accounted for if SkSurface was created with

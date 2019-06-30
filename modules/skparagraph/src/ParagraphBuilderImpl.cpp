@@ -1,7 +1,7 @@
 // Copyright 2019 Google LLC.
-#include "modules/skparagraph/src/ParagraphBuilderImpl.h"
 #include "include/core/SkPaint.h"
 #include "modules/skparagraph/include/ParagraphStyle.h"
+#include "modules/skparagraph/src/ParagraphBuilderImpl.h"
 #include "modules/skparagraph/src/ParagraphImpl.h"
 #include "src/core/SkMakeUnique.h"
 #include "src/core/SkSpan.h"
@@ -10,9 +10,9 @@
 namespace skia {
 namespace textlayout {
 
-std::shared_ptr<ParagraphBuilder> ParagraphBuilder::make(
+std::unique_ptr<ParagraphBuilder> ParagraphBuilder::make(
         ParagraphStyle style, sk_sp<FontCollection> fontCollection) {
-    return std::make_shared<ParagraphBuilderImpl>(style, fontCollection);
+    return skstd::make_unique<ParagraphBuilderImpl>(style, fontCollection);
 }
 
 ParagraphBuilderImpl::ParagraphBuilderImpl(

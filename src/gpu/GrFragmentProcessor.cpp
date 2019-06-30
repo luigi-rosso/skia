@@ -75,21 +75,23 @@ void GrFragmentProcessor::addCoordTransform(const GrCoordTransform* transform) {
     SkDEBUGCODE(transform->setInProcessor();)
 }
 
-bool GrFragmentProcessor::instantiate(GrResourceProvider* resourceProvider) const {
+#ifdef SK_DEBUG
+bool GrFragmentProcessor::isInstantiated() const {
     for (int i = 0; i < fTextureSamplerCnt; ++i) {
-        if (!this->textureSampler(i).instantiate(resourceProvider)) {
+        if (!this->textureSampler(i).isInstantiated()) {
             return false;
         }
     }
 
     for (int i = 0; i < this->numChildProcessors(); ++i) {
-        if (!this->childProcessor(i).instantiate(resourceProvider)) {
+        if (!this->childProcessor(i).isInstantiated()) {
             return false;
         }
     }
 
     return true;
 }
+#endif
 
 int GrFragmentProcessor::registerChildProcessor(std::unique_ptr<GrFragmentProcessor> child) {
     if (child->usesLocalCoords()) {
@@ -428,7 +430,7 @@ GrFragmentProcessor::TextureSampler::TextureSampler(sk_sp<GrTextureProxy> proxy,
 
 void GrFragmentProcessor::TextureSampler::reset(sk_sp<GrTextureProxy> proxy,
                                                 const GrSamplerState& samplerState) {
-    fProxyRef.setProxy(std::move(proxy));
+    fProxy = std::move(proxy);
     fSamplerState = samplerState;
     fSamplerState.setFilterMode(SkTMin(samplerState.filter(), this->proxy()->highestFilterMode()));
 }
@@ -436,7 +438,7 @@ void GrFragmentProcessor::TextureSampler::reset(sk_sp<GrTextureProxy> proxy,
 void GrFragmentProcessor::TextureSampler::reset(sk_sp<GrTextureProxy> proxy,
                                                 GrSamplerState::Filter filterMode,
                                                 GrSamplerState::WrapMode wrapXAndY) {
-    fProxyRef.setProxy(std::move(proxy));
+    fProxy = std::move(proxy);
     filterMode = SkTMin(filterMode, this->proxy()->highestFilterMode());
     fSamplerState = GrSamplerState(wrapXAndY, filterMode);
 }

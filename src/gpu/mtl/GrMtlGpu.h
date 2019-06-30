@@ -58,7 +58,8 @@ public:
     GrBackendTexture createBackendTexture(int w, int h, const GrBackendFormat&,
                                           GrMipMapped, GrRenderable,
                                           const void* pixels, size_t rowBytes,
-                                          const SkColor4f* color) override;
+                                          const SkColor4f* color,
+                                          GrProtected isProtected) override;
 
     void deleteBackendTexture(const GrBackendTexture&) override;
 
@@ -130,6 +131,10 @@ private:
 
     sk_sp<GrTexture> onCreateTexture(const GrSurfaceDesc& desc, SkBudgeted budgeted,
                                      const GrMipLevel texels[], int mipLevelCount) override;
+    sk_sp<GrTexture> onCreateCompressedTexture(int width, int height, SkImage::CompressionType,
+                                               SkBudgeted, const void* data) override {
+        return nullptr;
+    }
 
     sk_sp<GrTexture> onWrapBackendTexture(const GrBackendTexture&, GrWrapOwnership, GrWrapCacheable,
                                           GrIOType) override;

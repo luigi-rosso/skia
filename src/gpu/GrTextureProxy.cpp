@@ -5,7 +5,7 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/GrTextureProxy.h"
+#include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/GrTextureProxyPriv.h"
 
 #include "include/gpu/GrContext.h"
@@ -15,24 +15,12 @@
 #include "src/gpu/GrSurfacePriv.h"
 #include "src/gpu/GrTexturePriv.h"
 
-// Deferred version - with data
-GrTextureProxy::GrTextureProxy(const GrBackendFormat& format, const GrSurfaceDesc& srcDesc,
-                               GrMipMapped mipMapped, SkBackingFit fit, SkBudgeted budgeted,
-                               const void* srcData, size_t /*rowBytes*/,
-                               GrInternalSurfaceFlags surfaceFlags)
-        : INHERITED(format, srcDesc, kTopLeft_GrSurfaceOrigin, fit, budgeted, surfaceFlags)
-        , fMipMapped(mipMapped)
-        , fProxyProvider(nullptr)
-        , fDeferredUploader(nullptr) {
-    SkASSERT(!srcData);  // currently handled in Make()
-}
-
 // Deferred version - no data
 GrTextureProxy::GrTextureProxy(const GrBackendFormat& format, const GrSurfaceDesc& srcDesc,
                                GrSurfaceOrigin origin, GrMipMapped mipMapped,
-                               SkBackingFit fit, SkBudgeted budgeted,
-                               GrInternalSurfaceFlags surfaceFlags)
-        : INHERITED(format, srcDesc, origin, fit, budgeted, surfaceFlags)
+                               const GrSwizzle& textureSwizzle, SkBackingFit fit,
+                               SkBudgeted budgeted, GrInternalSurfaceFlags surfaceFlags)
+        : INHERITED(format, srcDesc, origin, textureSwizzle, fit, budgeted, surfaceFlags)
         , fMipMapped(mipMapped)
         , fProxyProvider(nullptr)
         , fDeferredUploader(nullptr) {}
@@ -40,23 +28,25 @@ GrTextureProxy::GrTextureProxy(const GrBackendFormat& format, const GrSurfaceDes
 // Lazy-callback version
 GrTextureProxy::GrTextureProxy(LazyInstantiateCallback&& callback, LazyInstantiationType lazyType,
                                const GrBackendFormat& format, const GrSurfaceDesc& desc,
-                               GrSurfaceOrigin origin, GrMipMapped mipMapped, SkBackingFit fit,
-                               SkBudgeted budgeted, GrInternalSurfaceFlags surfaceFlags)
-        : INHERITED(std::move(callback), lazyType, format, desc, origin, fit, budgeted,
+                               GrSurfaceOrigin origin, GrMipMapped mipMapped,
+                               const GrSwizzle& texSwizzle, SkBackingFit fit, SkBudgeted budgeted,
+                               GrInternalSurfaceFlags surfaceFlags)
+        : INHERITED(std::move(callback), lazyType, format, desc, origin, texSwizzle, fit, budgeted,
                     surfaceFlags)
         , fMipMapped(mipMapped)
         , fProxyProvider(nullptr)
         , fDeferredUploader(nullptr) {}
 
 // Wrapped version
-GrTextureProxy::GrTextureProxy(sk_sp<GrSurface> surf, GrSurfaceOrigin origin)
-        : INHERITED(std::move(surf), origin, SkBackingFit::kExact)
+GrTextureProxy::GrTextureProxy(sk_sp<GrSurface> surf, GrSurfaceOrigin origin,
+                               const GrSwizzle& textureSwizzle)
+        : INHERITED(std::move(surf), origin, textureSwizzle, SkBackingFit::kExact)
         , fMipMapped(fTarget->asTexture()->texturePriv().mipMapped())
         , fProxyProvider(nullptr)
         , fDeferredUploader(nullptr) {
     if (fTarget->getUniqueKey().isValid()) {
         fProxyProvider = fTarget->asTexture()->getContext()->priv().proxyProvider();
-        fProxyProvider->adoptUniqueKeyFromSurface(this, fTarget);
+        fProxyProvider->adoptUniqueKeyFromSurface(this, fTarget.get());
     }
 }
 
@@ -86,8 +76,8 @@ bool GrTextureProxy::instantiate(GrResourceProvider* resourceProvider) {
         return false;
     }
 
-    SkASSERT(!fTarget->asRenderTarget());
-    SkASSERT(fTarget->asTexture());
+    SkASSERT(!this->peekRenderTarget());
+    SkASSERT(this->peekTexture());
     return true;
 }
 
@@ -112,7 +102,7 @@ void GrTextureProxyPriv::setDeferredUploader(std::unique_ptr<GrDeferredProxyUplo
 
 void GrTextureProxyPriv::scheduleUpload(GrOpFlushState* flushState) {
     // The texture proxy's contents may already have been uploaded or instantiation may have failed
-    if (fTextureProxy->fDeferredUploader && fTextureProxy->fTarget) {
+    if (fTextureProxy->fDeferredUploader && fTextureProxy->isInstantiated()) {
         fTextureProxy->fDeferredUploader->scheduleUpload(flushState, fTextureProxy);
     }
 }

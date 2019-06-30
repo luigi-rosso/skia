@@ -63,9 +63,9 @@ public:
             : fCtx(ctx)
             , fCCPR(fCtx->priv().drawingManager()->getCoverageCountingPathRenderer())
             , fRTC(fCtx->priv().makeDeferredRenderTargetContext(
-                ctx->priv().caps()->getBackendFormatFromColorType(kRGBA_8888_SkColorType),
-                SkBackingFit::kExact, kCanvasSize, kCanvasSize, kRGBA_8888_GrPixelConfig,
-                nullptr))
+                      ctx->priv().caps()->getBackendFormatFromColorType(kRGBA_8888_SkColorType),
+                      SkBackingFit::kExact, kCanvasSize, kCanvasSize, kRGBA_8888_GrPixelConfig,
+                      GrColorType::kRGBA_8888, nullptr))
             , fDoStroke(doStroke) {
         if (!fCCPR) {
             ERRORF(reporter, "ccpr not enabled in GrContext for ccpr tests");
@@ -112,7 +112,7 @@ public:
 
         fCCPR->testingOnly_drawPathDirectly({
                 fCtx.get(), std::move(paint), &GrUserStencilSettings::kUnused, fRTC.get(), &noClip,
-                &clipBounds, &matrix, &shape, GrPathRenderer::AATypeFlags::kCoverage, false});
+                &clipBounds, &matrix, &shape, GrAAType::kCoverage, false});
     }
 
     void clipFullscreenRect(SkPath clipPath, SkPMColor4f color = { 0, 1, 0, 1 }) {

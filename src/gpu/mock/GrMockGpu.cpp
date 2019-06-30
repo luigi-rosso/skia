@@ -106,6 +106,25 @@ sk_sp<GrTexture> GrMockGpu::onCreateTexture(const GrSurfaceDesc& desc, SkBudgete
     return sk_sp<GrTexture>(new GrMockTexture(this, budgeted, desc, mipMapsStatus, texInfo));
 }
 
+sk_sp<GrTexture> GrMockGpu::onCreateCompressedTexture(int width, int height,
+                                                      SkImage::CompressionType compressionType,
+                                                      SkBudgeted budgeted, const void* data) {
+    if (fMockOptions.fFailTextureAllocations) {
+        return nullptr;
+    }
+    GrBackendFormat format = this->caps()->getBackendFormatFromCompressionType(compressionType);
+
+    GrMockTextureInfo texInfo;
+    texInfo.fConfig = *format.getMockFormat();
+    texInfo.fID = NextInternalTextureID();
+    GrSurfaceDesc desc;
+    desc.fConfig = texInfo.fConfig;
+    desc.fWidth = width;
+    desc.fHeight = height;
+    return sk_sp<GrTexture>(
+            new GrMockTexture(this, budgeted, desc, GrMipMapsStatus::kNotAllocated, texInfo));
+}
+
 sk_sp<GrTexture> GrMockGpu::onWrapBackendTexture(const GrBackendTexture& tex,
                                                  GrWrapOwnership ownership,
                                                  GrWrapCacheable wrapType, GrIOType ioType) {
@@ -193,7 +212,7 @@ GrStencilAttachment* GrMockGpu::createStencilAttachmentForRenderTarget(const GrR
                                                                        int height) {
     static constexpr int kBits = 8;
     fStats.incStencilAttachmentCreates();
-    return new GrMockStencilAttachment(this, width, height, kBits, rt->numColorSamples());
+    return new GrMockStencilAttachment(this, width, height, kBits, rt->numSamples());
 }
 
 GrBackendTexture GrMockGpu::createBackendTexture(int w, int h,
@@ -202,7 +221,8 @@ GrBackendTexture GrMockGpu::createBackendTexture(int w, int h,
                                                  GrRenderable /* renderable */,
                                                  const void* /* pixels */,
                                                  size_t /* rowBytes */,
-                                                 const SkColor4f* /* color */) {
+                                                 const SkColor4f* /* color */,
+                                                 GrProtected /* isProtected */) {
 
     const GrPixelConfig* pixelConfig = format.getMockFormat();
     if (!pixelConfig) {

@@ -12,8 +12,6 @@
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrContext.h"
 #include "include/gpu/GrTypes.h"
-#include "include/private/GrSurfaceProxy.h"
-#include "include/private/GrTextureProxy.h"
 #include "include/private/GrTypesPriv.h"
 #include "include/private/SkTemplates.h"
 #include "src/core/SkUtils.h"
@@ -21,6 +19,8 @@
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrRenderTargetContext.h"
 #include "src/gpu/GrSurfaceContext.h"
+#include "src/gpu/GrSurfaceProxy.h"
+#include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/SkGr.h"
 #include "tests/Test.h"
 #include "tools/gpu/GrContextFactory.h"
@@ -77,11 +77,11 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(CopySurface, reporter, ctxInfo) {
                         for (auto dstPoint : kDstPoints) {
                             for (auto ii: kImageInfos) {
                                 auto src = sk_gpu_test::MakeTextureProxyFromData(
-                                        context, sRenderable, kW, kH, ii.colorType(), sOrigin,
-                                        srcPixels.get(), kRowBytes);
+                                        context, sRenderable, kW, kH, ii.colorType(),
+                                        ii.alphaType(), sOrigin, srcPixels.get(), kRowBytes);
                                 auto dst = sk_gpu_test::MakeTextureProxyFromData(
-                                        context, dRenderable, kW, kH, ii.colorType(), dOrigin,
-                                        dstPixels.get(), kRowBytes);
+                                        context, dRenderable, kW, kH, ii.colorType(),
+                                        ii.alphaType(), dOrigin, dstPixels.get(), kRowBytes);
 
                                 // Should always work if the color type is RGBA, but may not work
                                 // for BGRA
@@ -105,7 +105,10 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(CopySurface, reporter, ctxInfo) {
                                 }
 
                                 sk_sp<GrSurfaceContext> dstContext =
-                                        context->priv().makeWrappedSurfaceContext(std::move(dst));
+                                        context->priv().makeWrappedSurfaceContext(
+                                                std::move(dst),
+                                                SkColorTypeToGrColorType(ii.colorType()),
+                                                ii.alphaType());
 
                                 bool result = false;
                                 if (sOrigin == dOrigin) {

@@ -10,7 +10,7 @@
 
 #include "include/core/SkMatrix.h"
 #include "include/core/SkRefCnt.h"
-#include "include/private/GrColor.h"
+#include "src/gpu/GrColor.h"
 #include "src/gpu/GrFragmentProcessor.h"
 #include "src/gpu/GrNonAtomicRef.h"
 #include "src/gpu/GrPendingIOResource.h"
@@ -59,8 +59,8 @@ public:
         InputFlags fInputFlags = InputFlags::kNone;
         const GrUserStencilSettings* fUserStencil = &GrUserStencilSettings::kUnused;
         const GrCaps* fCaps = nullptr;
-        GrResourceProvider* fResourceProvider = nullptr;
         GrXferProcessor::DstProxy fDstProxy;
+        GrSwizzle fOutputSwizzle;
     };
 
     /**
@@ -96,7 +96,8 @@ public:
      * must be "Porter Duff" (<= kLastCoeffMode). If using GrScissorTest::kEnabled, the caller must
      * specify a scissor rectangle through the DynamicState struct.
      **/
-    GrPipeline(GrScissorTest, SkBlendMode, InputFlags = InputFlags::kNone,
+    GrPipeline(GrScissorTest, SkBlendMode, const GrSwizzle& outputSwizzle,
+               InputFlags = InputFlags::kNone,
                const GrUserStencilSettings* = &GrUserStencilSettings::kUnused);
 
     GrPipeline(const InitArgs&, GrProcessorSet&&, GrAppliedClip&&);
@@ -182,15 +183,18 @@ public:
     bool isStencilEnabled() const {
         return SkToBool(fFlags & Flags::kStencilEnabled);
     }
-    bool isBad() const { return SkToBool(fFlags & Flags::kIsBad); }
+    SkDEBUGCODE(bool isBad() const { return SkToBool(fFlags & Flags::kIsBad); })
 
     GrXferBarrierType xferBarrierType(GrTexture*, const GrCaps&) const;
 
     // Used by Vulkan and Metal to cache their respective pipeline objects
     uint32_t getBlendInfoKey() const;
 
+    const GrSwizzle& outputSwizzle() const { return fOutputSwizzle; }
+
 private:
-    void markAsBad() { fFlags |= Flags::kIsBad; }
+
+    SkDEBUGCODE(void markAsBad() { fFlags |= Flags::kIsBad; })
 
     static constexpr uint8_t kLastInputFlag = (uint8_t)InputFlags::kSnapVerticesToPixelCenters;
 
@@ -199,7 +203,9 @@ private:
         kHasStencilClip = (kLastInputFlag << 1),
         kStencilEnabled = (kLastInputFlag << 2),
         kScissorEnabled = (kLastInputFlag << 3),
+#ifdef SK_DEBUG
         kIsBad = (kLastInputFlag << 4),
+#endif
     };
 
     GR_DECL_BITFIELD_CLASS_OPS_FRIENDS(Flags);
@@ -218,6 +224,8 @@ private:
 
     // This value is also the index in fFragmentProcessors where coverage processors begin.
     int fNumColorProcessors;
+
+    GrSwizzle fOutputSwizzle;
 };
 
 GR_MAKE_BITFIELD_CLASS_OPS(GrPipeline::InputFlags);

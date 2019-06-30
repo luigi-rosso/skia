@@ -53,7 +53,15 @@ public:
 
     std::unique_ptr<sksg::Scene> parse(const skjson::ObjectValue&);
 
-    sk_sp<SkTypeface> findFont(const SkString& name) const;
+    struct FontInfo {
+        SkString                  fFamily,
+                                  fStyle;
+        SkScalar                  fAscentPct;
+        sk_sp<SkTypeface>         fTypeface;
+
+        bool matches(const char family[], const char style[]) const;
+    };
+    const FontInfo* findFont(const SkString& name) const;
 
     // This is the workhorse for property binding: depending on whether the property is animated,
     // it will either apply immediately or instantiate and attach a keyframe animator.
@@ -101,8 +109,6 @@ private:
 
     sk_sp<sksg::RenderNode> attachComposition(const skjson::ObjectValue&, AnimatorScope*) const;
     sk_sp<sksg::RenderNode> attachLayer(const skjson::ObjectValue*, AttachLayerContext*) const;
-    sk_sp<sksg::RenderNode> attachLayerEffects(const skjson::ArrayValue& jeffects, AnimatorScope*,
-                                               sk_sp<sksg::RenderNode>) const;
 
     sk_sp<sksg::RenderNode> attachBlendMode(const skjson::ObjectValue&,
                                             sk_sp<sksg::RenderNode>) const;
@@ -112,22 +118,22 @@ private:
         const std::function<sk_sp<sksg::RenderNode>(const skjson::ObjectValue&,
                                                     AnimatorScope* ctx)>&) const;
     const ImageAssetInfo* loadImageAsset(const skjson::ObjectValue&) const;
-    sk_sp<sksg::RenderNode> attachImageAsset(const skjson::ObjectValue&, const LayerInfo&,
+    sk_sp<sksg::RenderNode> attachImageAsset(const skjson::ObjectValue&, LayerInfo*,
                                              AnimatorScope*) const;
 
     sk_sp<sksg::RenderNode> attachNestedAnimation(const char* name, AnimatorScope* ascope) const;
 
-    sk_sp<sksg::RenderNode> attachImageLayer  (const skjson::ObjectValue&, const LayerInfo&,
+    sk_sp<sksg::RenderNode> attachImageLayer  (const skjson::ObjectValue&, LayerInfo*,
                                                AnimatorScope*) const;
-    sk_sp<sksg::RenderNode> attachNullLayer   (const skjson::ObjectValue&, const LayerInfo&,
+    sk_sp<sksg::RenderNode> attachNullLayer   (const skjson::ObjectValue&, LayerInfo*,
                                                AnimatorScope*) const;
-    sk_sp<sksg::RenderNode> attachPrecompLayer(const skjson::ObjectValue&, const LayerInfo&,
+    sk_sp<sksg::RenderNode> attachPrecompLayer(const skjson::ObjectValue&, LayerInfo*,
                                                AnimatorScope*) const;
-    sk_sp<sksg::RenderNode> attachShapeLayer  (const skjson::ObjectValue&, const LayerInfo&,
+    sk_sp<sksg::RenderNode> attachShapeLayer  (const skjson::ObjectValue&, LayerInfo*,
                                                AnimatorScope*) const;
-    sk_sp<sksg::RenderNode> attachSolidLayer  (const skjson::ObjectValue&, const LayerInfo&,
+    sk_sp<sksg::RenderNode> attachSolidLayer  (const skjson::ObjectValue&, LayerInfo*,
                                                AnimatorScope*) const;
-    sk_sp<sksg::RenderNode> attachTextLayer   (const skjson::ObjectValue&, const LayerInfo&,
+    sk_sp<sksg::RenderNode> attachTextLayer   (const skjson::ObjectValue&, LayerInfo*,
                                                AnimatorScope*) const;
 
     bool dispatchColorProperty(const sk_sp<sksg::Color>&) const;
@@ -186,24 +192,15 @@ private:
     mutable const char*        fPropertyObserverContext;
     mutable bool               fHasNontrivialBlending : 1;
 
-
     struct LayerInfo {
-        float fInPoint,
-              fOutPoint;
+        SkSize      fSize;
+        const float fInPoint,
+                    fOutPoint;
     };
 
     struct AssetInfo {
         const skjson::ObjectValue* fAsset;
         mutable bool               fIsAttaching; // Used for cycle detection
-    };
-
-    struct FontInfo {
-        SkString                  fFamily,
-                                  fStyle;
-        SkScalar                  fAscent;
-        sk_sp<SkTypeface>         fTypeface;
-
-        bool matches(const char family[], const char style[]) const;
     };
 
     struct ImageAssetInfo {

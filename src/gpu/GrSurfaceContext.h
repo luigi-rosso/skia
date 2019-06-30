@@ -9,8 +9,8 @@
 #define GrSurfaceContext_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/private/GrSurfaceProxy.h"
 #include "src/gpu/GrColorSpaceInfo.h"
+#include "src/gpu/GrSurfaceProxy.h"
 
 class GrAuditTrail;
 class GrDrawingManager;
@@ -128,7 +128,11 @@ public:
 protected:
     friend class GrSurfaceContextPriv;
 
-    GrSurfaceContext(GrRecordingContext*, GrPixelConfig, sk_sp<SkColorSpace>);
+    GrSurfaceContext(GrRecordingContext*,
+                     GrColorType,
+                     SkAlphaType,
+                     sk_sp<SkColorSpace>,
+                     GrPixelConfig);
 
     GrDrawingManager* drawingManager();
     const GrDrawingManager* drawingManager() const;

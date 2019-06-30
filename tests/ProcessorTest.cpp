@@ -45,13 +45,15 @@ public:
 
     FixedFunctionFlags fixedFunctionFlags() const override { return FixedFunctionFlags::kNone; }
 
-    GrProcessorSet::Analysis finalize(const GrCaps& caps, const GrAppliedClip* clip,
-                                      GrFSAAType fsaaType, GrClampType clampType) override {
+    GrProcessorSet::Analysis finalize(
+            const GrCaps& caps, const GrAppliedClip* clip, bool hasMixedSampledCoverage,
+            GrClampType clampType) override {
         static constexpr GrProcessorAnalysisColor kUnknownColor;
         SkPMColor4f overrideColor;
         return fProcessors.finalize(
                 kUnknownColor, GrProcessorAnalysisCoverage::kNone, clip,
-                &GrUserStencilSettings::kUnused, fsaaType, caps, clampType, &overrideColor);
+                &GrUserStencilSettings::kUnused, hasMixedSampledCoverage, caps, clampType,
+                &overrideColor);
     }
 
 private:
@@ -148,7 +150,7 @@ static void check_refs(skiatest::Reporter* reporter,
                        int32_t expectedProxyRefs,
                        int32_t expectedBackingRefs) {
     int32_t actualProxyRefs = proxy->priv().getProxyRefCnt();
-    int32_t actualBackingRefs = proxy->getBackingRefCnt_TestOnly();
+    int32_t actualBackingRefs = proxy->testingOnly_getBackingRefCnt();
 
     SkASSERT(actualProxyRefs == expectedProxyRefs);
     SkASSERT(actualBackingRefs == expectedBackingRefs);
@@ -173,8 +175,8 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(ProcessorRefTest, reporter, ctxInfo) {
         for (int parentCnt = 0; parentCnt < 2; parentCnt++) {
             sk_sp<GrRenderTargetContext> renderTargetContext(
                     context->priv().makeDeferredRenderTargetContext(
-                                                             format, SkBackingFit::kApprox, 1, 1,
-                                                             kRGBA_8888_GrPixelConfig, nullptr));
+                            format, SkBackingFit::kApprox, 1, 1, kRGBA_8888_GrPixelConfig,
+                            GrColorType::kRGBA_8888, nullptr));
             {
                 sk_sp<GrTextureProxy> proxy = proxyProvider->createProxy(
                         format, desc, kTopLeft_GrSurfaceOrigin, SkBackingFit::kExact,
@@ -344,7 +346,9 @@ bool log_surface_context(sk_sp<GrSurfaceContext> src, SkString* dst) {
 }
 
 bool log_surface_proxy(GrContext* context, sk_sp<GrSurfaceProxy> src, SkString* dst) {
-    sk_sp<GrSurfaceContext> sContext(context->priv().makeWrappedSurfaceContext(src));
+    // All the inputs are made from kRGBA_8888_SkColorType/kPremul_SkAlphaType bitmaps.
+    sk_sp<GrSurfaceContext> sContext(context->priv().makeWrappedSurfaceContext(
+            src, GrColorType::kRGBA_8888, kPremul_SkAlphaType));
     return log_surface_context(sContext, dst);
 }
 
@@ -436,7 +440,7 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(ProcessorOptimizationValidationTest, repor
     static constexpr int kRenderSize = 256;
     sk_sp<GrRenderTargetContext> rtc = context->priv().makeDeferredRenderTargetContext(
             format, SkBackingFit::kExact, kRenderSize, kRenderSize, kRGBA_8888_GrPixelConfig,
-            nullptr);
+            GrColorType::kRGBA_8888, nullptr);
 
     sk_sp<GrTextureProxy> proxies[2];
     if (!init_test_textures(resourceProvider, proxyProvider, &random, proxies)) {
@@ -482,9 +486,6 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(ProcessorOptimizationValidationTest, repor
 #endif
         for (int j = 0; j < timesToInvokeFactory; ++j) {
             fp = FPFactory::MakeIdx(i, &testData);
-            if (!fp->instantiate(resourceProvider)) {
-                continue;
-            }
 
             if (!fp->hasConstantOutputForConstantInput() && !fp->preservesOpaqueInput() &&
                 !fp->compatibleWithCoverageAsAlpha()) {
@@ -677,7 +678,7 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(ProcessorCloneTest, reporter, ctxInfo) {
     static constexpr int kRenderSize = 1024;
     sk_sp<GrRenderTargetContext> rtc = context->priv().makeDeferredRenderTargetContext(
             format, SkBackingFit::kExact, kRenderSize, kRenderSize, kRGBA_8888_GrPixelConfig,
-            nullptr);
+            GrColorType::kRGBA_8888, nullptr);
 
     sk_sp<GrTextureProxy> proxies[2];
     if (!init_test_textures(resourceProvider, proxyProvider, &random, proxies)) {
@@ -703,9 +704,6 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(ProcessorCloneTest, reporter, ctxInfo) {
                 continue;
             }
             const char* name = fp->name();
-            if (!fp->instantiate(resourceProvider) || !clone->instantiate(resourceProvider)) {
-                continue;
-            }
             REPORTER_ASSERT(reporter, !strcmp(fp->name(), clone->name()));
             REPORTER_ASSERT(reporter, fp->compatibleWithCoverageAsAlpha() ==
                                       clone->compatibleWithCoverageAsAlpha());

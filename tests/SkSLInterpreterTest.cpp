@@ -398,6 +398,15 @@ DEF_TEST(SkSLInterpreterWhile, r) {
          "if (color.r > 5) break; } }", 0, 0, 0, 0, 5.5, 0, 0, 0);
     test(r, "void main(inout half4 color) { while (color.r < 10) { color.r += 0.5; "
             "if (color.r < 5) continue; break; } }", 0, 0, 0, 0, 5, 0, 0, 0);
+    test(r,
+         "void main(inout half4 color) {"
+         "    while (true) {"
+         "        if (color.r > 4) { break; }"
+         "        while (true) { color.a = 1; break; }"
+         "        break;"
+         "    }"
+         "}",
+         6, 5, 4, 3, 6, 5, 4, 3);
 }
 
 DEF_TEST(SkSLInterpreterDo, r) {
@@ -652,6 +661,23 @@ DEF_TEST(SkSLInterpreterFunctions, r) {
     REPORTER_ASSERT(r, fibOut == 13);
 }
 
+DEF_TEST(SkSLInterpreterOutParams, r) {
+    test(r,
+         "void oneAlpha(inout half4 color) { color.a = 1; }"
+         "void main(inout half4 color) { oneAlpha(color); }",
+         0, 0, 0, 0, 0, 0, 0, 1);
+    test(r,
+         "half2 tricky(half x, half y, inout half2 color, half z) {"
+         "    color.xy = color.yx;"
+         "    return half2(x + y, z);"
+         "}"
+         "void main(inout half4 color) {"
+         "    half2 t = tricky(1, 2, color.rb, 5);"
+         "    color.ga = t;"
+         "}",
+         1, 2, 3, 4, 3, 3, 1, 5);
+}
+
 DEF_TEST(SkSLInterpreterMathFunctions, r) {
     float value, expected;
 
@@ -664,6 +690,13 @@ DEF_TEST(SkSLInterpreterMathFunctions, r) {
 
     value = 25.0f; expected = 5.0f;
     test(r, "float main(float x) { return sqrt(x); }", &value, 1, &expected);
+}
+
+DEF_TEST(SkSLInterpreterVoidFunction, r) {
+    test(r,
+         "half x; void foo() { x = 1.0; }"
+         "void main(inout half4 color) { foo(); color.r = x; }",
+         0, 0, 0, 0, 1, 0, 0, 0);
 }
 
 DEF_TEST(SkSLInterpreterMix, r) {
@@ -735,7 +768,7 @@ public:
         return type() != *fCompiler.context().fVoid_Type;
     }
 
-    void read(void* target) override {
+    void read(int /*unusedIndex*/, float* target) override {
         if (type() == *fCompiler.context().fInt_Type) {
             *(int*) target = *fValue.as<skjson::NumberValue>();
         } else if (type() == *fCompiler.context().fFloat_Type) {
@@ -778,11 +811,11 @@ public:
         return true;
     }
 
-    void read(void* target) override {
+    void read(int /*unusedIndex*/, float* target) override {
         memcpy(target, fData, fSize);
     }
 
-    void write(void* src) override {
+    void write(int /*unusedIndex*/, float* src) override {
         memcpy(fData, src, fSize);
     }
 
@@ -887,8 +920,8 @@ public:
         outTypes[0] = fCompiler.context().fFloat_Type.get();
     }
 
-    void call(void* arguments, void* outReturn) override {
-        ((float*)outReturn)[0] = fFunction(((float*)arguments)[0]);
+    void call(int /*unusedIndex*/, float* arguments, float* outReturn) override {
+        outReturn[0] = fFunction(arguments[0]);
     }
 
 private:
@@ -951,8 +984,8 @@ public:
         outTypes[0] = fCompiler.context().fFloat4_Type.get();
     }
 
-    void call(void* arguments, void* outReturn) override {
-        fFunction((float*) arguments, (float*) outReturn);
+    void call(int /*unusedIndex*/, float* arguments, float* outReturn) override {
+        fFunction(arguments, outReturn);
     }
 
 private:
