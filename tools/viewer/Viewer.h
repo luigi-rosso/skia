@@ -18,7 +18,7 @@
 #include "tools/sk_app/Application.h"
 #include "tools/sk_app/CommandSet.h"
 #include "tools/sk_app/Window.h"
-#include "tools/timer/AnimTimer.h"
+#include "tools/viewer/AnimTimer.h"
 #include "tools/viewer/ImGuiLayer.h"
 #include "tools/viewer/Slide.h"
 #include "tools/viewer/StatsLayer.h"
@@ -37,11 +37,11 @@ public:
     void onBackendCreated() override;
     void onPaint(SkSurface*) override;
     void onResize(int width, int height) override;
-    bool onTouch(intptr_t owner, sk_app::Window::InputState state, float x, float y) override;
-    bool onMouse(int x, int y, sk_app::Window::InputState state, uint32_t modifiers) override;
+    bool onTouch(intptr_t owner, skui::InputState state, float x, float y) override;
+    bool onMouse(int x, int y, skui::InputState state, skui::ModifierKey modifiers) override;
     void onUIStateChanged(const SkString& stateName, const SkString& stateValue) override;
-    bool onKey(sk_app::Window::Key key, sk_app::Window::InputState state, uint32_t modifiers) override;
-    bool onChar(SkUnichar c, uint32_t modifiers) override;
+    bool onKey(skui::Key key, skui::InputState state, skui::ModifierKey modifiers) override;
+    bool onChar(SkUnichar c, skui::ModifierKey modifiers) override;
 
     struct SkFontFields {
         bool fTypeface = false;
@@ -56,6 +56,7 @@ public:
         bool fEmbeddedBitmaps = false;
         bool fLinearMetrics = false;
         bool fEmbolden = false;
+        bool fBaselineSnap = false;
     };
     struct SkPaintFields {
         bool fPathEffect = false;

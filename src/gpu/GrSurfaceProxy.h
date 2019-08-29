@@ -14,54 +14,24 @@
 #include "include/gpu/GrSurface.h"
 #include "include/gpu/GrTexture.h"
 #include "include/private/SkNoncopyable.h"
+#include "src/gpu/GrNonAtomicRef.h"
 #include "src/gpu/GrSwizzle.h"
 
 class GrCaps;
 class GrContext_Base;
-class GrOpList;
+class GrOpsTask;
 class GrRecordingContext;
-class GrRenderTargetOpList;
 class GrRenderTargetProxy;
+class GrRenderTask;
 class GrResourceProvider;
 class GrSurfaceContext;
 class GrSurfaceProxyPriv;
-class GrTextureOpList;
 class GrTextureProxy;
 
-// This is basically SkRefCntBase except Ganesh uses internalGetProxyRefCnt for more than asserts.
-class GrIORefProxy : public SkNoncopyable {
+class GrSurfaceProxy : public GrNonAtomicRef<GrSurfaceProxy> {
 public:
-    GrIORefProxy() : fRefCnt(1) {}
+    virtual ~GrSurfaceProxy();
 
-    virtual ~GrIORefProxy() {}
-
-    bool unique() const {
-        SkASSERT(fRefCnt > 0);
-        return 1 == fRefCnt;
-    }
-
-    void ref() const {
-        SkASSERT(fRefCnt > 0);
-        ++fRefCnt;
-    }
-
-    void unref() const {
-        SkASSERT(fRefCnt > 0);
-        --fRefCnt;
-        if (0 == fRefCnt) {
-            delete this;
-        }
-    }
-
-protected:
-    int32_t internalGetProxyRefCnt() const { return fRefCnt; }
-
-private:
-    mutable int32_t fRefCnt;
-};
-
-class GrSurfaceProxy : public GrIORefProxy {
-public:
     /**
      * Some lazy proxy callbacks want to set their own (or no key) on the GrSurfaces they return.
      * Others want the GrSurface's key to be kept in sync with the proxy's key. This enum controls
@@ -269,11 +239,20 @@ public:
      */
     bool readOnly() const { return fSurfaceFlags & GrInternalSurfaceFlags::kReadOnly; }
 
-    void setLastOpList(GrOpList* opList);
-    GrOpList* getLastOpList() { return fLastOpList; }
+    /**
+     * This means surface is a multisampled render target, and internally holds a non-msaa texture
+     * for resolving into. The render target resolves itself by blitting into this internal texture.
+     * (asTexture() might or might not return the internal texture, but if it does, we always
+     * resolve the render target before accessing this texture's data.)
+     */
+    bool requiresManualMSAAResolve() const {
+        return fSurfaceFlags & GrInternalSurfaceFlags::kRequiresManualMSAAResolve;
+    }
 
-    GrRenderTargetOpList* getLastRenderTargetOpList();
-    GrTextureOpList* getLastTextureOpList();
+    void setLastRenderTask(GrRenderTask*);
+    GrRenderTask* getLastRenderTask() { return fLastRenderTask; }
+
+    GrOpsTask* getLastOpsTask();
 
     /**
      * Retrieves the amount of GPU memory that will be or currently is used by this resource
@@ -326,24 +305,23 @@ public:
 protected:
     // Deferred version
     GrSurfaceProxy(const GrBackendFormat& format, const GrSurfaceDesc& desc,
-                   GrSurfaceOrigin origin, const GrSwizzle& textureSwizzle, SkBackingFit fit,
-                   SkBudgeted budgeted, GrInternalSurfaceFlags surfaceFlags)
-            : GrSurfaceProxy(nullptr, LazyInstantiationType::kSingleUse, format, desc, origin,
-                             textureSwizzle, fit, budgeted, surfaceFlags) {
+                   GrRenderable renderable, GrSurfaceOrigin origin, const GrSwizzle& textureSwizzle,
+                   SkBackingFit fit, SkBudgeted budgeted, GrProtected isProtected,
+                   GrInternalSurfaceFlags surfaceFlags)
+            : GrSurfaceProxy(nullptr, LazyInstantiationType::kSingleUse, format, desc, renderable,
+                             origin, textureSwizzle, fit, budgeted, isProtected, surfaceFlags) {
         // Note: this ctor pulls a new uniqueID from the same pool at the GrGpuResources
     }
 
     // Lazy-callback version
-    GrSurfaceProxy(LazyInstantiateCallback&&, LazyInstantiationType,
-                   const GrBackendFormat& format, const GrSurfaceDesc&, GrSurfaceOrigin,
-                   const GrSwizzle& textureSwizzle, SkBackingFit, SkBudgeted,
+    GrSurfaceProxy(LazyInstantiateCallback&&, LazyInstantiationType, const GrBackendFormat& format,
+                   const GrSurfaceDesc&, GrRenderable, GrSurfaceOrigin,
+                   const GrSwizzle& textureSwizzle, SkBackingFit, SkBudgeted, GrProtected,
                    GrInternalSurfaceFlags);
 
     // Wrapped version.
     GrSurfaceProxy(sk_sp<GrSurface>, GrSurfaceOrigin, const GrSwizzle& textureSwizzle,
                    SkBackingFit);
-
-    ~GrSurfaceProxy() override;
 
     friend class GrSurfaceProxyPriv;
 
@@ -351,15 +329,13 @@ protected:
     bool ignoredByResourceAllocator() const { return fIgnoredByResourceAllocator; }
     void setIgnoredByResourceAllocator() { fIgnoredByResourceAllocator = true; }
 
-    int32_t getProxyRefCnt() const { return this->internalGetProxyRefCnt(); }
-
     void computeScratchKey(GrScratchKey*) const;
 
     virtual sk_sp<GrSurface> createSurface(GrResourceProvider*) const = 0;
     void assign(sk_sp<GrSurface> surface);
 
-    sk_sp<GrSurface> createSurfaceImpl(GrResourceProvider*, int sampleCnt, bool needsStencil,
-                                       GrSurfaceDescFlags, GrMipMapped) const;
+    sk_sp<GrSurface> createSurfaceImpl(GrResourceProvider*, int sampleCnt,
+                                       int minStencilSampleCount, GrRenderable, GrMipMapped) const;
 
     // Once the size of a fully-lazy proxy is decided, and before it gets instantiated, the client
     // can use this optional method to specify the proxy's size. (A proxy's size can be less than
@@ -372,8 +348,8 @@ protected:
         fHeight = height;
     }
 
-    bool instantiateImpl(GrResourceProvider* resourceProvider, int sampleCnt, bool needsStencil,
-                         GrSurfaceDescFlags descFlags, GrMipMapped, const GrUniqueKey*);
+    bool instantiateImpl(GrResourceProvider* resourceProvider, int sampleCnt,
+                         int minStencilSampleCount, GrRenderable, GrMipMapped, const GrUniqueKey*);
 
     // For deferred proxies this will be null until the proxy is instantiated.
     // For wrapped proxies it will point to the wrapped resource.
@@ -421,7 +397,6 @@ private:
 
     virtual size_t onUninstantiatedGpuMemorySize() const = 0;
 
-    bool                   fNeedsClear;
     bool                   fIgnoredByResourceAllocator = false;
     GrProtected            fIsProtected;
 
@@ -431,16 +406,14 @@ private:
     // the instantiation method.
     mutable size_t         fGpuMemorySize;
 
-    // The last opList that wrote to or is currently going to write to this surface
-    // The opList can be closed (e.g., no surface context is currently bound
+    // The last GrRenderTask that wrote to or is currently going to write to this surface
+    // The GrRenderTask can be closed (e.g., no surface context is currently bound
     // to this proxy).
     // This back-pointer is required so that we can add a dependancy between
-    // the opList used to create the current contents of this surface
-    // and the opList of a destination surface to which this one is being drawn or copied.
-    // This pointer is unreffed. OpLists own a ref on their surface proxies.
-    GrOpList*              fLastOpList;
-
-    typedef GrIORefProxy INHERITED;
+    // the GrRenderTask used to create the current contents of this surface
+    // and the GrRenderTask of a destination surface to which this one is being drawn or copied.
+    // This pointer is unreffed. GrRenderTasks own a ref on their surface proxies.
+    GrRenderTask*          fLastRenderTask;
 };
 
 #endif

@@ -14,9 +14,9 @@
 #include "src/gpu/GrColor.h"
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrGeometryProcessor.h"
-#include "src/gpu/GrGpuCommandBuffer.h"
 #include "src/gpu/GrMemoryPool.h"
 #include "src/gpu/GrOpFlushState.h"
+#include "src/gpu/GrOpsRenderPass.h"
 #include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrRenderTargetContext.h"
 #include "src/gpu/GrRenderTargetContextPriv.h"
@@ -149,9 +149,9 @@ private:
         }
         GrPipeline::DynamicStateArrays dynamicState;
         dynamicState.fScissorRects = kDynamicScissors;
-        state->rtCommandBuffer()->draw(GrPipelineDynamicStateTestProcessor(), pipeline, nullptr,
-                                       &dynamicState, meshes.begin(), 4,
-                                       SkRect::MakeIWH(kScreenSize, kScreenSize));
+        state->opsRenderPass()->draw(GrPipelineDynamicStateTestProcessor(), pipeline, nullptr,
+                                     &dynamicState, meshes.begin(), 4,
+                                     SkRect::MakeIWH(kScreenSize, kScreenSize));
     }
 
     GrScissorTest               fScissorTest;
@@ -164,12 +164,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrPipelineDynamicStateTest, reporter, ctxInfo
     GrContext* context = ctxInfo.grContext();
     GrResourceProvider* rp = context->priv().resourceProvider();
 
-    const GrBackendFormat format =
-            context->priv().caps()->getBackendFormatFromColorType(kRGBA_8888_SkColorType);
-
-    sk_sp<GrRenderTargetContext> rtc(context->priv().makeDeferredRenderTargetContext(
-            format, SkBackingFit::kExact, kScreenSize, kScreenSize, kRGBA_8888_GrPixelConfig,
-            GrColorType::kRGBA_8888, nullptr));
+    auto rtc = context->priv().makeDeferredRenderTargetContext(
+            SkBackingFit::kExact, kScreenSize, kScreenSize, GrColorType::kRGBA_8888, nullptr);
     if (!rtc) {
         ERRORF(reporter, "could not create render target context.");
         return;
@@ -214,7 +210,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrPipelineDynamicStateTest, reporter, ctxInfo
             GrPipelineDynamicStateTestOp::Make(context, scissorTest, vbuff));
         rtc->readPixels(SkImageInfo::Make(kScreenSize, kScreenSize,
                                           kRGBA_8888_SkColorType, kPremul_SkAlphaType),
-                        resultPx, 4 * kScreenSize, 0, 0, 0);
+                        resultPx, 4 * kScreenSize, {0, 0});
         for (int y = 0; y < kScreenSize; ++y) {
             for (int x = 0; x < kScreenSize; ++x) {
                 int expectedColorIdx;

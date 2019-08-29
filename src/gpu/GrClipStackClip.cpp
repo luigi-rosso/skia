@@ -125,6 +125,7 @@ bool GrClipStackClip::PathNeedsSWRenderer(GrRecordingContext* context,
         GrShape shape(path, GrStyle::SimpleFill());
         GrPathRenderer::CanDrawPathArgs canDrawArgs;
         canDrawArgs.fCaps = context->priv().caps();
+        canDrawArgs.fProxy = renderTargetContext->proxy();
         canDrawArgs.fClipConservativeBounds = &scissorRect;
         canDrawArgs.fViewMatrix = &viewMatrix;
         canDrawArgs.fShape = &shape;
@@ -244,11 +245,10 @@ bool GrClipStackClip::apply(GrRecordingContext* context, GrRenderTargetContext* 
         }
     }
 
-    // The opList ID must not be looked up until AFTER producing the clip mask (if any). That step
-    // can cause a flush or otherwise change which opList our draw is going into.
-    uint32_t opListID = renderTargetContext->getOpList()->uniqueID();
-    int rtWidth = renderTargetContext->width(), rtHeight = renderTargetContext->height();
-    if (auto clipFPs = reducedClip.finishAndDetachAnalyticFPs(ccpr, opListID, rtWidth, rtHeight)) {
+    // The opsTask ID must not be looked up until AFTER producing the clip mask (if any). That step
+    // can cause a flush or otherwise change which opstask our draw is going into.
+    uint32_t opsTaskID = renderTargetContext->getOpsTask()->uniqueID();
+    if (auto clipFPs = reducedClip.finishAndDetachAnalyticFPs(ccpr, opsTaskID)) {
         out->addCoverageFP(std::move(clipFPs));
     }
 
@@ -350,28 +350,23 @@ sk_sp<GrTextureProxy> GrClipStackClip::createAlphaClipMask(GrRecordingContext* c
                          reducedClip.numAnalyticFPs(), &key);
 
     sk_sp<GrTextureProxy> proxy(proxyProvider->findOrCreateProxyByUniqueKey(
-                                                                key, kTopLeft_GrSurfaceOrigin));
+            key, GrColorType::kAlpha_8, kTopLeft_GrSurfaceOrigin));
     if (proxy) {
         return proxy;
     }
 
-    GrBackendFormat format =
-            context->priv().caps()->getBackendFormatFromColorType(kAlpha_8_SkColorType);
     auto isProtected = proxy->isProtected() ? GrProtected::kYes : GrProtected::kNo;
-    sk_sp<GrRenderTargetContext> rtc(
-            context->priv().makeDeferredRenderTargetContextWithFallback(format,
-                                                                        SkBackingFit::kApprox,
-                                                                        reducedClip.width(),
-                                                                        reducedClip.height(),
-                                                                        kAlpha_8_GrPixelConfig,
-                                                                        GrColorType::kAlpha_8,
-                                                                        nullptr,
-                                                                        1,
-                                                                        GrMipMapped::kNo,
-                                                                        kTopLeft_GrSurfaceOrigin,
-                                                                        nullptr,
-                                                                        SkBudgeted::kYes,
-                                                                        isProtected));
+    auto rtc = context->priv().makeDeferredRenderTargetContextWithFallback(SkBackingFit::kApprox,
+                                                                           reducedClip.width(),
+                                                                           reducedClip.height(),
+                                                                           GrColorType::kAlpha_8,
+                                                                           nullptr,
+                                                                           1,
+                                                                           GrMipMapped::kNo,
+                                                                           kTopLeft_GrSurfaceOrigin,
+                                                                           nullptr,
+                                                                           SkBudgeted::kYes,
+                                                                           isProtected);
     if (!rtc) {
         return nullptr;
     }
@@ -474,9 +469,10 @@ sk_sp<GrTextureProxy> GrClipStackClip::createSoftwareClipMask(
                          reducedClip.numAnalyticFPs(), &key);
 
     GrProxyProvider* proxyProvider = context->priv().proxyProvider();
+    const GrCaps* caps = context->priv().caps();
 
     sk_sp<GrTextureProxy> proxy(proxyProvider->findOrCreateProxyByUniqueKey(
-                                                                  key, kTopLeft_GrSurfaceOrigin));
+            key, GrColorType::kAlpha_8, kTopLeft_GrSurfaceOrigin));
     if (proxy) {
         return proxy;
     }
@@ -497,18 +493,19 @@ sk_sp<GrTextureProxy> GrClipStackClip::createSoftwareClipMask(
         desc.fHeight = maskSpaceIBounds.height();
         desc.fConfig = kAlpha_8_GrPixelConfig;
 
-        GrBackendFormat format =
-                context->priv().caps()->getBackendFormatFromColorType(kAlpha_8_SkColorType);
+        GrBackendFormat format = caps->getDefaultBackendFormat(GrColorType::kAlpha_8,
+                                                               GrRenderable::kNo);
 
         // MDB TODO: We're going to fill this proxy with an ASAP upload (which is out of order wrt
         // to ops), so it can't have any pending IO.
-        proxy = proxyProvider->createProxy(format, desc, kTopLeft_GrSurfaceOrigin,
-                                           SkBackingFit::kApprox, SkBudgeted::kYes);
+        proxy = proxyProvider->createProxy(format, desc, GrRenderable::kNo, 1,
+                                           kTopLeft_GrSurfaceOrigin, SkBackingFit::kApprox,
+                                           SkBudgeted::kYes, GrProtected::kNo);
 
         auto uploader = skstd::make_unique<GrTDeferredProxyUploader<ClipMaskData>>(reducedClip);
         GrTDeferredProxyUploader<ClipMaskData>* uploaderRaw = uploader.get();
         auto drawAndUploadMask = [uploaderRaw, maskSpaceIBounds] {
-            TRACE_EVENT0("skia", "Threaded SW Clip Mask Render");
+            TRACE_EVENT0("skia.gpu", "Threaded SW Clip Mask Render");
             GrSWMaskHelper helper(uploaderRaw->getPixels());
             if (helper.init(maskSpaceIBounds)) {
                 draw_clip_elements_to_mask_helper(helper, uploaderRaw->data().elements(),

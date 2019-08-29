@@ -92,9 +92,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(CopySurface, reporter, ctxInfo) {
                                         continue;
                                     }
                                 } else {
-                                    GrPixelConfig config =
-                                            SkColorType2GrPixelConfig(kBGRA_8888_SkColorType);
-                                    if (!context->priv().caps()->isConfigTexturable(config)) {
+                                    if (!context->defaultBackendFormat(
+                                            kBGRA_8888_SkColorType, GrRenderable::kNo).isValid()) {
                                         continue;
                                     }
                                     if (!src || !dst) {
@@ -104,11 +103,10 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(CopySurface, reporter, ctxInfo) {
                                     }
                                 }
 
-                                sk_sp<GrSurfaceContext> dstContext =
-                                        context->priv().makeWrappedSurfaceContext(
-                                                std::move(dst),
-                                                SkColorTypeToGrColorType(ii.colorType()),
-                                                ii.alphaType());
+                                auto dstContext = context->priv().makeWrappedSurfaceContext(
+                                        std::move(dst),
+                                        SkColorTypeToGrColorType(ii.colorType()),
+                                        ii.alphaType());
 
                                 bool result = false;
                                 if (sOrigin == dOrigin) {
@@ -161,7 +159,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(CopySurface, reporter, ctxInfo) {
                                 }
 
                                 sk_memset32(read.get(), 0, kW * kH);
-                                if (!dstContext->readPixels(ii, read.get(), kRowBytes, 0, 0)) {
+                                if (!dstContext->readPixels(ii, read.get(), kRowBytes, {0, 0})) {
                                     ERRORF(reporter, "Error calling readPixels");
                                     continue;
                                 }

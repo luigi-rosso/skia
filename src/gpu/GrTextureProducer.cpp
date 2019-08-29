@@ -27,8 +27,6 @@ sk_sp<GrTextureProxy> GrTextureProducer::CopyOnGpu(GrRecordingContext* context,
                                                    bool dstWillRequireMipMaps) {
     SkASSERT(context);
 
-    GrPixelConfig config = GrMakePixelConfigUncompressed(inputProxy->config());
-
     const SkRect dstRect = SkRect::MakeIWH(copyParams.fWidth, copyParams.fHeight);
     GrMipMapped mipMapped = dstWillRequireMipMaps ? GrMipMapped::kYes : GrMipMapped::kNo;
 
@@ -50,15 +48,9 @@ sk_sp<GrTextureProxy> GrTextureProducer::CopyOnGpu(GrRecordingContext* context,
         }
     }
 
-    GrBackendFormat format = inputProxy->backendFormat().makeTexture2D();
-    if (!format.isValid()) {
-        return nullptr;
-    }
-
-    sk_sp<GrRenderTargetContext> copyRTC =
-            context->priv().makeDeferredRenderTargetContextWithFallback(
-                    format, SkBackingFit::kExact, dstRect.width(), dstRect.height(), config,
-                    colorType, nullptr, 1, mipMapped, inputProxy->origin());
+    auto copyRTC = context->priv().makeDeferredRenderTargetContextWithFallback(
+            SkBackingFit::kExact, dstRect.width(), dstRect.height(), colorType, nullptr, 1,
+            mipMapped, inputProxy->origin());
     if (!copyRTC) {
         return nullptr;
     }
@@ -278,7 +270,7 @@ sk_sp<GrTextureProxy> GrTextureProducer::refTextureProxyForParams(
     // Check to make sure that if we say the texture willBeMipped that the returned texture has mip
     // maps, unless the config is not copyable.
     SkASSERT(!result || !willBeMipped || result->mipMapped() == GrMipMapped::kYes ||
-             !this->context()->priv().caps()->isConfigCopyable(result->config()));
+             !this->context()->priv().caps()->isFormatCopyable(result->backendFormat()));
 
     // Check that the "no scaling expected" case always returns a proxy of the same size as the
     // producer.
@@ -302,7 +294,7 @@ sk_sp<GrTextureProxy> GrTextureProducer::refTextureProxy(GrMipMapped willNeedMip
     // Check to make sure that if we say the texture willBeMipped that the returned texture has mip
     // maps, unless the config is not copyable.
     SkASSERT(!result || !willBeMipped || result->mipMapped() == GrMipMapped::kYes ||
-             !this->context()->priv().caps()->isConfigCopyable(result->config()));
+             !this->context()->priv().caps()->isFormatCopyable(result->backendFormat()));
 
     // Check that no scaling occured and we returned a proxy of the same size as the producer.
     SkASSERT(!result || (result->width() == this->width() && result->height() == this->height()));

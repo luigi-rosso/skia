@@ -19,9 +19,8 @@
 #include <new>
 
 class GrCaps;
-class GrGpuCommandBuffer;
 class GrOpFlushState;
-class GrRenderTargetOpList;
+class GrOpsRenderPass;
 
 /**
  * GrOp is the base class for all Ganesh deferred GPU operations. To facilitate reordering and to
@@ -69,7 +68,7 @@ public:
 
     virtual const char* name() const = 0;
 
-    using VisitProxyFunc = std::function<void(GrSurfaceProxy*, GrMipMapped)>;
+    using VisitProxyFunc = std::function<void(GrTextureProxy*, GrMipMapped)>;
 
     virtual void visitProxies(const VisitProxyFunc&) const {
         // This default implementation assumes the op has no proxies
@@ -162,7 +161,7 @@ public:
 
     /** Issues the op's commands to GrGpu. */
     void execute(GrOpFlushState* state, const SkRect& chainBounds) {
-        TRACE_EVENT0("skia", name());
+        TRACE_EVENT0("skia.gpu", name());
         this->onExecute(state, chainBounds);
     }
 

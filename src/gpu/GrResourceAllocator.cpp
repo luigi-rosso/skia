@@ -9,7 +9,7 @@
 
 #include "src/gpu/GrDeinstantiateProxyTracker.h"
 #include "src/gpu/GrGpuResourcePriv.h"
-#include "src/gpu/GrOpList.h"
+#include "src/gpu/GrOpsTask.h"
 #include "src/gpu/GrRenderTargetProxy.h"
 #include "src/gpu/GrResourceCache.h"
 #include "src/gpu/GrResourceProvider.h"
@@ -44,25 +44,26 @@ void GrResourceAllocator::determineRecyclability() {
             continue;
         }
 
-        if (cur->uses() >= cur->proxy()->priv().getProxyRefCnt()) {
+        if (cur->uses() >= cur->proxy()->refCnt()) {
             // All the refs on the proxy are known to the resource allocator thus no one
             // should be holding onto it outside of Ganesh.
-            SkASSERT(cur->uses() == cur->proxy()->priv().getProxyRefCnt());
+            SkASSERT(cur->uses() == cur->proxy()->refCnt());
             cur->markAsRecyclable();
         }
     }
 }
 
-void GrResourceAllocator::markEndOfOpList(int opListIndex) {
-    SkASSERT(!fAssigned);      // We shouldn't be adding any opLists after (or during) assignment
+void GrResourceAllocator::markEndOfOpsTask(int opsTaskIndex) {
+    SkASSERT(!fAssigned);      // We shouldn't be adding any opsTasks after (or during) assignment
 
-    SkASSERT(fEndOfOpListOpIndices.count() == opListIndex);
-    if (!fEndOfOpListOpIndices.empty()) {
-        SkASSERT(fEndOfOpListOpIndices.back() < this->curOp());
+    SkASSERT(fEndOfOpsTaskOpIndices.count() == opsTaskIndex);
+    if (!fEndOfOpsTaskOpIndices.empty()) {
+        SkASSERT(fEndOfOpsTaskOpIndices.back() < this->curOp());
     }
 
-    fEndOfOpListOpIndices.push_back(this->curOp()); // This is the first op index of the next opList
-    SkASSERT(fEndOfOpListOpIndices.count() <= fNumOpLists);
+    // This is the first op index of the next opsTask
+    fEndOfOpsTaskOpIndices.push_back(this->curOp());
+    SkASSERT(fEndOfOpsTaskOpIndices.count() <= fNumOpsTasks);
 }
 
 GrResourceAllocator::~GrResourceAllocator() {
@@ -75,17 +76,19 @@ void GrResourceAllocator::addInterval(GrSurfaceProxy* proxy, unsigned int start,
                                       ActualUse actualUse
                                       SkDEBUGCODE(, bool isDirectDstRead)) {
 
-    bool needsStencil = proxy->asRenderTargetProxy()
-                                        ? proxy->asRenderTargetProxy()->needsStencil()
-                                        : false;
-
     if (proxy->canSkipResourceAllocator()) {
-        if (needsStencil && proxy->isInstantiated()) {
-            // If the proxy is still not instantiated at this point but will need stencil, it will
-            // attach its own stencil buffer upon onFlush instantiation.
-            if (!GrSurfaceProxyPriv::AttachStencilIfNeeded(
-                    fResourceProvider, proxy->peekSurface(), true /*needsStencil*/)) {
-                SkDebugf("WARNING: failed to attach stencil buffer. Rendering may be incorrect.\n");
+        // If the proxy is still not instantiated at this point but will need stencil, it will
+        // attach its own stencil buffer upon onFlush instantiation.
+        if (proxy->isInstantiated()) {
+            int minStencilSampleCount = (proxy->asRenderTargetProxy())
+                    ? proxy->asRenderTargetProxy()->numStencilSamples()
+                    : 0;
+            if (minStencilSampleCount) {
+                if (!GrSurfaceProxyPriv::AttachStencilIfNeeded(
+                        fResourceProvider, proxy->peekSurface(), minStencilSampleCount)) {
+                    SkDebugf("WARNING: failed to attach stencil buffer. "
+                             "Rendering may be incorrect.\n");
+                }
             }
         }
         return;
@@ -111,7 +114,7 @@ void GrResourceAllocator::addInterval(GrSurfaceProxy* proxy, unsigned int start,
             if (0 == start && 0 == end) {
                 // This interval is for the initial upload to a deferred proxy. Due to the vagaries
                 // of how deferred proxies are collected they can appear as uploads multiple times
-                // in a single opLists' list and as uploads in several opLists.
+                // in a single opsTasks' list and as uploads in several opsTasks.
                 SkASSERT(0 == intvl->start());
             } else if (isDirectDstRead) {
                 // Direct reads from the render target itself should occur w/in the existing
@@ -283,7 +286,7 @@ void GrResourceAllocator::recycleSurface(sk_sp<GrSurface> surface) {
 // First try to reuse one of the recently allocated/used GrSurfaces in the free pool.
 // If we can't find a useable one, create a new one.
 sk_sp<GrSurface> GrResourceAllocator::findSurfaceFor(const GrSurfaceProxy* proxy,
-                                                     bool needsStencil) {
+                                                     int minStencilSampleCount) {
 
     if (proxy->asTextureProxy() && proxy->asTextureProxy()->getUniqueKey().isValid()) {
         // First try to reattach to a cached version if the proxy is uniquely keyed
@@ -291,7 +294,7 @@ sk_sp<GrSurface> GrResourceAllocator::findSurfaceFor(const GrSurfaceProxy* proxy
                                                         proxy->asTextureProxy()->getUniqueKey());
         if (surface) {
             if (!GrSurfaceProxyPriv::AttachStencilIfNeeded(fResourceProvider, surface.get(),
-                                                           needsStencil)) {
+                                                           minStencilSampleCount)) {
                 return nullptr;
             }
 
@@ -317,7 +320,7 @@ sk_sp<GrSurface> GrResourceAllocator::findSurfaceFor(const GrSurfaceProxy* proxy
         }
 
         if (!GrSurfaceProxyPriv::AttachStencilIfNeeded(fResourceProvider, surface.get(),
-                                                       needsStencil)) {
+                                                       minStencilSampleCount)) {
             return nullptr;
         }
         SkASSERT(!surface->getUniqueKey().isValid());
@@ -350,30 +353,30 @@ void GrResourceAllocator::expire(unsigned int curIndex) {
     }
 }
 
-bool GrResourceAllocator::onOpListBoundary() const {
+bool GrResourceAllocator::onOpsTaskBoundary() const {
     if (fIntvlList.empty()) {
-        SkASSERT(fCurOpListIndex+1 <= fNumOpLists);
-        // Although technically on an opList boundary there is no need to force an
+        SkASSERT(fCurOpsTaskIndex+1 <= fNumOpsTasks);
+        // Although technically on an opsTask boundary there is no need to force an
         // intermediate flush here
         return false;
     }
 
     const Interval* tmp = fIntvlList.peekHead();
-    return fEndOfOpListOpIndices[fCurOpListIndex] <= tmp->start();
+    return fEndOfOpsTaskOpIndices[fCurOpsTaskIndex] <= tmp->start();
 }
 
 void GrResourceAllocator::forceIntermediateFlush(int* stopIndex) {
-    *stopIndex = fCurOpListIndex+1;
+    *stopIndex = fCurOpsTaskIndex+1;
 
     // This is interrupting the allocation of resources for this flush. We need to
     // proactively clear the active interval list of any intervals that aren't
     // guaranteed to survive the partial flush lest they become zombies (i.e.,
     // holding a deleted surface proxy).
     const Interval* tmp = fIntvlList.peekHead();
-    SkASSERT(fEndOfOpListOpIndices[fCurOpListIndex] <= tmp->start());
+    SkASSERT(fEndOfOpsTaskOpIndices[fCurOpsTaskIndex] <= tmp->start());
 
-    fCurOpListIndex++;
-    SkASSERT(fCurOpListIndex < fNumOpLists);
+    fCurOpsTaskIndex++;
+    SkASSERT(fCurOpsTaskIndex < fNumOpsTasks);
 
     this->expire(tmp->start());
 }
@@ -383,28 +386,28 @@ bool GrResourceAllocator::assign(int* startIndex, int* stopIndex, AssignError* o
     *outError = fLazyInstantiationError ? AssignError::kFailedProxyInstantiation
                                         : AssignError::kNoError;
 
-    SkASSERT(fNumOpLists == fEndOfOpListOpIndices.count());
+    SkASSERT(fNumOpsTasks == fEndOfOpsTaskOpIndices.count());
 
     fIntvlHash.reset(); // we don't need the interval hash anymore
 
-    if (fCurOpListIndex >= fEndOfOpListOpIndices.count()) {
+    if (fCurOpsTaskIndex >= fEndOfOpsTaskOpIndices.count()) {
         return false; // nothing to render
     }
 
-    *startIndex = fCurOpListIndex;
-    *stopIndex = fEndOfOpListOpIndices.count();
+    *startIndex = fCurOpsTaskIndex;
+    *stopIndex = fEndOfOpsTaskOpIndices.count();
 
     if (fIntvlList.empty()) {
-        fCurOpListIndex = fEndOfOpListOpIndices.count();
+        fCurOpsTaskIndex = fEndOfOpsTaskOpIndices.count();
         return true;          // no resources to assign
     }
 
 #if GR_ALLOCATION_SPEW
-    SkDebugf("assigning opLists %d through %d out of %d numOpLists\n",
-             *startIndex, *stopIndex, fNumOpLists);
-    SkDebugf("EndOfOpListIndices: ");
-    for (int i = 0; i < fEndOfOpListOpIndices.count(); ++i) {
-        SkDebugf("%d ", fEndOfOpListOpIndices[i]);
+    SkDebugf("assigning opsTasks %d through %d out of %d numOpsTasks\n",
+             *startIndex, *stopIndex, fNumOpsTasks);
+    SkDebugf("EndOfOpsTaskIndices: ");
+    for (int i = 0; i < fEndOfOpsTaskOpIndices.count(); ++i) {
+        SkDebugf("%d ", fEndOfOpsTaskOpIndices[i]);
     }
     SkDebugf("\n");
 #endif
@@ -415,28 +418,28 @@ bool GrResourceAllocator::assign(int* startIndex, int* stopIndex, AssignError* o
     this->dumpIntervals();
 #endif
     while (Interval* cur = fIntvlList.popHead()) {
-        if (fEndOfOpListOpIndices[fCurOpListIndex] <= cur->start()) {
-            fCurOpListIndex++;
-            SkASSERT(fCurOpListIndex < fNumOpLists);
+        while (fEndOfOpsTaskOpIndices[fCurOpsTaskIndex] <= cur->start()) {
+            fCurOpsTaskIndex++;
+            SkASSERT(fCurOpsTaskIndex < fNumOpsTasks);
         }
 
         this->expire(cur->start());
 
-        bool needsStencil = cur->proxy()->asRenderTargetProxy()
-                                            ? cur->proxy()->asRenderTargetProxy()->needsStencil()
-                                            : false;
+        int minStencilSampleCount = (cur->proxy()->asRenderTargetProxy())
+                ? cur->proxy()->asRenderTargetProxy()->numStencilSamples()
+                : 0;
 
         if (cur->proxy()->isInstantiated()) {
             if (!GrSurfaceProxyPriv::AttachStencilIfNeeded(
-                        fResourceProvider, cur->proxy()->peekSurface(), needsStencil)) {
+                        fResourceProvider, cur->proxy()->peekSurface(), minStencilSampleCount)) {
                 *outError = AssignError::kFailedProxyInstantiation;
             }
 
             fActiveIntvls.insertByIncreasingEnd(cur);
 
             if (fResourceProvider->overBudget()) {
-                // Only force intermediate draws on opList boundaries
-                if (this->onOpListBoundary()) {
+                // Only force intermediate draws on opsTask boundaries
+                if (this->onOpsTaskBoundary()) {
                     this->forceIntermediateFlush(stopIndex);
                     return true;
                 }
@@ -454,7 +457,8 @@ bool GrResourceAllocator::assign(int* startIndex, int* stopIndex, AssignError* o
                     fDeinstantiateTracker->addProxy(cur->proxy());
                 }
             }
-        } else if (sk_sp<GrSurface> surface = this->findSurfaceFor(cur->proxy(), needsStencil)) {
+        } else if (sk_sp<GrSurface> surface = this->findSurfaceFor(
+                cur->proxy(), minStencilSampleCount)) {
             // TODO: make getUniqueKey virtual on GrSurfaceProxy
             GrTextureProxy* texProxy = cur->proxy()->asTextureProxy();
 
@@ -481,8 +485,8 @@ bool GrResourceAllocator::assign(int* startIndex, int* stopIndex, AssignError* o
         fActiveIntvls.insertByIncreasingEnd(cur);
 
         if (fResourceProvider->overBudget()) {
-            // Only force intermediate draws on opList boundaries
-            if (this->onOpListBoundary()) {
+            // Only force intermediate draws on opsTask boundaries
+            if (this->onOpsTaskBoundary()) {
                 this->forceIntermediateFlush(stopIndex);
                 return true;
             }

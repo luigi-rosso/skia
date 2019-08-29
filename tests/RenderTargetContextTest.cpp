@@ -15,12 +15,8 @@
 
 static const int kSize = 64;
 
-static sk_sp<GrRenderTargetContext> get_rtc(GrContext* ctx) {
-    const GrBackendFormat format =
-            ctx->priv().caps()->getBackendFormatFromColorType(kRGBA_8888_SkColorType);
-
-    return ctx->priv().makeDeferredRenderTargetContext(format, SkBackingFit::kExact, kSize, kSize,
-                                                       kRGBA_8888_GrPixelConfig,
+static std::unique_ptr<GrRenderTargetContext> get_rtc(GrContext* ctx) {
+    return ctx->priv().makeDeferredRenderTargetContext(SkBackingFit::kExact, kSize, kSize,
                                                        GrColorType::kRGBA_8888, nullptr);
 }
 
@@ -41,7 +37,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(RenderTargetContextTest, reporter, ctxInfo) {
     // Calling instantiate on a GrRenderTargetContext's textureProxy also instantiates the
     // GrRenderTargetContext
     {
-        sk_sp<GrRenderTargetContext> rtCtx(get_rtc(ctx));
+        auto rtCtx = get_rtc(ctx);
 
         check_instantiation_status(reporter, rtCtx.get(), false);
 
@@ -55,7 +51,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(RenderTargetContextTest, reporter, ctxInfo) {
 
     // readPixels switches a deferred rtCtx to wrapped
     {
-        sk_sp<GrRenderTargetContext> rtCtx(get_rtc(ctx));
+        auto rtCtx = get_rtc(ctx);
 
         check_instantiation_status(reporter, rtCtx.get(), false);
 
@@ -63,7 +59,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(RenderTargetContextTest, reporter, ctxInfo) {
         SkAutoTMalloc<uint32_t> dstBuffer(kSize * kSize);
         static const size_t kRowBytes = sizeof(uint32_t) * kSize;
 
-        bool result = rtCtx->readPixels(dstInfo, dstBuffer.get(), kRowBytes, 0, 0);
+        bool result = rtCtx->readPixels(dstInfo, dstBuffer.get(), kRowBytes, {0, 0});
         REPORTER_ASSERT(reporter, result);
 
         check_instantiation_status(reporter, rtCtx.get(), true);

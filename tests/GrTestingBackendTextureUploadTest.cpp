@@ -27,16 +27,12 @@ void testing_only_texture_test(skiatest::Reporter* reporter, GrContext* context,
 
     const GrCaps* caps = context->priv().caps();
 
-    GrPixelConfig config = SkColorType2GrPixelConfig(ct);
-    if (!caps->isConfigTexturable(config)) {
-        return;
-    }
-
     GrColorType grCT = SkColorTypeToGrColorType(ct);
-    if (GrColorType::kUnknown == grCT) {
+
+    GrBackendFormat backendFormat = context->defaultBackendFormat(ct, renderable);
+    if (!backendFormat.isValid()) {
         return;
     }
-
 
     GrBackendTexture backendTex;
 
@@ -45,10 +41,11 @@ void testing_only_texture_test(skiatest::Reporter* reporter, GrContext* context,
 
         fill_pixel_data(kWidth, kHeight, expectedPixels.writable_addr32(0, 0));
 
-        backendTex = context->priv().createBackendTexture(&expectedPixels, 1, renderable);
+        backendTex = context->priv().createBackendTexture(&expectedPixels, 1,
+                                                          renderable, GrProtected::kNo);
     } else {
         backendTex = context->createBackendTexture(kWidth, kHeight, ct, SkColors::kTransparent,
-                                                   mipMapped, renderable);
+                                                   mipMapped, renderable, GrProtected::kNo);
 
         size_t allocSize = SkAutoPixmapStorage::AllocSize(ii, nullptr);
         // createBackendTexture will fill the texture with 0's if no data is provided, so
@@ -60,20 +57,20 @@ void testing_only_texture_test(skiatest::Reporter* reporter, GrContext* context,
     }
     // skbug.com/9165
     auto supportedRead =
-            caps->supportedReadPixelsColorType(config, backendTex.getBackendFormat(), grCT);
-    if (supportedRead.fColorType != grCT || supportedRead.fSwizzle != GrSwizzle("rgba")) {
+            caps->supportedReadPixelsColorType(grCT, backendTex.getBackendFormat(), grCT);
+    if (supportedRead.fColorType != grCT) {
         return;
     }
 
     sk_sp<GrTextureProxy> wrappedProxy;
     if (GrRenderable::kYes == renderable) {
         wrappedProxy = context->priv().proxyProvider()->wrapRenderableBackendTexture(
-                backendTex, kTopLeft_GrSurfaceOrigin, 1, kAdopt_GrWrapOwnership,
+                backendTex, kTopLeft_GrSurfaceOrigin, 1, grCT, kAdopt_GrWrapOwnership,
                 GrWrapCacheable::kNo);
     } else {
         wrappedProxy = context->priv().proxyProvider()->wrapBackendTexture(
-                backendTex, kTopLeft_GrSurfaceOrigin, kAdopt_GrWrapOwnership, GrWrapCacheable::kNo,
-                GrIOType::kRW_GrIOType);
+                backendTex, grCT, kTopLeft_GrSurfaceOrigin, kAdopt_GrWrapOwnership,
+                GrWrapCacheable::kNo, GrIOType::kRW_GrIOType);
     }
     REPORTER_ASSERT(reporter, wrappedProxy);
 
@@ -81,8 +78,9 @@ void testing_only_texture_test(skiatest::Reporter* reporter, GrContext* context,
                                                                     kPremul_SkAlphaType);
     REPORTER_ASSERT(reporter, surfaceContext);
 
-    bool result = surfaceContext->readPixels(context, 0, 0, kWidth, kHeight, grCT, nullptr,
-                                             actualPixels.writable_addr(), actualPixels.rowBytes());
+    bool result = surfaceContext->readPixels({grCT, kPremul_SkAlphaType, nullptr, kWidth, kHeight},
+                                             actualPixels.writable_addr(), actualPixels.rowBytes(),
+                                             {0, 0}, context);
 
     REPORTER_ASSERT(reporter, result);
     REPORTER_ASSERT(reporter, does_full_buffer_contain_correct_color(expectedPixels.addr32(),

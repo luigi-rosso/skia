@@ -34,6 +34,7 @@ class AndroidFlavor(default.DefaultFlavor):
         lotties_dir   = android_data_dir + 'lotties',
         skp_dir       = android_data_dir + 'skps',
         svg_dir       = android_data_dir + 'svgs',
+        mskp_dir      = android_data_dir + 'mskp',
         tmp_dir       = android_data_dir)
 
     # A list of devices we can't root.  If rooting fails and a device is not
@@ -352,7 +353,7 @@ if actual_freq != str(freq):
       self._ever_ran_adb = True
       asan_setup = self.m.vars.slave_dir.join(
             'android_ndk_linux', 'toolchains', 'llvm', 'prebuilt',
-            'linux-x86_64', 'lib64', 'clang', '8.0.2', 'bin',
+            'linux-x86_64', 'lib64', 'clang', '8.0.7', 'bin',
             'asan_device_setup')
       self.m.run(self.m.python.inline, 'Setting up device to run ASAN',
         program="""

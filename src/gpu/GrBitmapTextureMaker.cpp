@@ -19,7 +19,7 @@
 
 static GrColorSpaceInfo make_info(const SkBitmap& bm) {
     return GrColorSpaceInfo(SkColorTypeToGrColorType(bm.colorType()), bm.alphaType(),
-                            bm.refColorSpace(), SkImageInfo2GrPixelConfig(bm.info()));
+                            bm.refColorSpace());
 }
 
 GrBitmapTextureMaker::GrBitmapTextureMaker(GrRecordingContext* context, const SkBitmap& bitmap,
@@ -44,7 +44,9 @@ sk_sp<GrTextureProxy> GrBitmapTextureMaker::refOriginalTextureProxy(bool willBeM
     sk_sp<GrTextureProxy> proxy;
 
     if (fOriginalKey.isValid()) {
-        proxy = proxyProvider->findOrCreateProxyByUniqueKey(fOriginalKey, kTopLeft_GrSurfaceOrigin);
+        auto colorType = SkColorTypeToGrColorType(fBitmap.colorType());
+        proxy = proxyProvider->findOrCreateProxyByUniqueKey(fOriginalKey, colorType,
+                                                            kTopLeft_GrSurfaceOrigin);
         if (proxy && (!willBeMipped || GrMipMapped::kYes == proxy->mipMapped())) {
             return proxy;
         }

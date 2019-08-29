@@ -17,8 +17,6 @@
     data members or virtual methods. */
 class GrSurfaceProxyPriv {
 public:
-    int32_t getProxyRefCnt() const { return fProxy->getProxyRefCnt(); }
-
     void computeScratchKey(GrScratchKey* key) const { return fProxy->computeScratchKey(key); }
 
     // Create a GrSurface-derived class that meets the requirements (i.e, desc, renderability)
@@ -34,7 +32,7 @@ public:
     bool isExact() const { return SkBackingFit::kExact == fProxy->fFit; }
 
     // Don't. Just don't.
-    void exactify();
+    void exactify(bool allocatedCaseOnly);
 
     void setLazySize(int width, int height) { fProxy->setLazySize(width, height); }
 
@@ -50,7 +48,7 @@ public:
     }
 
     static bool SK_WARN_UNUSED_RESULT AttachStencilIfNeeded(GrResourceProvider*, GrSurface*,
-                                                            bool needsStencil);
+                                                            int minStencilSampleCount);
 
     bool ignoredByResourceAllocator() const { return fProxy->ignoredByResourceAllocator(); }
     void setIgnoredByResourceAllocator() { fProxy->setIgnoredByResourceAllocator(); }

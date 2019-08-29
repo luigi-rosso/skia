@@ -17,6 +17,7 @@
 class SkColorSpace;
 
 #if SK_SUPPORT_GPU
+#include "include/gpu/GrBackendSurface.h"
 // TODO: remove the GrContext.h include once Flutter is updated
 #include "include/gpu/GrContext.h"
 #include "include/gpu/GrContextThreadSafeProxy.h"
@@ -39,12 +40,12 @@ public:
     SkSurfaceCharacterization()
             : fCacheMaxResourceBytes(0)
             , fOrigin(kBottomLeft_GrSurfaceOrigin)
-            , fConfig(kUnknown_GrPixelConfig)
             , fSampleCnt(0)
             , fIsTextureable(Textureable::kYes)
             , fIsMipMapped(MipMapped::kYes)
             , fUsesGLFBO0(UsesGLFBO0::kNo)
             , fVulkanSecondaryCBCompatible(VulkanSecondaryCBCompatible::kNo)
+            , fIsProtected(GrProtected::kNo)
             , fSurfaceProps(0, kUnknown_SkPixelGeometry) {
     }
 
@@ -67,6 +68,7 @@ public:
     bool isValid() const { return kUnknown_SkColorType != fImageInfo.colorType(); }
 
     const SkImageInfo& imageInfo() const { return fImageInfo; }
+    const GrBackendFormat& backendFormat() const { return fBackendFormat; }
     GrSurfaceOrigin origin() const { return fOrigin; }
     int width() const { return fImageInfo.width(); }
     int height() const { return fImageInfo.height(); }
@@ -78,9 +80,13 @@ public:
     bool vulkanSecondaryCBCompatible() const {
         return VulkanSecondaryCBCompatible::kYes == fVulkanSecondaryCBCompatible;
     }
+    GrProtected isProtected() const { return fIsProtected; }
     SkColorSpace* colorSpace() const { return fImageInfo.colorSpace(); }
     sk_sp<SkColorSpace> refColorSpace() const { return fImageInfo.refColorSpace(); }
     const SkSurfaceProps& surfaceProps()const { return fSurfaceProps; }
+
+    // Is the provided backend texture compatible with this surface characterization?
+    bool isCompatible(const GrBackendTexture&) const;
 
 private:
     friend class SkSurface_Gpu; // for 'set' & 'config'
@@ -89,41 +95,46 @@ private:
     friend class SkDeferredDisplayListRecorder; // for 'config'
     friend class SkSurface; // for 'config'
 
-    GrPixelConfig config() const { return fConfig; }
+    SkDEBUGCODE(void validate() const;)
 
     SkSurfaceCharacterization(sk_sp<GrContextThreadSafeProxy> contextInfo,
                               size_t cacheMaxResourceBytes,
                               const SkImageInfo& ii,
+                              const GrBackendFormat& backendFormat,
                               GrSurfaceOrigin origin,
-                              GrPixelConfig config,
                               int sampleCnt,
-                              Textureable isTextureable, MipMapped isMipMapped,
+                              Textureable isTextureable,
+                              MipMapped isMipMapped,
                               UsesGLFBO0 usesGLFBO0,
                               VulkanSecondaryCBCompatible vulkanSecondaryCBCompatible,
+                              GrProtected isProtected,
                               const SkSurfaceProps& surfaceProps)
             : fContextInfo(std::move(contextInfo))
             , fCacheMaxResourceBytes(cacheMaxResourceBytes)
             , fImageInfo(ii)
+            , fBackendFormat(backendFormat)
             , fOrigin(origin)
-            , fConfig(config)
             , fSampleCnt(sampleCnt)
             , fIsTextureable(isTextureable)
             , fIsMipMapped(isMipMapped)
             , fUsesGLFBO0(usesGLFBO0)
             , fVulkanSecondaryCBCompatible(vulkanSecondaryCBCompatible)
+            , fIsProtected(isProtected)
             , fSurfaceProps(surfaceProps) {
+        SkDEBUGCODE(this->validate());
     }
 
     void set(sk_sp<GrContextThreadSafeProxy> contextInfo,
              size_t cacheMaxResourceBytes,
              const SkImageInfo& ii,
+             const GrBackendFormat& backendFormat,
              GrSurfaceOrigin origin,
-             GrPixelConfig config,
              int sampleCnt,
              Textureable isTextureable,
              MipMapped isMipMapped,
              UsesGLFBO0 usesGLFBO0,
              VulkanSecondaryCBCompatible vulkanSecondaryCBCompatible,
+             GrProtected isProtected,
              const SkSurfaceProps& surfaceProps) {
         SkASSERT(MipMapped::kNo == isMipMapped || Textureable::kYes == isTextureable);
         SkASSERT(Textureable::kNo == isTextureable || UsesGLFBO0::kNo == usesGLFBO0);
@@ -137,27 +148,31 @@ private:
         fCacheMaxResourceBytes = cacheMaxResourceBytes;
 
         fImageInfo = ii;
+        fBackendFormat = backendFormat;
         fOrigin = origin;
-        fConfig = config;
         fSampleCnt = sampleCnt;
         fIsTextureable = isTextureable;
         fIsMipMapped = isMipMapped;
         fUsesGLFBO0 = usesGLFBO0;
         fVulkanSecondaryCBCompatible = vulkanSecondaryCBCompatible;
+        fIsProtected = isProtected;
         fSurfaceProps = surfaceProps;
+
+        SkDEBUGCODE(this->validate());
     }
 
     sk_sp<GrContextThreadSafeProxy> fContextInfo;
     size_t                          fCacheMaxResourceBytes;
 
     SkImageInfo                     fImageInfo;
+    GrBackendFormat                 fBackendFormat;
     GrSurfaceOrigin                 fOrigin;
-    GrPixelConfig                   fConfig;
     int                             fSampleCnt;
     Textureable                     fIsTextureable;
     MipMapped                       fIsMipMapped;
     UsesGLFBO0                      fUsesGLFBO0;
     VulkanSecondaryCBCompatible     fVulkanSecondaryCBCompatible;
+    GrProtected                     fIsProtected;
     SkSurfaceProps                  fSurfaceProps;
 };
 

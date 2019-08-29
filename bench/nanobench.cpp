@@ -28,6 +28,7 @@
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkTime.h"
 #include "src/core/SkAutoMalloc.h"
 #include "src/core/SkBBoxHierarchy.h"
 #include "src/core/SkColorSpacePriv.h"
@@ -77,17 +78,6 @@ GrContextOptions grContextOpts;
 
 static const int kAutoTuneLoops = 0;
 
-#if !defined(__has_feature)
-    #define  __has_feature(x) 0
-#endif
-
-static const int kDefaultLoops =
-#if defined(SK_DEBUG) || __has_feature(address_sanitizer)
-    1;
-#else
-    kAutoTuneLoops;
-#endif
-
 static SkString loops_help_txt() {
     SkString help;
     help.printf("Number of times to run each bench. Set this to %d to auto-"
@@ -102,7 +92,7 @@ static SkString to_string(int n) {
     return str;
 }
 
-static DEFINE_int(loops, kDefaultLoops, loops_help_txt().c_str());
+static DEFINE_int(loops, kAutoTuneLoops, loops_help_txt().c_str());
 
 static DEFINE_int(samples, 10, "Number of samples to measure for each bench.");
 static DEFINE_int(ms, 0, "If >0, run each bench for this many ms instead of obeying --samples.");
@@ -469,9 +459,9 @@ static void create_config(const SkCommandLineConfig* config, SkTArray<Config>* c
 
         GrContextFactory factory(grContextOpts);
         if (const GrContext* ctx = factory.get(ctxType, ctxOverrides)) {
-            GrPixelConfig grPixConfig = SkColorType2GrPixelConfig(colorType);
+            GrBackendFormat format = ctx->defaultBackendFormat(colorType, GrRenderable::kYes);
             int supportedSampleCount =
-                    ctx->priv().caps()->getRenderTargetSampleCount(sampleCount, grPixConfig);
+                    ctx->priv().caps()->getRenderTargetSampleCount(sampleCount, format);
             if (sampleCount != supportedSampleCount) {
                 SkDebugf("Configuration '%s' sample count %d is not a supported sample count.\n",
                          config->getTag().c_str(), sampleCount);
@@ -759,12 +749,12 @@ public:
         }
 
         while (fGMs) {
-            std::unique_ptr<skiagm::GM> gm(fGMs->get()(nullptr));
+            std::unique_ptr<skiagm::GM> gm = fGMs->get()();
             fGMs = fGMs->next();
             if (gm->runAsBench()) {
                 fSourceType = "gm";
                 fBenchType  = "micro";
-                return new GMBench(gm.release());
+                return new GMBench(std::move(gm));
             }
         }
 
@@ -856,9 +846,9 @@ public:
 
                 fCurrentAnimSKP++;
                 SkString name = SkOSPath::Basename(path.c_str());
-                sk_sp<SKPAnimationBench::Animation> animation(
-                    SKPAnimationBench::CreateZoomAnimation(fZoomMax, fZoomPeriodMs));
-                return new SKPAnimationBench(name.c_str(), pic.get(), fClip, animation.get(),
+                sk_sp<SKPAnimationBench::Animation> animation =
+                    SKPAnimationBench::MakeZoomAnimation(fZoomMax, fZoomPeriodMs);
+                return new SKPAnimationBench(name.c_str(), pic.get(), fClip, std::move(animation),
                                              FLAGS_loopSKP);
             }
         }

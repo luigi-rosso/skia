@@ -4,13 +4,15 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#ifndef GrTextureOp_DEFINED
+#define GrTextureOp_DEFINED
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkRefCnt.h"
-#include "include/gpu/GrSamplerState.h"
 #include "include/private/GrTypesPriv.h"
 #include "src/gpu/GrColor.h"
 #include "src/gpu/GrRenderTargetContext.h"
+#include "src/gpu/GrSamplerState.h"
 
 class GrColorSpaceXform;
 class GrDrawOp;
@@ -54,3 +56,4 @@ std::unique_ptr<GrDrawOp> MakeSet(GrRecordingContext*,
                                   sk_sp<GrColorSpaceXform> textureXform);
 
 }
+#endif  // GrTextureOp_DEFINED

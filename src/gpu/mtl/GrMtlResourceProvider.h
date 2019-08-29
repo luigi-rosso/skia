@@ -15,7 +15,7 @@
 #include "src/gpu/mtl/GrMtlPipelineStateBuilder.h"
 #include "src/gpu/mtl/GrMtlSampler.h"
 
-#import <metal/metal.h>
+#import <Metal/Metal.h>
 
 class GrMtlGpu;
 class GrMtlCommandBuffer;
@@ -65,7 +65,7 @@ private:
         enum {
             // We may actually have kMaxEntries+1 PipelineStates in context because we create a new
             // PipelineState before evicting from the cache.
-            kMaxEntries = 128,
+            kMaxEntries = 1024,
         };
 
         struct Entry;
@@ -102,16 +102,11 @@ private:
     private:
         id<MTLBuffer> fBuffer;
         size_t        fTotalSize;
-        size_t        fHead;     // where we start allocating
-        size_t        fTail;     // where we start deallocating
+        size_t        fHead SK_GUARDED_BY(fMutex);     // where we start allocating
+        size_t        fTail SK_GUARDED_BY(fMutex);     // where we start deallocating
         SkSpinlock    fMutex;
     };
     static constexpr size_t kBufferSuballocatorStartSize = 1024*1024;
-#if GR_USE_COMPLETION_HANDLER
-    static constexpr size_t kBufferSuballocatorMaxSize = 8*1024*1024;
-#else
-    static constexpr size_t kBufferSuballocatorMaxSize = 2*1024*1024;
-#endif
 
     GrMtlGpu* fGpu;
 
@@ -125,6 +120,7 @@ private:
     // finishes. The completion handler will retain a reference to this so it won't get
     // deleted along with the GrContext.
     sk_sp<BufferSuballocator> fBufferSuballocator;
+    size_t fBufferSuballocatorMaxSize;
 };
 
 #endif

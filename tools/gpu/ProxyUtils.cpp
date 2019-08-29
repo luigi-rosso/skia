@@ -20,7 +20,6 @@ sk_sp<GrTextureProxy> MakeTextureProxyFromData(GrContext* context,
                                                int width,
                                                int height,
                                                GrColorType colorType, SkAlphaType alphaType,
-                                               GrSRGBEncoded srgbEncoded,
                                                GrSurfaceOrigin origin,
                                                const void* data, size_t rowBytes) {
     if (context->priv().abandoned()) {
@@ -29,7 +28,7 @@ sk_sp<GrTextureProxy> MakeTextureProxyFromData(GrContext* context,
 
     const GrCaps* caps = context->priv().caps();
 
-    const GrBackendFormat format = caps->getBackendFormatFromGrColorType(colorType, srgbEncoded);
+    const GrBackendFormat format = caps->getDefaultBackendFormat(colorType, renderable);
     if (!format.isValid()) {
         return nullptr;
     }
@@ -38,7 +37,8 @@ sk_sp<GrTextureProxy> MakeTextureProxyFromData(GrContext* context,
     if (kBottomLeft_GrSurfaceOrigin == origin) {
         // We (soon will) only support using kBottomLeft with wrapped textures.
         auto backendTex = context->createBackendTexture(
-                width, height, format, SkColors::kTransparent, GrMipMapped::kNo, renderable);
+                width, height, format, SkColors::kTransparent, GrMipMapped::kNo, renderable,
+                GrProtected::kNo);
         if (!backendTex.isValid()) {
             return nullptr;
         }
@@ -46,11 +46,12 @@ sk_sp<GrTextureProxy> MakeTextureProxyFromData(GrContext* context,
         // Adopt ownership so our caller doesn't have to worry about deleting the backend texture.
         if (GrRenderable::kYes == renderable) {
             proxy = context->priv().proxyProvider()->wrapRenderableBackendTexture(
-                    backendTex, origin, 1, kAdopt_GrWrapOwnership, GrWrapCacheable::kNo, nullptr,
-                    nullptr);
+                    backendTex, origin, 1, colorType, kAdopt_GrWrapOwnership, GrWrapCacheable::kNo,
+                    nullptr, nullptr);
         } else {
             proxy = context->priv().proxyProvider()->wrapBackendTexture(
-                    backendTex, origin, kAdopt_GrWrapOwnership, GrWrapCacheable::kNo, kRW_GrIOType);
+                    backendTex, colorType, origin, kAdopt_GrWrapOwnership,
+                    GrWrapCacheable::kNo, kRW_GrIOType);
         }
 
         if (!proxy) {
@@ -59,19 +60,13 @@ sk_sp<GrTextureProxy> MakeTextureProxyFromData(GrContext* context,
         }
 
     } else {
-        GrPixelConfig config = GrColorTypeToPixelConfig(colorType, srgbEncoded);
-        if (!context->priv().caps()->isConfigTexturable(config)) {
-            return nullptr;
-        }
-
         GrSurfaceDesc desc;
-        desc.fConfig = config;
+        desc.fConfig = GrColorTypeToPixelConfig(colorType);
         desc.fWidth = width;
         desc.fHeight = height;
-        desc.fFlags = GrRenderable::kYes == renderable ? kRenderTarget_GrSurfaceFlag
-                                                       : kNone_GrSurfaceFlags;
-        proxy = context->priv().proxyProvider()->createProxy(
-                format, desc, origin, SkBackingFit::kExact, SkBudgeted::kYes);
+        proxy = context->priv().proxyProvider()->createProxy(format, desc, renderable, 1, origin,
+                                                             SkBackingFit::kExact, SkBudgeted::kYes,
+                                                             GrProtected::kNo);
         if (!proxy) {
             return nullptr;
         }
@@ -81,7 +76,8 @@ sk_sp<GrTextureProxy> MakeTextureProxyFromData(GrContext* context,
     if (!sContext) {
         return nullptr;
     }
-    if (!sContext->writePixels(context, 0, 0, width, height, colorType, nullptr, data, rowBytes)) {
+    if (!sContext->writePixels({colorType, alphaType, nullptr, width, height}, data, rowBytes,
+                               {0, 0}, context)) {
         return nullptr;
     }
     return proxy;

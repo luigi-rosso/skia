@@ -2,6 +2,11 @@
 * Copyright 2016 Google Inc.
 *
 * Use of this source code is governed by a BSD-style license that can be
+* f 49
+* Prev
+* Up
+*
+*
 * found in the LICENSE file.
 */
 
@@ -12,6 +17,7 @@
 #include "src/utils/SkUTF.h"
 #include "tools/sk_app/GLWindowContext.h"
 #include "tools/sk_app/unix/Window_unix.h"
+#include "tools/skui/ModifierKey.h"
 #include "tools/timer/Timer.h"
 
 extern "C" {
@@ -184,57 +190,57 @@ void Window_unix::closeWindow() {
     }
 }
 
-static Window::Key get_key(KeySym keysym) {
+static skui::Key get_key(KeySym keysym) {
     static const struct {
         KeySym      fXK;
-        Window::Key fKey;
+        skui::Key fKey;
     } gPair[] = {
-        { XK_BackSpace, Window::Key::kBack },
-        { XK_Clear, Window::Key::kBack },
-        { XK_Return, Window::Key::kOK },
-        { XK_Up, Window::Key::kUp },
-        { XK_Down, Window::Key::kDown },
-        { XK_Left, Window::Key::kLeft },
-        { XK_Right, Window::Key::kRight },
-        { XK_Tab, Window::Key::kTab },
-        { XK_Page_Up, Window::Key::kPageUp },
-        { XK_Page_Down, Window::Key::kPageDown },
-        { XK_Home, Window::Key::kHome },
-        { XK_End, Window::Key::kEnd },
-        { XK_Delete, Window::Key::kDelete },
-        { XK_Escape, Window::Key::kEscape },
-        { XK_Shift_L, Window::Key::kShift },
-        { XK_Shift_R, Window::Key::kShift },
-        { XK_Control_L, Window::Key::kCtrl },
-        { XK_Control_R, Window::Key::kCtrl },
-        { XK_Alt_L, Window::Key::kOption },
-        { XK_Alt_R, Window::Key::kOption },
-        { 'A', Window::Key::kA },
-        { 'C', Window::Key::kC },
-        { 'V', Window::Key::kV },
-        { 'X', Window::Key::kX },
-        { 'Y', Window::Key::kY },
-        { 'Z', Window::Key::kZ },
+        { XK_BackSpace, skui::Key::kBack     },
+        { XK_Clear,     skui::Key::kBack     },
+        { XK_Return,    skui::Key::kOK       },
+        { XK_Up,        skui::Key::kUp       },
+        { XK_Down,      skui::Key::kDown     },
+        { XK_Left,      skui::Key::kLeft     },
+        { XK_Right,     skui::Key::kRight    },
+        { XK_Tab,       skui::Key::kTab      },
+        { XK_Page_Up,   skui::Key::kPageUp   },
+        { XK_Page_Down, skui::Key::kPageDown },
+        { XK_Home,      skui::Key::kHome     },
+        { XK_End,       skui::Key::kEnd      },
+        { XK_Delete,    skui::Key::kDelete   },
+        { XK_Escape,    skui::Key::kEscape   },
+        { XK_Shift_L,   skui::Key::kShift    },
+        { XK_Shift_R,   skui::Key::kShift    },
+        { XK_Control_L, skui::Key::kCtrl     },
+        { XK_Control_R, skui::Key::kCtrl     },
+        { XK_Alt_L,     skui::Key::kOption   },
+        { XK_Alt_R,     skui::Key::kOption   },
+        { 'A',          skui::Key::kA        },
+        { 'C',          skui::Key::kC        },
+        { 'V',          skui::Key::kV        },
+        { 'X',          skui::Key::kX        },
+        { 'Y',          skui::Key::kY        },
+        { 'Z',          skui::Key::kZ        },
     };
     for (size_t i = 0; i < SK_ARRAY_COUNT(gPair); i++) {
         if (gPair[i].fXK == keysym) {
             return gPair[i].fKey;
         }
     }
-    return Window::Key::kNONE;
+    return skui::Key::kNONE;
 }
 
-static uint32_t get_modifiers(const XEvent& event) {
+static skui::ModifierKey get_modifiers(const XEvent& event) {
     static const struct {
         unsigned    fXMask;
-        unsigned    fSkMask;
+        skui::ModifierKey  fSkMask;
     } gModifiers[] = {
-        { ShiftMask,   Window::kShift_ModifierKey },
-        { ControlMask, Window::kControl_ModifierKey },
-        { Mod1Mask,    Window::kOption_ModifierKey },
+        { ShiftMask,   skui::ModifierKey::kShift },
+        { ControlMask, skui::ModifierKey::kControl },
+        { Mod1Mask,    skui::ModifierKey::kOption },
     };
 
-    auto modifiers = 0;
+    skui::ModifierKey modifiers = skui::ModifierKey::kNone;
     for (size_t i = 0; i < SK_ARRAY_COUNT(gModifiers); ++i) {
         if (event.xkey.state & gModifiers[i].fXMask) {
             modifiers |= gModifiers[i].fSkMask;
@@ -262,7 +268,7 @@ bool Window_unix::handleEvent(const XEvent& event) {
             switch (event.xbutton.button) {
                 case Button1:
                     this->onMouse(event.xbutton.x, event.xbutton.y,
-                                  Window::kDown_InputState, get_modifiers(event));
+                                  skui::InputState::kDown, get_modifiers(event));
                     break;
                 case Button4:
                     this->onMouseWheel(1.0f, get_modifiers(event));
@@ -276,21 +282,21 @@ bool Window_unix::handleEvent(const XEvent& event) {
         case ButtonRelease:
             if (event.xbutton.button == Button1) {
                 this->onMouse(event.xbutton.x, event.xbutton.y,
-                              Window::kUp_InputState, get_modifiers(event));
+                              skui::InputState::kUp, get_modifiers(event));
             }
             break;
 
         case MotionNotify:
             this->onMouse(event.xmotion.x, event.xmotion.y,
-                          Window::kMove_InputState, get_modifiers(event));
+                          skui::InputState::kMove, get_modifiers(event));
             break;
 
         case KeyPress: {
             int shiftLevel = (event.xkey.state & ShiftMask) ? 1 : 0;
             KeySym keysym = XkbKeycodeToKeysym(fDisplay, event.xkey.keycode, 0, shiftLevel);
-            Window::Key key = get_key(keysym);
-            if (key != Window::Key::kNONE) {
-                if (!this->onKey(key, Window::kDown_InputState, get_modifiers(event))) {
+            skui::Key key = get_key(keysym);
+            if (key != skui::Key::kNONE) {
+                if (!this->onKey(key, skui::InputState::kDown, get_modifiers(event))) {
                     if (keysym == XK_Escape) {
                         return true;
                     }
@@ -307,8 +313,8 @@ bool Window_unix::handleEvent(const XEvent& event) {
             int shiftLevel = (event.xkey.state & ShiftMask) ? 1 : 0;
             KeySym keysym = XkbKeycodeToKeysym(fDisplay, event.xkey.keycode,
                                                0, shiftLevel);
-            Window::Key key = get_key(keysym);
-            (void) this->onKey(key, Window::kUp_InputState,
+            skui::Key key = get_key(keysym);
+            (void) this->onKey(key, skui::InputState::kUp,
                                get_modifiers(event));
         } break;
 
@@ -352,18 +358,25 @@ bool Window_unix::attach(BackendType attachType) {
     }
 
     switch (attachType) {
+#ifdef SK_DAWN
+        case kDawn_BackendType:
+            fWindowContext =
+                    window_context_factory::MakeDawnVulkanForXlib(winInfo, fRequestedDisplayParams);
+            break;
+#endif
 #ifdef SK_VULKAN
         case kVulkan_BackendType:
-            fWindowContext = window_context_factory::NewVulkanForXlib(winInfo,
-                                                                      fRequestedDisplayParams);
+            fWindowContext =
+                    window_context_factory::MakeVulkanForXlib(winInfo, fRequestedDisplayParams);
             break;
 #endif
         case kNativeGL_BackendType:
-            fWindowContext = window_context_factory::NewGLForXlib(winInfo, fRequestedDisplayParams);
+            fWindowContext =
+                    window_context_factory::MakeGLForXlib(winInfo, fRequestedDisplayParams);
             break;
         case kRaster_BackendType:
-            fWindowContext = window_context_factory::NewRasterForXlib(winInfo,
-                                                                      fRequestedDisplayParams);
+            fWindowContext =
+                    window_context_factory::MakeRasterForXlib(winInfo, fRequestedDisplayParams);
             break;
     }
     this->onBackendCreated();

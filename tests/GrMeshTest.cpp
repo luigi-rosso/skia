@@ -17,9 +17,9 @@
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrGeometryProcessor.h"
-#include "src/gpu/GrGpuCommandBuffer.h"
 #include "src/gpu/GrMemoryPool.h"
 #include "src/gpu/GrOpFlushState.h"
+#include "src/gpu/GrOpsRenderPass.h"
 #include "src/gpu/GrRenderTargetContext.h"
 #include "src/gpu/GrRenderTargetContextPriv.h"
 #include "src/gpu/GrResourceProvider.h"
@@ -77,18 +77,14 @@ struct Box {
  */
 
 static void run_test(GrContext* context, const char* testName, skiatest::Reporter*,
-                     const sk_sp<GrRenderTargetContext>&, const SkBitmap& gold,
+                     const std::unique_ptr<GrRenderTargetContext>&, const SkBitmap& gold,
                      std::function<void(DrawMeshHelper*)> testFn);
 
 DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrMeshTest, reporter, ctxInfo) {
     GrContext* context = ctxInfo.grContext();
 
-    const GrBackendFormat format =
-            context->priv().caps()->getBackendFormatFromColorType(kRGBA_8888_SkColorType);
-
-    sk_sp<GrRenderTargetContext> rtc(context->priv().makeDeferredRenderTargetContext(
-            format, SkBackingFit::kExact, kImageWidth, kImageHeight, kRGBA_8888_GrPixelConfig,
-            GrColorType::kRGBA_8888, nullptr));
+    auto rtc = context->priv().makeDeferredRenderTargetContext(
+            SkBackingFit::kExact, kImageWidth, kImageHeight, GrColorType::kRGBA_8888, nullptr);
     if (!rtc) {
         ERRORF(reporter, "could not create render target context.");
         return;
@@ -386,12 +382,12 @@ sk_sp<const GrBuffer> DrawMeshHelper::getIndexBuffer() {
 void DrawMeshHelper::drawMesh(const GrMesh& mesh) {
     GrPipeline pipeline(GrScissorTest::kDisabled, SkBlendMode::kSrc, GrSwizzle::RGBA());
     GrMeshTestProcessor mtp(mesh.isInstanced(), mesh.hasVertexData());
-    fState->rtCommandBuffer()->draw(mtp, pipeline, nullptr, nullptr, &mesh, 1,
-                                    SkRect::MakeIWH(kImageWidth, kImageHeight));
+    fState->opsRenderPass()->draw(mtp, pipeline, nullptr, nullptr, &mesh, 1,
+                                  SkRect::MakeIWH(kImageWidth, kImageHeight));
 }
 
 static void run_test(GrContext* context, const char* testName, skiatest::Reporter* reporter,
-                     const sk_sp<GrRenderTargetContext>& rtc, const SkBitmap& gold,
+                     const std::unique_ptr<GrRenderTargetContext>& rtc, const SkBitmap& gold,
                      std::function<void(DrawMeshHelper*)> testFn) {
     const int w = gold.width(), h = gold.height(), rowBytes = gold.rowBytes();
     const uint32_t* goldPx = reinterpret_cast<const uint32_t*>(gold.getPixels());
@@ -408,7 +404,7 @@ static void run_test(GrContext* context, const char* testName, skiatest::Reporte
     rtc->clear(nullptr, SkPMColor4f::FromBytes_RGBA(0xbaaaaaad),
                GrRenderTargetContext::CanClearFullscreen::kYes);
     rtc->priv().testingOnly_addDrawOp(GrMeshTestOp::Make(context, testFn));
-    rtc->readPixels(gold.info(), resultPx, rowBytes, 0, 0, 0);
+    rtc->readPixels(gold.info(), resultPx, rowBytes, {0, 0});
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             uint32_t expected = goldPx[y * kImageWidth + x];

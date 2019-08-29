@@ -21,11 +21,7 @@ GrTextureAdjuster::GrTextureAdjuster(GrRecordingContext* context,
                                      SkColorSpace* cs,
                                      bool useDecal)
         : INHERITED(context, original->width(), original->height(),
-                    GrColorSpaceInfo(colorType,
-                                     alphaType,
-                                     sk_ref_sp(cs),
-                                     original->config()),
-                                     useDecal)
+                    GrColorSpaceInfo(colorType, alphaType, sk_ref_sp(cs)), useDecal)
         , fOriginal(std::move(original))
         , fUniqueID(uniqueID) {}
 
@@ -48,7 +44,7 @@ sk_sp<GrTextureProxy> GrTextureAdjuster::refTextureProxyCopy(const CopyParams& c
     this->makeCopyKey(copyParams, &key);
     sk_sp<GrTextureProxy> cachedCopy;
     if (key.isValid()) {
-        cachedCopy = proxyProvider->findOrCreateProxyByUniqueKey(key,
+        cachedCopy = proxyProvider->findOrCreateProxyByUniqueKey(key, this->colorType(),
                                                                  this->originalProxy()->origin());
         if (cachedCopy && (!willBeMipped || GrMipMapped::kYes == cachedCopy->mipMapped())) {
             return cachedCopy;

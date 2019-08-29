@@ -8,11 +8,11 @@
 #ifndef GrYUVProvider_DEFINED
 #define GrYUVProvider_DEFINED
 
-#include <include/private/GrTypesPriv.h>
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkYUVAIndex.h"
 #include "include/core/SkYUVASizeInfo.h"
 #include "include/gpu/GrTypes.h"
+#include "include/private/GrTypesPriv.h"
 
 class GrBackendFormat;
 class GrRecordingContext;
@@ -43,7 +43,6 @@ public:
      *  On failure (e.g. the provider had no data), this returns NULL.
      */
     sk_sp<GrTextureProxy> refAsTextureProxy(GrRecordingContext*,
-                                            const GrBackendFormat&,
                                             const GrSurfaceDesc&,
                                             GrColorType colorType,
                                             SkColorSpace* srcColorSpace,

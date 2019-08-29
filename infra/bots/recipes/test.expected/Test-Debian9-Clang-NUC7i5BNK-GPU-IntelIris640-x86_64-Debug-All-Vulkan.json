@@ -273,7 +273,6 @@
       "--nocpu",
       "--config",
       "vk",
-      "vkmsaa8",
       "--src",
       "tests",
       "gm",
@@ -440,6 +439,7 @@
       "--match",
       "~VkHeapTests",
       "~GLPrograms",
+      "~^SRGBReadWritePixels$",
       "--nonativeFonts",
       "--verbose"
     ],
