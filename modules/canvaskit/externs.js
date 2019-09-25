@@ -29,6 +29,8 @@ var CanvasKit = {
 	LTRBRect: function() {},
 	/** @return {CanvasKit.SkRect} */
 	XYWHRect: function() {},
+	/** @return {CanvasKit.SkRRect} */
+	RRectXY: function() {},
 	/** @return {ImageData} */
 	ImageData: function() {},
 
@@ -37,8 +39,9 @@ var CanvasKit = {
 	MakeCanvas: function() {},
 	MakeCanvasSurface: function() {},
 	MakeGrContext: function() {},
-	MakeImageShader: function() {},
+	/** @return {CanvasKit.SkAnimatedImage} */
 	MakeImage: function() {},
+	MakeAnimatedImageFromEncoded: function() {},
 	/** @return {CanvasKit.SkImage} */
 	MakeImageFromEncoded: function() {},
 	/** @return {LinearCanvasGradient} */
@@ -57,6 +60,8 @@ var CanvasKit = {
 	/** @return {RadialCanvasGradient} */
 	MakeTwoPointConicalGradientShader: function() {},
 	MakeWebGLCanvasSurface: function() {},
+	/** @return {TonalColors} */
+	computeTonalColors: function() {},
 	currentContext: function() {},
 	getColorComponents: function() {},
 	getSkDataBytes: function() {},
@@ -73,6 +78,7 @@ var CanvasKit = {
 	_MakeSkDashPathEffect: function() {},
 	_MakeSkVertices: function() {},
 	_MakeTwoPointConicalGradientShader: function() {},
+	_decodeAnimatedImage: function() {},
 	_decodeImage: function() {},
 	_drawShapedText: function() {},
 	_getRasterDirectSurface: function() {},
@@ -100,6 +106,12 @@ var CanvasKit = {
 		getBounds: function() {},
 	},
 
+	SkAnimatedImage: {
+		// public API (from C++ bindings)
+		getRepetitionCount: function() {},
+		decodeNextFrame: function() {},
+	},
+
 	SkCanvas: {
 		// public API (from C++ bindings)
 		clear: function() {},
@@ -108,6 +120,8 @@ var CanvasKit = {
 		concat: function() {},
 		drawArc: function() {},
 		drawCircle: function() {},
+		drawDRRect:  function() {},
+		drawAnimatedImage: function() {},
 		drawImage: function() {},
 		drawImageRect: function() {},
 		drawLine: function() {},
@@ -115,14 +129,15 @@ var CanvasKit = {
 		drawPaint: function() {},
 		drawPath: function() {},
 		drawPicture: function() {},
+		drawRRect:  function() {},
 		drawRect: function() {},
 		drawRoundRect: function() {},
 		drawShadow: function() {},
 		drawText: function() {},
-		getSaveCount: function() {},
 		drawTextBlob: function() {},
 		drawVertices: function() {},
 		flush: function() {},
+		getSaveCount: function() {},
 		getTotalMatrix: function() {},
 		makeSurface: function() {},
 		restore: function() {},
@@ -140,6 +155,26 @@ var CanvasKit = {
 		_readPixels: function() {},
 		_writePixels: function() {},
 		delete: function() {},
+	},
+
+	SkColorFilter: {
+		// public API (from C++ bindings and JS interface)
+		MakeBlend: function() {},
+		MakeCompose: function() {},
+		MakeLerp: function() {},
+		MakeLinearToSRGBGamma: function() {},
+		MakeMatrix: function() {},
+		MakeSRGBToLinearGamma: function() {},
+		// private API (from C++ bindings)
+		_makeMatrix: function() {},
+	},
+
+	SkColorMatrix: {
+		concat: function() {},
+		identity: function() {},
+		postTranslate: function() {},
+		rotated: function() {},
+		scaled: function() {},
 	},
 
 	SkFont: {
@@ -281,6 +316,18 @@ var CanvasKit = {
 		fTop: {},
 		fRight: {},
 		fBottom: {},
+	},
+
+	SkRRect: {
+		rect: {},
+		rx1: {},
+		ry1: {},
+		rx2: {},
+		ry2: {},
+		rx3: {},
+		ry3: {},
+		rx4: {},
+		ry4: {},
 	},
 
 	SkSurface: {

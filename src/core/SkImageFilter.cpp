@@ -463,6 +463,7 @@ sk_sp<SkSpecialImage> SkImageFilter_Base::DrawWithFP(GrRecordingContext* context
     return SkSpecialImage::MakeDeferredFromGpu(
             context, dstIRect, kNeedNewImageUniqueID_SpecialImage,
             renderTargetContext->asTextureProxyRef(),
+            renderTargetContext->colorSpaceInfo().colorType(),
             renderTargetContext->colorSpaceInfo().refColorSpace());
 }
 
@@ -524,7 +525,7 @@ void SkImageFilter_Base::PurgeCache() {
 }
 
 static sk_sp<SkImageFilter> apply_ctm_to_filter(sk_sp<SkImageFilter> input, const SkMatrix& ctm,
-                                                SkMatrix* remainder, bool asBackdrop) {
+                                                SkMatrix* remainder) {
     if (ctm.isScaleTranslate() || as_IFB(input)->canHandleComplexCTM()) {
         // The filter supports the CTM, so leave it as-is and 'remainder' stores the whole CTM
         *remainder = ctm;
@@ -567,24 +568,9 @@ static sk_sp<SkImageFilter> apply_ctm_to_filter(sk_sp<SkImageFilter> input, cons
         remainder->setIdentity();
     }
 
-    if (asBackdrop) {
-        // In the backdrop case we also have to transform the existing device-space buffer content
-        // into the source coordinate space prior to the filtering. Non-backdrop filter inputs are
-        // already in the source space because of how the layer is drawn by SkCanvas.
-        SkMatrix invEmbed;
-        if (ctmToEmbed.invert(&invEmbed)) {
-            input = SkComposeImageFilter::Make(std::move(input),
-                            SkMatrixImageFilter::Make(invEmbed, kLow_SkFilterQuality, nullptr));
-        }
-    }
     return SkMatrixImageFilter::Make(ctmToEmbed, kLow_SkFilterQuality, input);
 }
 
 sk_sp<SkImageFilter> SkImageFilter_Base::applyCTM(const SkMatrix& ctm, SkMatrix* remainder) const {
-    return apply_ctm_to_filter(this->refMe(), ctm, remainder, false);
-}
-
-sk_sp<SkImageFilter> SkImageFilter_Base::applyCTMForBackdrop(const SkMatrix& ctm,
-                                                             SkMatrix* remainder) const {
-    return apply_ctm_to_filter(this->refMe(), ctm, remainder, true);
+    return apply_ctm_to_filter(this->refMe(), ctm, remainder);
 }

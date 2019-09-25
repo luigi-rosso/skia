@@ -428,17 +428,16 @@ sk_sp<SkData> SkStrikeServer::serializeTypeface(SkTypeface* tf) {
 
 void SkStrikeServer::writeStrikeData(std::vector<uint8_t>* memory) {
     size_t strikesToSend = 0;
-    fRemoteStrikesToSend.foreach(
-            [&strikesToSend](RemoteStrike* strike) {
-                if (strike->hasPendingGlyphs()) {
-                    strikesToSend++;
-                } else {
-                    strike->resetScalerContext();
-                }
-            }
-    );
+    fRemoteStrikesToSend.foreach ([&strikesToSend](RemoteStrike* strike) {
+        if (strike->hasPendingGlyphs()) {
+            strikesToSend++;
+        } else {
+            strike->resetScalerContext();
+        }
+    });
 
     if (strikesToSend == 0 && fTypefacesToSend.empty()) {
+        fRemoteStrikesToSend.reset();
         return;
     }
 
@@ -450,7 +449,7 @@ void SkStrikeServer::writeStrikeData(std::vector<uint8_t>* memory) {
     fTypefacesToSend.clear();
 
     serializer.emplace<uint64_t>(SkTo<uint64_t>(strikesToSend));
-    fRemoteStrikesToSend.foreach(
+    fRemoteStrikesToSend.foreach (
 #ifdef SK_DEBUG
             [&serializer, this](RemoteStrike* strike) {
                 if (strike->hasPendingGlyphs()) {
@@ -588,7 +587,6 @@ static void writeGlyph(SkGlyph* glyph, Serializer* serializer) {
 }
 
 void SkStrikeServer::RemoteStrike::writePendingGlyphs(Serializer* serializer) {
-    serializer->emplace<bool>(this->hasPendingGlyphs());
     SkASSERT(this->hasPendingGlyphs());
 
     // Write the desc.
@@ -801,11 +799,6 @@ bool SkStrikeClient::readStrikeData(const volatile void* memory, size_t memorySi
     if (!deserializer.read<uint64_t>(&strikeCount)) READ_FAILURE
 
     for (size_t i = 0; i < strikeCount; ++i) {
-        bool has_glyphs = false;
-        if (!deserializer.read<bool>(&has_glyphs)) READ_FAILURE
-
-        if (!has_glyphs) continue;
-
         StrikeSpec spec;
         if (!deserializer.read<StrikeSpec>(&spec)) READ_FAILURE
 

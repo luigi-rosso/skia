@@ -7,7 +7,6 @@
 
 #include "tools/viewer/ParticlesSlide.h"
 
-#include "modules/particles/include/SkParticleDrawable.h"
 #include "modules/particles/include/SkParticleEffect.h"
 #include "modules/particles/include/SkParticleSerialization.h"
 #include "modules/particles/include/SkReflected.h"
@@ -73,6 +72,7 @@ public:
             int lines = count_lines(s);
             ImGuiInputTextFlags flags = ImGuiInputTextFlags_CallbackResize;
             if (lines > 1) {
+                ImGui::LabelText("##Label", "%s", name);
                 ImVec2 boxSize(-1.0f, ImGui::GetTextLineHeight() * (lines + 1));
                 ImGui::InputTextMultiline(item(name), s.writable_str(), s.size() + 1, boxSize,
                                           flags, InputTextCallback, &s);
@@ -203,9 +203,7 @@ private:
 
 ParticlesSlide::ParticlesSlide() {
     // Register types for serialization
-    REGISTER_REFLECTED(SkReflected);
-    SkParticleBinding::RegisterBindingTypes();
-    SkParticleDrawable::RegisterDrawableTypes();
+    SkParticleEffect::RegisterParticleTypes();
     fName = "Particles";
     fPlayPosition.set(200.0f, 200.0f);
 }
@@ -284,6 +282,7 @@ void ParticlesSlide::draw(SkCanvas* canvas) {
                 sk_sp<SkParticleEffect> effect(new SkParticleEffect(fLoaded[i].fParams, fRandom));
                 effect->start(fAnimationTime, looped);
                 fRunning.push_back({ fPlayPosition, fLoaded[i].fName, effect });
+                fRandom.nextU();
             }
             ImGui::SameLine();
 

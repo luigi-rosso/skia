@@ -154,7 +154,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrBackendTextureImageMipMappedTest, reporter,
                 return;
             }
 
-            if (GrSurfaceProxy::LazyState::kNot != genProxy->lazyInstantiationState()) {
+            if (genProxy->isLazy()) {
                 genProxy->priv().doLazyInstantiation(context->priv().resourceProvider());
             } else if (!genProxy->isInstantiated()) {
                 genProxy->instantiate(context->priv().resourceProvider());
@@ -347,7 +347,7 @@ static std::unique_ptr<GrRenderTargetContext> draw_mipmap_into_new_render_target
     desc.fConfig = mipmapProxy->config();
     sk_sp<GrSurfaceProxy> renderTarget = proxyProvider->createProxy(
             mipmapProxy->backendFormat(), desc, GrRenderable::kYes, 1, kTopLeft_GrSurfaceOrigin,
-            SkBackingFit::kApprox, SkBudgeted::kYes, GrProtected::kNo);
+            GrMipMapped::kNo, SkBackingFit::kApprox, SkBudgeted::kYes, GrProtected::kNo);
     auto rtc = drawingManager->makeRenderTargetContext(
             std::move(renderTarget), colorType, nullptr, nullptr, true);
     rtc->drawTexture(GrNoClip(), mipmapProxy, filter, SkBlendMode::kSrcOver, {1,1,1,1},
@@ -389,9 +389,9 @@ DEF_GPUTEST(GrManyDependentsMipMappedTest, reporter, /* options */) {
         desc.fWidth = 4;
         desc.fHeight = 4;
         desc.fConfig = config;
-        sk_sp<GrTextureProxy> mipmapProxy = proxyProvider->createMipMapProxy(
-                format, desc, GrRenderable::kYes, 1, kTopLeft_GrSurfaceOrigin, SkBudgeted::kYes,
-                GrProtected::kNo);
+        sk_sp<GrTextureProxy> mipmapProxy = proxyProvider->createProxy(
+                format, desc, GrRenderable::kYes, 1, kTopLeft_GrSurfaceOrigin, GrMipMapped::kYes,
+                SkBackingFit::kExact, SkBudgeted::kYes, GrProtected::kNo);
 
         // Mark the mipmaps clean to ensure things still work properly when they won't be marked
         // dirty again until GrRenderTask::makeClosed().
@@ -421,8 +421,6 @@ DEF_GPUTEST(GrManyDependentsMipMappedTest, reporter, /* options */) {
         REPORTER_ASSERT(reporter, initialMipmapRegenTask);
         REPORTER_ASSERT(reporter,
                 initialMipmapRegenTask != mipmapRTC->testingOnly_PeekLastOpsTask());
-        REPORTER_ASSERT(reporter,
-                rtc1->testingOnly_PeekLastOpsTask()->dependsOn(initialMipmapRegenTask));
         REPORTER_ASSERT(reporter, !mipmapProxy->mipMapsAreDirty());
 
         // Draw the now-clean mipmap texture into a second target.
@@ -431,12 +429,16 @@ DEF_GPUTEST(GrManyDependentsMipMappedTest, reporter, /* options */) {
 
         // Make sure the mipmap texture still has the same regen task.
         REPORTER_ASSERT(reporter, mipmapProxy->getLastRenderTask() == initialMipmapRegenTask);
-        REPORTER_ASSERT(reporter,
-                rtc2->testingOnly_PeekLastOpsTask()->dependsOn(initialMipmapRegenTask));
         SkASSERT(!mipmapProxy->mipMapsAreDirty());
 
         // Reset everything so we can go again, this time with the first draw not mipmapped.
         context->flush();
+
+        // Mip regen tasks don't get added as dependencies until makeClosed().
+        REPORTER_ASSERT(reporter,
+                rtc1->testingOnly_PeekLastOpsTask()->dependsOn(initialMipmapRegenTask));
+        REPORTER_ASSERT(reporter,
+                rtc2->testingOnly_PeekLastOpsTask()->dependsOn(initialMipmapRegenTask));
 
         // Render something to dirty the mips.
         mipmapRTC->clear(nullptr, {.1f,.2f,.3f,.4f}, CanClearFullscreen::kYes);
@@ -467,11 +469,14 @@ DEF_GPUTEST(GrManyDependentsMipMappedTest, reporter, /* options */) {
 
         // Make sure the mipmap texture now has a new last render task that regenerates the mips,
         // and that the mipmaps are now clean.
-        REPORTER_ASSERT(reporter, mipmapProxy->getLastRenderTask());
+        auto mipRegenTask2 = mipmapProxy->getLastRenderTask();
+        REPORTER_ASSERT(reporter, mipRegenTask2);
         REPORTER_ASSERT(reporter,
-                mipmapRTC->testingOnly_PeekLastOpsTask() != mipmapProxy->getLastRenderTask());
-        REPORTER_ASSERT(reporter,
-                rtc2->testingOnly_PeekLastOpsTask()->dependsOn(mipmapProxy->getLastRenderTask()));
+                mipmapRTC->testingOnly_PeekLastOpsTask() != mipRegenTask2);
         SkASSERT(!mipmapProxy->mipMapsAreDirty());
+
+        // Mip regen tasks don't get added as dependencies until makeClosed().
+        context->flush();
+        REPORTER_ASSERT(reporter, rtc2->testingOnly_PeekLastOpsTask()->dependsOn(mipRegenTask2));
     }
 }

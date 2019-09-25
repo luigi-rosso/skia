@@ -196,7 +196,8 @@ SkString GrGLSLProgramBuilder::emitAndInstallFragProc(
         }
     }
 
-    const GrShaderVar* coordVars = fTransformedCoordVars.begin() + transformedCoordVarsIdx;
+    const GrGLSLPrimitiveProcessor::TransformVar* coordVars = fTransformedCoordVars.begin() +
+                                                              transformedCoordVarsIdx;
     GrGLSLFragmentProcessor::TransformedCoordVars coords(&fp, coordVars);
     GrGLSLFragmentProcessor::TextureSamplers textureSamplers(&fp, texSamplers.begin());
     GrGLSLFragmentProcessor::EmitArgs args(&fFS,
@@ -254,16 +255,7 @@ void GrGLSLProgramBuilder::emitAndInstallXferProc(const SkString& colorIn,
         SkASSERT(dstTexture->texturePriv().textureType() != GrTextureType::kExternal);
     }
 
-    SkString finalInColor;
-    if (colorIn.size()) {
-        if (this->desc()->header().fClampBlendInput) {
-            finalInColor.printf("saturate(%s)", colorIn.c_str());
-        } else {
-            finalInColor = colorIn;
-        }
-    } else {
-        finalInColor = "float4(1)";
-    }
+    SkString finalInColor = colorIn.size() ? colorIn : SkString("float4(1)");
 
     GrGLSLXferProcessor::EmitArgs args(&fFS,
                                        this->uniformHandler(),
@@ -352,17 +344,17 @@ void GrGLSLProgramBuilder::appendUniformDecls(GrShaderFlags visibility, SkString
 }
 
 void GrGLSLProgramBuilder::addRTWidthUniform(const char* name) {
-        SkASSERT(!fUniformHandles.fRTWidthUni.isValid());
-        GrGLSLUniformHandler* uniformHandler = this->uniformHandler();
-        fUniformHandles.fRTWidthUni =
+    SkASSERT(!fUniformHandles.fRTWidthUni.isValid());
+    GrGLSLUniformHandler* uniformHandler = this->uniformHandler();
+    fUniformHandles.fRTWidthUni =
             uniformHandler->internalAddUniformArray(kFragment_GrShaderFlag, kHalf_GrSLType, name,
                                                     false, 0, nullptr);
 }
 
 void GrGLSLProgramBuilder::addRTHeightUniform(const char* name) {
-        SkASSERT(!fUniformHandles.fRTHeightUni.isValid());
-        GrGLSLUniformHandler* uniformHandler = this->uniformHandler();
-        fUniformHandles.fRTHeightUni =
+    SkASSERT(!fUniformHandles.fRTHeightUni.isValid());
+    GrGLSLUniformHandler* uniformHandler = this->uniformHandler();
+    fUniformHandles.fRTHeightUni =
             uniformHandler->internalAddUniformArray(kFragment_GrShaderFlag, kHalf_GrSLType, name,
                                                     false, 0, nullptr);
 }

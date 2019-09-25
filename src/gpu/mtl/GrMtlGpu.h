@@ -56,12 +56,6 @@ public:
     // command buffer to finish before creating a new buffer and returning.
     void submitCommandBuffer(SyncQueue sync);
 
-    GrBackendTexture createBackendTexture(int w, int h, const GrBackendFormat&,
-                                          GrMipMapped, GrRenderable,
-                                          const void* pixels, size_t rowBytes,
-                                          const SkColor4f* color,
-                                          GrProtected isProtected) override;
-
     void deleteBackendTexture(const GrBackendTexture&) override;
 
 #if GR_TEST_UTILS
@@ -81,9 +75,11 @@ public:
     bool onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
                        const SkIPoint& dstPoint) override;
 
-    GrOpsRenderPass* getOpsRenderPass(GrRenderTarget*, GrSurfaceOrigin, const SkRect& bounds,
-                                      const GrOpsRenderPass::LoadAndStoreInfo&,
-                                      const GrOpsRenderPass::StencilLoadAndStoreInfo&) override;
+    GrOpsRenderPass* getOpsRenderPass(
+            GrRenderTarget*, GrSurfaceOrigin, const SkRect& bounds,
+            const GrOpsRenderPass::LoadAndStoreInfo&,
+            const GrOpsRenderPass::StencilLoadAndStoreInfo&,
+            const SkTArray<GrTextureProxy*, true>& sampledProxies) override;
 
     SkSL::Compiler* shaderCompiler() const { return fCompiler.get(); }
 
@@ -131,19 +127,22 @@ private:
 
     void xferBarrier(GrRenderTarget*, GrXferBarrierType) override {}
 
+    GrBackendTexture onCreateBackendTexture(int w, int h, const GrBackendFormat&,
+                                            GrMipMapped, GrRenderable,
+                                            const SkPixmap srcData[], int numMipLevels,
+                                            const SkColor4f* color, GrProtected) override;
+
     sk_sp<GrTexture> onCreateTexture(const GrSurfaceDesc& desc,
                                      const GrBackendFormat& format,
                                      GrRenderable,
                                      int renderTargetSampleCnt,
                                      SkBudgeted budgeted,
                                      GrProtected,
-                                     const GrMipLevel texels[],
-                                     int mipLevelCount) override;
+                                     int mipLevelCount,
+                                     uint32_t levelClearMask) override;
     sk_sp<GrTexture> onCreateCompressedTexture(int width, int height, const GrBackendFormat&,
                                                SkImage::CompressionType, SkBudgeted,
-                                               const void* data) override {
-        return nullptr;
-    }
+                                               const void* data) override;
 
     sk_sp<GrTexture> onWrapBackendTexture(const GrBackendTexture&, GrColorType,
                                           GrWrapOwnership, GrWrapCacheable, GrIOType) override;
@@ -168,7 +167,8 @@ private:
 
     bool onWritePixels(GrSurface*, int left, int top, int width, int height,
                        GrColorType surfaceColorType, GrColorType bufferColorType,
-                       const GrMipLevel[], int mipLevelCount) override;
+                       const GrMipLevel[], int mipLevelCount,
+                       bool prepForTexSampling) override;
 
     bool onTransferPixelsTo(GrTexture*, int left, int top, int width, int height,
                             GrColorType textureColorType, GrColorType bufferColorType, GrGpuBuffer*,
@@ -221,11 +221,11 @@ private:
     GrStencilAttachment* createStencilAttachmentForRenderTarget(
             const GrRenderTarget*, int width, int height, int numStencilSamples) override;
 
-    bool createTestingOnlyMtlTextureInfo(MTLPixelFormat,
-                                         int w, int h, bool texturable,
-                                         bool renderable, GrMipMapped mipMapped,
-                                         const void* srcData, size_t srcRowBytes,
-                                         const SkColor4f* color, GrMtlTextureInfo* info);
+    bool createMtlTextureForBackendSurface(MTLPixelFormat,
+                                           int w, int h, bool texturable,
+                                           bool renderable, GrMipMapped,
+                                           const SkPixmap srcData[], int numMipLevels,
+                                           const SkColor4f* color, GrMtlTextureInfo*);
 
     sk_sp<GrMtlCaps> fMtlCaps;
 
@@ -240,8 +240,8 @@ private:
 
 #ifdef GR_METAL_SDK_SUPPORTS_EVENTS
     // For FenceSync
-    id<MTLSharedEvent>      fSharedEvent;
-    MTLSharedEventListener* fSharedEventListener;
+    id<MTLSharedEvent>      fSharedEvent API_AVAILABLE(macos(10.14), ios(12.0));
+    MTLSharedEventListener* fSharedEventListener API_AVAILABLE(macos(10.14), ios(12.0));
     uint64_t                fLatestEvent;
 #endif
 

@@ -12,13 +12,10 @@
 
 class GrTextureResolveRenderTask final : public GrRenderTask {
 public:
-    GrTextureResolveRenderTask(sk_sp<GrTextureProxy> textureProxy, GrTextureResolveFlags flags)
-            : GrRenderTask(std::move(textureProxy))
-            , fResolveFlags(flags) {
-        SkASSERT(GrTextureResolveFlags::kNone != fResolveFlags);
-    }
+    GrTextureResolveRenderTask() : GrRenderTask(nullptr) {}
+    ~GrTextureResolveRenderTask() override;
 
-    void init(const GrCaps&);
+    void addProxy(sk_sp<GrSurfaceProxy>, GrSurfaceProxy::ResolveFlags, const GrCaps&);
 
 private:
     void onPrepare(GrOpFlushState*) override {}
@@ -26,7 +23,9 @@ private:
         SkASSERT(proxy != fTarget.get());  // This case should be handled by GrRenderTask.
         return false;
     }
-    void handleInternalAllocationFailure() override {}
+    void handleInternalAllocationFailure() override {
+        // No need to do anything special here. We just double check the proxies during onExecute.
+    }
     void gatherProxyIntervals(GrResourceAllocator*) const override;
 
     ExpectedOutcome onMakeClosed(const GrCaps&) override {
@@ -36,11 +35,17 @@ private:
     bool onExecute(GrOpFlushState*) override;
 
 #ifdef SK_DEBUG
-    // No non-dst proxies.
-    void visitProxies_debugOnly(const VisitSurfaceProxyFunc& fn) const override {}
+    SkDEBUGCODE(void visitProxies_debugOnly(const VisitSurfaceProxyFunc&) const override;)
 #endif
 
-    const GrTextureResolveFlags fResolveFlags;
+    struct Resolve {
+        Resolve(sk_sp<GrSurfaceProxy> proxy, GrSurfaceProxy::ResolveFlags flags)
+                : fProxy(std::move(proxy)), fFlags(flags) {}
+        sk_sp<GrSurfaceProxy> fProxy;
+        GrSurfaceProxy::ResolveFlags fFlags;
+    };
+
+    SkSTArray<4, Resolve> fResolves;
 };
 
 #endif

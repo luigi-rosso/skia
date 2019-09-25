@@ -55,7 +55,7 @@ public:
 #ifdef SK_VULKAN
         kVulkan_BackendType,
 #endif
-#if SK_METAL && defined(SK_BUILD_FOR_MAC)
+#ifdef SK_METAL
         kMetal_BackendType,
 #endif
         kRaster_BackendType,
@@ -87,6 +87,9 @@ public:
         virtual bool onMouse(int x, int y, skui::InputState, skui::ModifierKey) { return false; }
         virtual bool onMouseWheel(float delta, skui::ModifierKey) { return false; }
         virtual bool onTouch(intptr_t owner, skui::InputState, float x, float y) { return false; }
+        // Platform-detected gesture events
+        virtual bool onFling(skui::InputState state) { return false; }
+        virtual bool onPinch(skui::InputState state, float scale, float x, float y) { return false; }
         virtual void onUIStateChanged(const SkString& stateName, const SkString& stateValue) {}
         virtual void onPrePaint() {}
         virtual void onPaint(SkSurface*) {}
@@ -108,6 +111,9 @@ public:
     bool onMouse(int x, int y, skui::InputState state, skui::ModifierKey modifiers);
     bool onMouseWheel(float delta, skui::ModifierKey modifiers);
     bool onTouch(intptr_t owner, skui::InputState state, float x, float y);  // multi-owner = multi-touch
+    // Platform-detected gesture events
+    bool onFling(skui::InputState state);
+    bool onPinch(skui::InputState state, float scale, float x, float y);
     void onUIStateChanged(const SkString& stateName, const SkString& stateValue);
     void onPaint();
     void onResize(int width, int height);

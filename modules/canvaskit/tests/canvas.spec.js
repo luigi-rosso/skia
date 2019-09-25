@@ -162,4 +162,174 @@ describe('CanvasKit\'s Canvas Behavior', function() {
         }));
     });
 
+    it('draws simple rrects', function(done) {
+        LoadCanvasKit.then(catchException(done, () => {
+            const surface = CanvasKit.MakeCanvasSurface('test');
+            expect(surface).toBeTruthy('Could not make surface')
+            if (!surface) {
+                done();
+                return;
+            }
+            const canvas = surface.getCanvas();
+            const path = starPath(CanvasKit);
+
+            const paint = new CanvasKit.SkPaint();
+
+            paint.setStyle(CanvasKit.PaintStyle.Stroke);
+            paint.setStrokeWidth(3.0);
+            paint.setAntiAlias(true);
+            paint.setColor(CanvasKit.BLACK);
+
+            canvas.clear(CanvasKit.WHITE);
+
+            canvas.drawRRect(CanvasKit.RRectXY(
+                CanvasKit.LTRBRect(10, 10, 50, 50), 5, 10), paint);
+
+            canvas.drawRRect(CanvasKit.RRectXY(
+                CanvasKit.LTRBRect(60, 10, 110, 50), 10, 5), paint);
+
+            canvas.drawRRect(CanvasKit.RRectXY(
+                CanvasKit.LTRBRect(10, 60, 210, 260), 0, 30), paint);
+
+            canvas.drawRRect(CanvasKit.RRectXY(
+                CanvasKit.LTRBRect(50, 90, 160, 210), 30, 30), paint);
+
+            surface.flush();
+            path.delete();
+            paint.delete();
+
+            reportSurface(surface, 'rrect_canvas', done);
+        }));
+    });
+
+    it('draws complex rrects', function(done) {
+        LoadCanvasKit.then(catchException(done, () => {
+            const surface = CanvasKit.MakeCanvasSurface('test');
+            expect(surface).toBeTruthy('Could not make surface')
+            if (!surface) {
+                done();
+                return;
+            }
+            const canvas = surface.getCanvas();
+            const path = starPath(CanvasKit);
+
+            const paint = new CanvasKit.SkPaint();
+
+            paint.setStyle(CanvasKit.PaintStyle.Stroke);
+            paint.setStrokeWidth(3.0);
+            paint.setAntiAlias(true);
+            paint.setColor(CanvasKit.BLACK);
+
+            canvas.clear(CanvasKit.WHITE);
+
+            canvas.drawRRect({
+              rect: CanvasKit.LTRBRect(10, 10, 210, 210),
+              rx1: 10, // top left corner, going clockwise
+              ry1: 30,
+              rx2: 30,
+              ry2: 10,
+              rx3: 50,
+              ry3: 75,
+              rx4: 120,
+              ry4: 120,
+            }, paint);
+
+            surface.flush();
+            path.delete();
+            paint.delete();
+
+            reportSurface(surface, 'rrect_8corners_canvas', done);
+        }));
+    });
+
+    it('draws between two rrects', function(done) {
+        LoadCanvasKit.then(catchException(done, () => {
+            const surface = CanvasKit.MakeCanvasSurface('test');
+            expect(surface).toBeTruthy('Could not make surface')
+            if (!surface) {
+                done();
+                return;
+            }
+            const canvas = surface.getCanvas();
+            const path = starPath(CanvasKit);
+
+            const paint = new CanvasKit.SkPaint();
+
+            paint.setStyle(CanvasKit.PaintStyle.Fill);
+            paint.setStrokeWidth(3.0);
+            paint.setAntiAlias(true);
+            paint.setColor(CanvasKit.BLACK);
+
+            canvas.clear(CanvasKit.WHITE);
+
+            const outer = CanvasKit.RRectXY(CanvasKit.LTRBRect(10, 60, 210, 260), 10, 5);
+            const inner = CanvasKit.RRectXY(CanvasKit.LTRBRect(50, 90, 160, 210), 30, 30);
+
+            canvas.drawDRRect(outer, inner, paint);
+
+            surface.flush();
+            path.delete();
+            paint.delete();
+
+            reportSurface(surface, 'drawDRRect_canvas', done);
+        }));
+    });
+
+    it('draws with color filters', function(done) {
+        LoadCanvasKit.then(catchException(done, () => {
+            const surface = CanvasKit.MakeCanvasSurface('test');
+            expect(surface).toBeTruthy('Could not make surface')
+            if (!surface) {
+                done();
+                return;
+            }
+            const canvas = surface.getCanvas();
+            const path = starPath(CanvasKit);
+
+            const paint = new CanvasKit.SkPaint();
+
+            const blue = CanvasKit.SkColorFilter.MakeBlend(
+                CanvasKit.BLUE, CanvasKit.BlendMode.SrcIn);
+            const red =  CanvasKit.SkColorFilter.MakeBlend(
+                CanvasKit.Color(255, 0, 0, 0.8), CanvasKit.BlendMode.SrcOver);
+            const lerp = CanvasKit.SkColorFilter.MakeLerp(0.6, red, blue);
+
+            paint.setStyle(CanvasKit.PaintStyle.Fill);
+            paint.setAntiAlias(true);
+
+            canvas.clear(CanvasKit.Color(230, 230, 230));
+
+            paint.setColorFilter(blue)
+            canvas.drawRect(CanvasKit.LTRBRect(10, 10, 60, 60), paint);
+            paint.setColorFilter(lerp)
+            canvas.drawRect(CanvasKit.LTRBRect(50, 10, 100, 60), paint);
+            paint.setColorFilter(red)
+            canvas.drawRect(CanvasKit.LTRBRect(90, 10, 140, 60), paint);
+
+            const r = CanvasKit.SkColorMatrix.rotated(0, .707, -.707);
+            const b = CanvasKit.SkColorMatrix.rotated(2, .5, .866);
+            const s = CanvasKit.SkColorMatrix.scaled(0.9, 1.5, 0.8, 0.8);
+            let cm = CanvasKit.SkColorMatrix.concat(r, s);
+            cm = CanvasKit.SkColorMatrix.concat(cm, b);
+            CanvasKit.SkColorMatrix.postTranslate(cm, 20, 0, -10, 0);
+
+            const mat = CanvasKit.SkColorFilter.MakeMatrix(cm);
+
+            const final = CanvasKit.SkColorFilter.MakeCompose(mat, lerp);
+
+            paint.setColorFilter(final)
+            canvas.drawRect(CanvasKit.LTRBRect(10, 70, 140, 120), paint);
+
+            surface.flush();
+            path.delete();
+            paint.delete();
+            blue.delete();
+            red.delete();
+            lerp.delete();
+            final.delete();
+
+            reportSurface(surface, 'colorfilters_canvas', done);
+        }));
+    });
+
 });

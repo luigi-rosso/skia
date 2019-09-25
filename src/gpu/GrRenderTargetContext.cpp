@@ -5,6 +5,8 @@
  * found in the LICENSE file.
  */
 
+#include "src/gpu/GrRenderTargetContext.h"
+
 #include "include/core/SkDrawable.h"
 #include "include/gpu/GrBackendSemaphore.h"
 #include "include/private/GrRecordingContext.h"
@@ -32,7 +34,6 @@
 #include "src/gpu/GrPathRenderer.h"
 #include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrRenderTarget.h"
-#include "src/gpu/GrRenderTargetContext.h"
 #include "src/gpu/GrRenderTargetContextPriv.h"
 #include "src/gpu/GrResourceProvider.h"
 #include "src/gpu/GrStencilAttachment.h"
@@ -60,7 +61,6 @@
 #include "src/gpu/ops/GrOp.h"
 #include "src/gpu/ops/GrOvalOpFactory.h"
 #include "src/gpu/ops/GrRegionOp.h"
-#include "src/gpu/ops/GrSemaphoreOp.h"
 #include "src/gpu/ops/GrShadowRRectOp.h"
 #include "src/gpu/ops/GrStencilPathOp.h"
 #include "src/gpu/ops/GrStrokeRectOp.h"
@@ -342,81 +342,6 @@ void GrRenderTargetContext::internalClear(const GrFixedClip& clip,
     }
 }
 
-void GrRenderTargetContextPriv::absClear(const SkIRect* clearRect) {
-    ASSERT_SINGLE_OWNER_PRIV
-    RETURN_IF_ABANDONED_PRIV
-    SkDEBUGCODE(fRenderTargetContext->validate();)
-    GR_CREATE_TRACE_MARKER_CONTEXT("GrRenderTargetContextPriv", "absClear",
-                                   fRenderTargetContext->fContext);
-
-    AutoCheckFlush acf(fRenderTargetContext->drawingManager());
-
-    SkIRect rtRect = SkIRect::MakeWH(fRenderTargetContext->fRenderTargetProxy->worstCaseWidth(),
-                                     fRenderTargetContext->fRenderTargetProxy->worstCaseHeight());
-
-    if (clearRect) {
-        if (clearRect->contains(rtRect)) {
-            clearRect = nullptr; // full screen
-        } else {
-            if (!rtRect.intersect(*clearRect)) {
-                return;
-            }
-        }
-    }
-
-    static const SkPMColor4f kColor = SK_PMColor4fTRANSPARENT;
-
-    // TODO: in a post-MDB world this should be handled at the OpsTask level.
-    // This makes sure to always add an op to the list, instead of marking the clear as a load op.
-    // This code follows very similar logic to internalClear() below, but critical differences are
-    // highlighted in line related to absClear()'s unique behavior.
-    if (clearRect) {
-        if (fRenderTargetContext->caps()->performPartialClearsAsDraws()) {
-            GrPaint paint;
-            clear_to_grpaint(kColor, &paint);
-
-            // Use the disabled clip; the rect geometry already matches the clear rectangle and
-            // if it were added to a scissor, that would be intersected with the logical surface
-            // bounds and not the worst case dimensions required here.
-            fRenderTargetContext->addDrawOp(
-                    GrFixedClip::Disabled(),
-                    GrFillRectOp::MakeNonAARect(fRenderTargetContext->fContext, std::move(paint),
-                                                SkMatrix::I(), SkRect::Make(rtRect)));
-        } else {
-            // Must use the ClearOp factory that takes a boolean (false) instead of a surface
-            // proxy. The surface proxy variant would intersect the clip rect with its logical
-            // bounds, which is not desired in this special case.
-            fRenderTargetContext->addOp(GrClearOp::Make(
-                    fRenderTargetContext->fContext, rtRect, kColor, /* fullscreen */ false));
-        }
-    } else {
-        if (fRenderTargetContext->getOpsTask()->resetForFullscreenClear(
-                fRenderTargetContext->canDiscardPreviousOpsOnFullClear()) &&
-            !fRenderTargetContext->caps()->performColorClearsAsDraws()) {
-            fRenderTargetContext->getOpsTask()->setColorLoadOp(GrLoadOp::kClear, kColor);
-        } else {
-            fRenderTargetContext->getOpsTask()->setColorLoadOp(GrLoadOp::kDiscard);
-
-            if (fRenderTargetContext->caps()->performColorClearsAsDraws()) {
-                // This draws a quad covering the worst case dimensions instead of just the logical
-                // width and height like in internalClear().
-                GrPaint paint;
-                clear_to_grpaint(kColor, &paint);
-                fRenderTargetContext->addDrawOp(
-                        GrFixedClip::Disabled(),
-                        GrFillRectOp::MakeNonAARect(fRenderTargetContext->fContext,
-                                                    std::move(paint), SkMatrix::I(),
-                                                    SkRect::Make(rtRect)));
-            } else {
-                // Nothing special about this path in absClear compared to internalClear()
-                fRenderTargetContext->addOp(GrClearOp::Make(
-                        fRenderTargetContext->fContext, SkIRect::MakeEmpty(), kColor,
-                        /* fullscreen */ true));
-            }
-        }
-    }
-}
-
 void GrRenderTargetContext::drawPaint(const GrClip& clip,
                                       GrPaint&& paint,
                                       const SkMatrix& viewMatrix) {
@@ -677,6 +602,7 @@ void GrRenderTargetContext::drawTexturedQuad(const GrClip& clip,
     ASSERT_SINGLE_OWNER
     RETURN_IF_ABANDONED
     SkDEBUGCODE(this->validate();)
+    SkASSERT(proxy);
     GR_CREATE_TRACE_MARKER_CONTEXT("GrRenderTargetContext", "drawTexturedQuad", fContext);
 
     AutoCheckFlush acf(this->drawingManager());
@@ -694,12 +620,15 @@ void GrRenderTargetContext::drawTexturedQuad(const GrClip& clip,
         const GrClip& finalClip = opt == QuadOptimization::kClipApplied ? GrFixedClip::Disabled()
                                                                         : clip;
         GrAAType aaType = this->chooseAAType(aa);
+        auto clampType = GrColorTypeClampType(this->colorSpaceInfo().colorType());
+        auto saturate = clampType == GrClampType::kManual ? GrTextureOp::Saturate::kYes
+                                                          : GrTextureOp::Saturate::kNo;
         // Use the provided domain, although hypothetically we could detect that the cropped local
         // quad is sufficiently inside the domain and the constraint could be dropped.
-        this->addDrawOp(finalClip, GrTextureOp::Make(fContext, std::move(proxy),
-                                                     std::move(textureXform), filter, color,
-                                                     blendMode, aaType, edgeFlags,
-                                                     croppedDeviceQuad, croppedLocalQuad, domain));
+        this->addDrawOp(finalClip,
+                        GrTextureOp::Make(fContext, std::move(proxy), std::move(textureXform),
+                                          filter, color, saturate, blendMode, aaType, edgeFlags,
+                                          croppedDeviceQuad, croppedLocalQuad, domain));
     }
 }
 
@@ -957,8 +886,11 @@ void GrRenderTargetContext::drawTextureSet(const GrClip& clip, const TextureSetE
         // Can use a single op, avoiding GrPaint creation, and can batch across proxies
         AutoCheckFlush acf(this->drawingManager());
         GrAAType aaType = this->chooseAAType(aa);
-        auto op = GrTextureOp::MakeSet(fContext, set, cnt, filter, aaType, constraint, viewMatrix,
-                                       std::move(texXform));
+        auto clampType = GrColorTypeClampType(this->colorSpaceInfo().colorType());
+        auto saturate = clampType == GrClampType::kManual ? GrTextureOp::Saturate::kYes
+                                                          : GrTextureOp::Saturate::kNo;
+        auto op = GrTextureOp::MakeSet(fContext, set, cnt, filter, saturate, aaType, constraint,
+                                       viewMatrix, std::move(texXform));
         this->addDrawOp(clip, std::move(op));
     }
 }
@@ -2002,15 +1934,14 @@ bool GrRenderTargetContext::waitOnSemaphores(int numSemaphores,
 
     auto resourceProvider = direct->priv().resourceProvider();
 
+    std::unique_ptr<sk_sp<GrSemaphore>[]> grSemaphores(new sk_sp<GrSemaphore>[numSemaphores]);
     for (int i = 0; i < numSemaphores; ++i) {
-        sk_sp<GrSemaphore> sema = resourceProvider->wrapBackendSemaphore(
+        grSemaphores[i] = resourceProvider->wrapBackendSemaphore(
                 waitSemaphores[i], GrResourceProvider::SemaphoreWrapType::kWillWait,
                 kAdopt_GrWrapOwnership);
-        std::unique_ptr<GrOp> waitOp(GrSemaphoreOp::MakeWait(fContext, std::move(sema),
-                                                             fRenderTargetProxy.get()));
-        this->getOpsTask()->addWaitOp(
-                std::move(waitOp), GrTextureResolveManager(this->drawingManager()), *this->caps());
     }
+    this->drawingManager()->newWaitRenderTask(this->asSurfaceProxyRef(), std::move(grSemaphores),
+                                              numSemaphores);
     return true;
 }
 

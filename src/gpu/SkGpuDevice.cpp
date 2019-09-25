@@ -86,8 +86,12 @@ sk_sp<SkGpuDevice> SkGpuDevice::Make(GrContext* context,
     if (!renderTargetContext || context->priv().abandoned()) {
         return nullptr;
     }
+
+    SkColorType ct = GrColorTypeToSkColorType(renderTargetContext->colorSpaceInfo().colorType());
+
     unsigned flags;
-    if (!CheckAlphaTypeAndGetFlags(nullptr, init, &flags)) {
+    if (!context->colorTypeSupportedAsSurface(ct) ||
+        !CheckAlphaTypeAndGetFlags(nullptr, init, &flags)) {
         return nullptr;
     }
     return sk_sp<SkGpuDevice>(new SkGpuDevice(context, std::move(renderTargetContext), flags));
@@ -98,7 +102,8 @@ sk_sp<SkGpuDevice> SkGpuDevice::Make(GrContext* context, SkBudgeted budgeted,
                                      GrSurfaceOrigin origin, const SkSurfaceProps* props,
                                      GrMipMapped mipMapped, InitContents init) {
     unsigned flags;
-    if (!CheckAlphaTypeAndGetFlags(&info, init, &flags)) {
+    if (!context->colorTypeSupportedAsSurface(info.colorType()) ||
+        !CheckAlphaTypeAndGetFlags(&info, init, &flags)) {
         return nullptr;
     }
 
@@ -726,8 +731,7 @@ bool SkGpuDevice::shouldTileImageID(uint32_t imageID,
     // assumption here is that sw bitmap size is a good proxy for its size as
     // a texture
     size_t bmpSize = area * sizeof(SkPMColor);  // assume 32bit pixels
-    size_t cacheSize;
-    fContext->getResourceCacheLimits(nullptr, &cacheSize);
+    size_t cacheSize = fContext->getResourceCacheLimit();
     if (bmpSize < cacheSize / 2) {
         return false;
     }
@@ -1200,6 +1204,7 @@ sk_sp<SkSpecialImage> SkGpuDevice::makeSpecial(const SkBitmap& bitmap) {
                                                rect,
                                                bitmap.getGenerationID(),
                                                std::move(proxy),
+                                               SkColorTypeToGrColorType(bitmap.colorType()),
                                                bitmap.refColorSpace(),
                                                &this->surfaceProps());
 }
@@ -1213,6 +1218,7 @@ sk_sp<SkSpecialImage> SkGpuDevice::makeSpecial(const SkImage* image) {
                                                    SkIRect::MakeWH(image->width(), image->height()),
                                                    image->uniqueID(),
                                                    std::move(proxy),
+                                                   SkColorTypeToGrColorType(image->colorType()),
                                                    image->refColorSpace(),
                                                    &this->surfaceProps());
     } else if (image->peekPixels(&pm)) {
@@ -1258,10 +1264,13 @@ sk_sp<SkSpecialImage> SkGpuDevice::snapSpecial(const SkIRect& subset, bool force
         finalSubset = SkIRect::MakeSize(proxy->isize());
     }
 
+    GrColorType ct = SkColorTypeToGrColorType(this->imageInfo().colorType());
+
     return SkSpecialImage::MakeDeferredFromGpu(fContext.get(),
                                                finalSubset,
                                                kNeedNewImageUniqueID_SpecialImage,
                                                std::move(proxy),
+                                               ct,
                                                this->imageInfo().refColorSpace(),
                                                &this->surfaceProps());
 }
@@ -1615,18 +1624,13 @@ SkBaseDevice* SkGpuDevice::onCreateDevice(const CreateInfo& cinfo, const SkPaint
     SkBackingFit fit = kNever_TileUsage == cinfo.fTileUsage ? SkBackingFit::kApprox
                                                             : SkBackingFit::kExact;
 
-    GrColorType colorType = fRenderTargetContext->colorSpaceInfo().colorType();
-    if (colorType == GrColorType::kRGBA_1010102) {
-        // If the original device is 1010102, fall back to 8888 so that we have a usable alpha
-        // channel in the layer.
-        colorType = GrColorType::kRGBA_8888;
-    }
+    SkASSERT(cinfo.fInfo.colorType() != kRGBA_1010102_SkColorType);
 
-    auto rtc = fContext->priv().makeDeferredRenderTargetContext(
+    auto rtc = fContext->priv().makeDeferredRenderTargetContextWithFallback(
             fit,
             cinfo.fInfo.width(),
             cinfo.fInfo.height(),
-            colorType,
+            SkColorTypeToGrColorType(cinfo.fInfo.colorType()),
             fRenderTargetContext->colorSpaceInfo().refColorSpace(),
             fRenderTargetContext->numSamples(),
             GrMipMapped::kNo,
