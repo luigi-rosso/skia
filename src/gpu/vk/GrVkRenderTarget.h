@@ -44,7 +44,7 @@ public:
 
     GrBackendFormat backendFormat() const override { return this->getBackendFormat(); }
 
-    const GrVkFramebuffer* framebuffer() const { return fFramebuffer; }
+    const GrVkFramebuffer* getFramebuffer();
     const GrVkImageView* colorAttachmentView() const { return fColorAttachmentView; }
     const GrVkResource* msaaImageResource() const {
         if (fMSAAImage) {
@@ -57,9 +57,14 @@ public:
     const GrVkResource* stencilImageResource() const;
     const GrVkImageView* stencilAttachmentView() const;
 
-    const GrVkRenderPass* simpleRenderPass() const { return fCachedSimpleRenderPass; }
-    GrVkResourceProvider::CompatibleRPHandle compatibleRenderPassHandle() const {
+    const GrVkRenderPass* getSimpleRenderPass();
+    GrVkResourceProvider::CompatibleRPHandle compatibleRenderPassHandle() {
         SkASSERT(!this->wrapsSecondaryCommandBuffer());
+        if (!fCompatibleRPHandle.isValid()) {
+            SkASSERT(!fCachedSimpleRenderPass);
+            this->createSimpleRenderPass();
+        }
+        SkASSERT(fCompatibleRPHandle.isValid() == SkToBool(fCachedSimpleRenderPass));
         return fCompatibleRPHandle;
     }
     const GrVkRenderPass* externalRenderPass() const {
@@ -73,16 +78,6 @@ public:
         return fSecondaryCommandBuffer;
     }
 
-    // override of GrRenderTarget
-    ResolveType getResolveType() const override {
-        if (this->numSamples() > 1) {
-            SkASSERT(this->requiresManualMSAAResolve());
-            return kCanResolve_ResolveType;
-        }
-        SkASSERT(!this->requiresManualMSAAResolve());
-        return kAutoResolves_ResolveType;
-    }
-
     bool canAttemptStencilAttachment() const override {
         // We don't know the status of the stencil attachment for wrapped external secondary command
         // buffers so we just assume we don't have one.
@@ -94,7 +89,7 @@ public:
     void getAttachmentsDescriptor(GrVkRenderPass::AttachmentsDescriptor* desc,
                                   GrVkRenderPass::AttachmentFlags* flags) const;
 
-    void addResources(GrVkCommandBuffer& commandBuffer) const;
+    void addResources(GrVkCommandBuffer& commandBuffer);
 
 protected:
     GrVkRenderTarget(GrVkGpu* gpu,
@@ -115,8 +110,6 @@ protected:
                      const GrVkImageView* colorAttachmentView,
                      GrBackendObjectOwnership);
 
-    GrVkGpu* getVkGpu() const;
-
     void onAbandon() override;
     void onRelease() override;
 
@@ -127,15 +120,10 @@ protected:
             // Add one to account for the resolved VkImage.
             numColorSamples += 1;
         }
-        return GrSurface::ComputeSize(this->config(), this->width(), this->height(),
+        const GrCaps& caps = *this->getGpu()->caps();
+        return GrSurface::ComputeSize(caps, this->backendFormat(), this->dimensions(),
                                       numColorSamples, GrMipMapped::kNo);
     }
-
-    void createFramebuffer(GrVkGpu* gpu);
-
-    const GrVkImageView*       fColorAttachmentView;
-    std::unique_ptr<GrVkImage> fMSAAImage;
-    const GrVkImageView*       fResolveAttachmentView;
 
 private:
     GrVkRenderTarget(GrVkGpu* gpu,
@@ -162,6 +150,11 @@ private:
                      const GrVkRenderPass* renderPass,
                      VkCommandBuffer secondaryCommandBuffer);
 
+    GrVkGpu* getVkGpu() const;
+
+    const GrVkRenderPass* createSimpleRenderPass();
+    const GrVkFramebuffer* createFramebuffer();
+
     bool completeStencilAttachment() override;
 
     // In Vulkan we call the release proc after we are finished with the underlying
@@ -174,7 +167,11 @@ private:
     void releaseInternalObjects();
     void abandonInternalObjects();
 
-    const GrVkFramebuffer*     fFramebuffer;
+    const GrVkImageView*       fColorAttachmentView;
+    std::unique_ptr<GrVkImage> fMSAAImage;
+    const GrVkImageView*       fResolveAttachmentView;
+
+    const GrVkFramebuffer*     fCachedFramebuffer;
 
     // This is a cached pointer to a simple render pass. The render target should unref it
     // once it is done with it.

@@ -8,7 +8,6 @@
 #include "include/core/SkImage.h"
 #include "include/core/SkSurface.h"
 #include "src/core/SkAutoPixmapStorage.h"
-#include "src/gpu/GrContextPriv.h"
 
 #include "tests/Test.h"
 #include "tests/TestUtils.h"
@@ -168,7 +167,7 @@ static void compare_pixmaps(skiatest::Reporter* reporter,
                    diffs[0], diffs[1], diffs[2], diffs[3]);
         });
 
-    compare_pixels(expected, actual, tols, error);
+    ComparePixels(expected, actual, tols, error);
 }
 
 static void gpu_tests(GrContext* context, skiatest::Reporter* reporter, const TestCase& test) {
@@ -195,9 +194,8 @@ static void gpu_tests(GrContext* context, skiatest::Reporter* reporter, const Te
         GrBackendTexture backendTex;
 
         if (fullInit) {
-            backendTex = context->priv().createBackendTexture(&nativeExpected, 1,
-                                                              GrRenderable::kNo,
-                                                              GrProtected::kNo);
+            backendTex = context->createBackendTexture(&nativeExpected, 1,
+                                                       GrRenderable::kNo, GrProtected::kNo);
         } else {
             backendTex = context->createBackendTexture(kSize, kSize, test.fColorType,
                                                        SkColors::kWhite, GrMipMapped::kNo,

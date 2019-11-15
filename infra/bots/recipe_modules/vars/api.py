@@ -34,15 +34,14 @@ class SkiaVarsApi(recipe_api.RecipeApi):
     self.cache_dir = self.slave_dir.join('cache')
 
     self.swarming_out_dir = self.slave_dir.join(
-        self.m.properties['swarm_out_dir'])
+        self.m.properties.get('swarm_out_dir', 'tmp'))
 
     self.tmp_dir = self.m.path['start_dir'].join('tmp')
 
     self.builder_cfg = self.m.builder_name_schema.DictForBuilderName(
         self.builder_name)
     self.role = self.builder_cfg['role']
-    if self.role in [self.m.builder_name_schema.BUILDER_ROLE_HOUSEKEEPER,
-                     self.m.builder_name_schema.BUILDER_ROLE_CALMBENCH]:
+    if self.role == self.m.builder_name_schema.BUILDER_ROLE_HOUSEKEEPER:
       self.configuration = CONFIG_RELEASE
     else:
       self.configuration = self.builder_cfg.get('configuration', CONFIG_DEBUG)
@@ -63,7 +62,9 @@ class SkiaVarsApi(recipe_api.RecipeApi):
     self.patchset = None
     self.is_trybot = False
     if (self.m.properties.get('patch_issue', '') and
+        self.m.properties['patch_issue'] != '0' and
         self.m.properties.get('patch_set', '') and
+        self.m.properties['patch_set'] != '0' and
         self.m.properties.get('patch_ref', '')):
       self.is_trybot = True
       self.issue = self.m.properties['patch_issue']

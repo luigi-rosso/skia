@@ -18,7 +18,7 @@ public:
                              GrColorType dstColorType,
                              sk_sp<GrGpuBuffer> dstBuffer,
                              size_t dstOffset)
-            : GrRenderTask(nullptr)
+            : GrRenderTask()
             , fSrcProxy(std::move(srcProxy))
             , fSrcRect(srcRect)
             , fSurfaceColorType(surfaceColorType)
@@ -27,16 +27,15 @@ public:
             , fDstOffset(dstOffset) {}
 
 private:
-    void onPrepare(GrOpFlushState*) override {}
     bool onIsUsed(GrSurfaceProxy* proxy) const override {
-        SkASSERT(!fTarget);
+        SkASSERT(!fTargetView.proxy());
         return proxy == fSrcProxy.get();
     }
     // If fSrcProxy is uninstantiated at flush time we simply will skip doing the transfer.
     void handleInternalAllocationFailure() override {}
     void gatherProxyIntervals(GrResourceAllocator*) const override;
 
-    ExpectedOutcome onMakeClosed(const GrCaps&) override {
+    ExpectedOutcome onMakeClosed(const GrCaps&, SkIRect*) override {
         return ExpectedOutcome::kTargetUnchanged;
     }
 

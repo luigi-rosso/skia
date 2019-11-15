@@ -15,6 +15,7 @@
 #include "src/gpu/GrBufferAllocPool.h"
 #include "src/gpu/GrDeferredUpload.h"
 #include "src/gpu/GrRenderTargetProxy.h"
+#include "src/gpu/GrSurfaceProxyView.h"
 #include "src/gpu/ops/GrMeshDrawOp.h"
 
 class GrGpu;
@@ -57,22 +58,45 @@ public:
 
     /** Additional data required on a per-op basis when executing GrOps. */
     struct OpArgs {
-        GrSurfaceOrigin origin() const { return fProxy->origin(); }
-        GrRenderTarget* renderTarget() const { return fProxy->peekRenderTarget(); }
+        explicit OpArgs(GrOp* op, GrSurfaceProxyView* surfaceView, GrAppliedClip* appliedClip,
+                        const GrXferProcessor::DstProxyView& dstProxyView)
+                : fOp(op)
+                , fSurfaceView(surfaceView)
+                , fRenderTargetProxy(surfaceView->asRenderTargetProxy())
+                , fAppliedClip(appliedClip)
+                , fDstProxyView(dstProxyView) {
+            SkASSERT(surfaceView->asRenderTargetProxy());
+        }
 
-        GrOp* fOp;
-        // TODO: do we still need the dst proxy here?
-        GrRenderTargetProxy* fProxy;
-        GrAppliedClip* fAppliedClip;
-        GrSwizzle fOutputSwizzle;
-        GrXferProcessor::DstProxy fDstProxy;
+        GrSurfaceOrigin origin() const { return fSurfaceView->origin(); }
+        GrSwizzle outputSwizzle() const { return fSurfaceView->swizzle(); }
+
+        GrOp* op() { return fOp; }
+        GrRenderTargetProxy* proxy() const { return fRenderTargetProxy; }
+        GrAppliedClip* appliedClip() { return fAppliedClip; }
+        const GrAppliedClip* appliedClip() const { return fAppliedClip; }
+        const GrXferProcessor::DstProxyView& dstProxyView() const { return fDstProxyView; }
+
+#ifdef SK_DEBUG
+        void validate() const {
+            SkASSERT(fOp);
+            SkASSERT(fSurfaceView);
+        }
+#endif
+
+    private:
+        GrOp*                         fOp;
+        GrSurfaceProxyView*           fSurfaceView;
+        GrRenderTargetProxy*          fRenderTargetProxy;
+        GrAppliedClip*                fAppliedClip;
+        GrXferProcessor::DstProxyView fDstProxyView;   // TODO: do we still need the dst proxy here?
     };
 
     void setOpArgs(OpArgs* opArgs) { fOpArgs = opArgs; }
 
     const OpArgs& drawOpArgs() const {
         SkASSERT(fOpArgs);
-        SkASSERT(fOpArgs->fOp);
+        SkDEBUGCODE(fOpArgs->validate());
         return *fOpArgs;
     }
 
@@ -93,7 +117,7 @@ public:
     /** Overrides of GrMeshDrawOp::Target. */
     void recordDraw(sk_sp<const GrGeometryProcessor>, const GrMesh[], int meshCnt,
                     const GrPipeline::FixedDynamicState*,
-                    const GrPipeline::DynamicStateArrays*) final;
+                    const GrPipeline::DynamicStateArrays*, GrPrimitiveType) final;
     void* makeVertexSpace(size_t vertexSize, int vertexCount, sk_sp<const GrBuffer>*,
                           int* startVertex) final;
     uint16_t* makeIndexSpace(int indexCount, sk_sp<const GrBuffer>*, int* startIndex) final;
@@ -105,10 +129,12 @@ public:
                                     int* actualIndexCount) final;
     void putBackIndices(int indexCount) final;
     void putBackVertices(int vertices, size_t vertexStride) final;
-    GrRenderTargetProxy* proxy() const final { return fOpArgs->fProxy; }
-    const GrAppliedClip* appliedClip() final { return fOpArgs->fAppliedClip; }
+    GrRenderTargetProxy* proxy() const final { return this->drawOpArgs().proxy(); }
+    const GrAppliedClip* appliedClip() final { return this->drawOpArgs().appliedClip(); }
     GrAppliedClip detachAppliedClip() final;
-    const GrXferProcessor::DstProxy& dstProxy() const final { return fOpArgs->fDstProxy; }
+    const GrXferProcessor::DstProxyView& dstProxyView() const final {
+        return this->drawOpArgs().dstProxyView();
+    }
     GrDeferredUploadTarget* deferredUploadTarget() final { return this; }
     const GrCaps& caps() const final;
     GrResourceProvider* resourceProvider() const final { return fResourceProvider; }
@@ -142,6 +168,7 @@ private:
         const GrMesh* fMeshes = nullptr;
         const GrOp* fOp = nullptr;
         int fMeshCnt = 0;
+        GrPrimitiveType fPrimitiveType;
     };
 
     // Storage for ops' pipelines, draws, and inline uploads.

@@ -118,7 +118,7 @@ GrCCDrawPathsOp::GrCCDrawPathsOp(const SkMatrix& m, const GrShape& shape, float 
     }
     // We always have AA bloat, even in MSAA atlas mode. This is because by the time this Op comes
     // along and draws to the main canvas, the atlas has been resolved to analytic coverage.
-    this->setBounds(clippedDrawBounds, GrOp::HasAABloat::kYes, GrOp::IsZeroArea::kNo);
+    this->setBounds(clippedDrawBounds, GrOp::HasAABloat::kYes, GrOp::IsHairline::kNo);
 }
 
 GrCCDrawPathsOp::~GrCCDrawPathsOp() {
@@ -303,7 +303,7 @@ bool GrCCDrawPathsOp::SingleDraw::shouldCachePathMask(int maxRenderTargetSize) c
     // The hitRect should already be contained within the shape's bounds, but we still intersect it
     // because it's possible for edges very near pixel boundaries (e.g., 0.999999), to round out
     // inconsistently, depending on the integer translation values and fp32 precision.
-    SkIRect hitRect = fCacheEntry->hitRect().makeOffset(fCachedMaskShift.x(), fCachedMaskShift.y());
+    SkIRect hitRect = fCacheEntry->hitRect().makeOffset(fCachedMaskShift);
     hitRect.intersect(fShapeConservativeIBounds);
 
     // Render and cache the entire path mask if we see enough of it to justify rendering all the
@@ -433,8 +433,8 @@ void GrCCDrawPathsOp::onExecute(GrOpFlushState* flushState, const SkRect& chainB
 
     GrPipeline::InitArgs initArgs;
     initArgs.fCaps = &flushState->caps();
-    initArgs.fDstProxy = flushState->drawOpArgs().fDstProxy;
-    initArgs.fOutputSwizzle = flushState->drawOpArgs().fOutputSwizzle;
+    initArgs.fDstProxyView = flushState->drawOpArgs().dstProxyView();
+    initArgs.fOutputSwizzle = flushState->drawOpArgs().outputSwizzle();
     auto clip = flushState->detachAppliedClip();
     GrPipeline::FixedDynamicState fixedDynamicState(clip.scissorState().rect());
     GrPipeline pipeline(initArgs, std::move(fProcessors), std::move(clip));
@@ -446,15 +446,15 @@ void GrCCDrawPathsOp::onExecute(GrOpFlushState* flushState, const SkRect& chainB
         SkASSERT(range.fEndInstanceIdx > baseInstance);
 
         const GrTextureProxy* atlas = range.fAtlasProxy;
-        SkASSERT(atlas->isInstantiated());
-
-        GrCCPathProcessor pathProc(
-                range.fCoverageMode, atlas->peekTexture(), atlas->textureSwizzle(), atlas->origin(),
-                fViewMatrixIfUsingLocalCoords);
-        GrTextureProxy* atlasProxy = range.fAtlasProxy;
-        fixedDynamicState.fPrimitiveProcessorTextures = &atlasProxy;
-        pathProc.drawPaths(flushState, pipeline, &fixedDynamicState, *resources, baseInstance,
-                           range.fEndInstanceIdx, this->bounds());
+        if (atlas->isInstantiated()) {  // Instantiation can fail in exceptional circumstances.
+            GrCCPathProcessor pathProc(range.fCoverageMode, atlas->peekTexture(),
+                                       atlas->textureSwizzle(), atlas->origin(),
+                                       fViewMatrixIfUsingLocalCoords);
+            GrTextureProxy* atlasProxy = range.fAtlasProxy;
+            fixedDynamicState.fPrimitiveProcessorTextures = &atlasProxy;
+            pathProc.drawPaths(flushState, pipeline, &fixedDynamicState, *resources, baseInstance,
+                               range.fEndInstanceIdx, this->bounds());
+        }
 
         baseInstance = range.fEndInstanceIdx;
     }

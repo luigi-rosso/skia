@@ -17,6 +17,8 @@
 
 #import <Metal/Metal.h>
 
+class GrProgramInfo;
+class GrMtlCaps;
 class GrMtlGpu;
 class GrMtlPipelineState;
 
@@ -35,18 +37,8 @@ public:
      */
     class Desc : public GrProgramDesc {
     public:
-        static bool Build(Desc*,
-                          GrRenderTarget*,
-                          const GrPrimitiveProcessor&,
-                          const GrPipeline&,
-                          GrPrimitiveType,
-                          GrMtlGpu* gpu);
-
-        size_t shaderKeyLength() const { return fShaderKeyLength; }
-
+        static bool Build(Desc*, GrRenderTarget*, const GrProgramInfo&, const GrMtlCaps&);
     private:
-        size_t fShaderKeyLength;
-
         typedef GrProgramDesc INHERITED;
     };
 
@@ -59,23 +51,14 @@ public:
      * @return true if generation was successful.
      */
     static GrMtlPipelineState* CreatePipelineState(GrMtlGpu*,
-                                                   GrRenderTarget*, GrSurfaceOrigin,
-                                                   const GrPrimitiveProcessor&,
-                                                   const GrTextureProxy* const primProcProxies[],
-                                                   const GrPipeline&,
+                                                   GrRenderTarget*,
+                                                   const GrProgramInfo&,
                                                    Desc*);
 
 private:
-    GrMtlPipelineStateBuilder(GrMtlGpu*, GrRenderTarget*, GrSurfaceOrigin,
-                              const GrPipeline&,
-                              const GrPrimitiveProcessor&,
-                              const GrTextureProxy* const primProcProxies[],
-                              GrProgramDesc*);
+    GrMtlPipelineStateBuilder(GrMtlGpu*, GrRenderTarget*, const GrProgramInfo&, GrProgramDesc*);
 
-    GrMtlPipelineState* finalize(GrRenderTarget* renderTarget,
-                                 const GrPrimitiveProcessor& primProc,
-                                 const GrPipeline& pipeline,
-                                 Desc*);
+    GrMtlPipelineState* finalize(GrRenderTarget*, const GrProgramInfo&, Desc*);
 
     const GrCaps* caps() const override;
 

@@ -146,6 +146,7 @@ public:
 
         // If our caller snaps to pixel centers then we have to round out the bounds
         if (inputFlags & Helper::InputFlags::kSnapVerticesToPixelCenters) {
+            SkASSERT(!fStrokeWidth || aaType == GrAAType::kNone);
             viewMatrix.mapRect(&bounds);
             // We want to be consistent with how we snap non-aa lines. To match what we do in
             // GrGLSLVertexShaderBuilder, we first floor all the vertex values and then add half a
@@ -155,9 +156,11 @@ public:
                            SkScalarFloorToScalar(bounds.fRight),
                            SkScalarFloorToScalar(bounds.fBottom));
             bounds.offset(0.5f, 0.5f);
-            this->setBounds(bounds, HasAABloat::kNo, IsZeroArea::kNo);
+            this->setBounds(bounds, HasAABloat::kNo, IsHairline::kNo);
         } else {
-            this->setTransformedBounds(bounds, fViewMatrix, HasAABloat::kNo, IsZeroArea::kNo);
+            HasAABloat aaBloat = (aaType == GrAAType::kNone) ? HasAABloat ::kNo : HasAABloat::kYes;
+            this->setTransformedBounds(bounds, fViewMatrix, aaBloat,
+                                       fStrokeWidth ? IsHairline::kNo : IsHairline::kYes);
         }
     }
 
@@ -221,7 +224,7 @@ private:
         GrMesh* mesh = target->allocMesh(primType);
         mesh->setNonIndexedNonInstanced(vertexCount);
         mesh->setVertexData(std::move(vertexBuffer), firstVertex);
-        target->recordDraw(std::move(gp), mesh);
+        target->recordDraw(std::move(gp), mesh, 1, primType);
     }
 
     void onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) override {
@@ -343,7 +346,7 @@ public:
         SkASSERT(!devInside.isEmpty());
 
         fRects.emplace_back(RectInfo{color, devOutside, devOutside, devInside, false});
-        this->setBounds(devOutside, HasAABloat::kYes, IsZeroArea::kNo);
+        this->setBounds(devOutside, HasAABloat::kYes, IsHairline::kNo);
         fMiterStroke = true;
     }
 
@@ -372,13 +375,13 @@ public:
                          &info.fDegenerate, viewMatrix, rect, stroke.getWidth(), isMiter);
         info.fColor = color;
         if (isMiter) {
-            this->setBounds(info.fDevOutside, HasAABloat::kYes, IsZeroArea::kNo);
+            this->setBounds(info.fDevOutside, HasAABloat::kYes, IsHairline::kNo);
         } else {
             // The outer polygon of the bevel stroke is an octagon specified by the points of a
             // pair of overlapping rectangles where one is wide and the other is narrow.
             SkRect bounds = info.fDevOutside;
             bounds.joinPossiblyEmptyRect(info.fDevOutsideAssist);
-            this->setBounds(bounds, HasAABloat::kYes, IsZeroArea::kNo);
+            this->setBounds(bounds, HasAABloat::kYes, IsHairline::kNo);
         }
     }
 
@@ -481,6 +484,7 @@ void AAStrokeRectOp::onPrepareDraws(Target* target) {
     int verticesPerInstance = (outerVertexNum + innerVertexNum) * 2;
     int indicesPerInstance = this->miterStroke() ? kMiterIndexCnt : kBevelIndexCnt;
     int instanceCount = fRects.count();
+    int maxQuads = this->miterStroke() ? kNumMiterRectsInIndexBuffer : kNumBevelRectsInIndexBuffer;
 
     sk_sp<const GrGpuBuffer> indexBuffer =
             GetIndexBuffer(target->resourceProvider(), this->miterStroke());
@@ -490,7 +494,7 @@ void AAStrokeRectOp::onPrepareDraws(Target* target) {
     }
     PatternHelper helper(target, GrPrimitiveType::kTriangles, gp->vertexStride(),
                          std::move(indexBuffer), verticesPerInstance, indicesPerInstance,
-                         instanceCount);
+                         instanceCount, maxQuads);
     GrVertexWriter vertices{ helper.vertices() };
     if (!vertices.fPtr) {
         SkDebugf("Could not allocate vertices\n");

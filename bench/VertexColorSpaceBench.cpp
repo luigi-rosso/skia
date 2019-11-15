@@ -128,7 +128,7 @@ public:
             : INHERITED(ClassID())
             , fMode(kBaseline_Mode)
             , fColor(color) {
-        this->setBounds(SkRect::MakeWH(100.f, 100.f), HasAABloat::kNo, IsZeroArea::kNo);
+        this->setBounds(SkRect::MakeWH(100.f, 100.f), HasAABloat::kNo, IsHairline::kNo);
     }
 
     Op(const SkColor4f& color4f, Mode mode)
@@ -136,7 +136,7 @@ public:
             , fMode(mode)
             , fColor4f(color4f) {
         SkASSERT(kFloat_Mode == fMode || kHalf_Mode == mode);
-        this->setBounds(SkRect::MakeWH(100.f, 100.f), HasAABloat::kNo, IsZeroArea::kNo);
+        this->setBounds(SkRect::MakeWH(100.f, 100.f), HasAABloat::kNo, IsHairline::kNo);
     }
 
     Op(GrColor color, sk_sp<GrColorSpaceXform> colorSpaceXform)
@@ -144,7 +144,7 @@ public:
             , fMode(kShader_Mode)
             , fColor(color)
             , fColorSpaceXform(std::move(colorSpaceXform)) {
-        this->setBounds(SkRect::MakeWH(100.f, 100.f), HasAABloat::kNo, IsZeroArea::kNo);
+        this->setBounds(SkRect::MakeWH(100.f, 100.f), HasAABloat::kNo, IsHairline::kNo);
     }
 
     FixedFunctionFlags fixedFunctionFlags() const override {
@@ -223,7 +223,7 @@ private:
         GrMesh* mesh = target->allocMesh(GrPrimitiveType::kTriangleStrip);
         mesh->setNonIndexedNonInstanced(kVertexCount);
         mesh->setVertexData(std::move(vertexBuffer), firstVertex);
-        target->recordDraw(gp, mesh);
+        target->recordDraw(gp, mesh, 1, GrPrimitiveType::kTriangleStrip);
     }
 
     void onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) override {

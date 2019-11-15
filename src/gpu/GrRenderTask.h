@@ -11,6 +11,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/private/SkColorData.h"
 #include "include/private/SkTDArray.h"
+#include "src/gpu/GrSurfaceProxyView.h"
 #include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/GrTextureResolveManager.h"
 
@@ -24,10 +25,13 @@ class GrTextureResolveRenderTask;
 // contents. (e.g., an opsTask that executes a command buffer, a task to regenerate mipmaps, etc.)
 class GrRenderTask : public SkRefCnt {
 public:
-    GrRenderTask(sk_sp<GrSurfaceProxy> target);
+    GrRenderTask();
+    GrRenderTask(GrSurfaceProxyView);
     ~GrRenderTask() override;
 
     void makeClosed(const GrCaps&);
+
+    void prePrepare(GrRecordingContext* context) { this->onPrePrepare(context); }
 
     // These two methods are only invoked at flush time
     void prepare(GrOpFlushState* flushState);
@@ -78,8 +82,8 @@ public:
 
     void visitTargetAndSrcProxies_debugOnly(const VisitSurfaceProxyFunc& fn) const {
         this->visitProxies_debugOnly(fn);
-        if (fTarget) {
-            fn(fTarget.get(), GrMipMapped::kNo);
+        if (fTargetView.proxy()) {
+            fn(fTargetView.proxy(), GrMipMapped::kNo);
         }
     }
 #endif
@@ -96,9 +100,14 @@ protected:
         kTargetDirty,
     };
 
-    virtual ExpectedOutcome onMakeClosed(const GrCaps&) = 0;
+    // Performs any work to finalize this renderTask prior to execution. If returning
+    // ExpectedOutcome::kTargetDiry, the caller is also responsible to fill out the area it will
+    // modify in targetUpdateBounds.
+    //
+    // targetUpdateBounds must not extend beyond the proxy bounds.
+    virtual ExpectedOutcome onMakeClosed(const GrCaps&, SkIRect* targetUpdateBounds) = 0;
 
-    sk_sp<GrSurfaceProxy> fTarget;
+    GrSurfaceProxyView fTargetView;
 
     // List of texture proxies whose contents are being prepared on a worker thread
     // TODO: this list exists so we can fire off the proper upload when an renderTask begins
@@ -110,14 +119,14 @@ private:
     friend class GrDrawingManager;
 
     // Drops any pending operations that reference proxies that are not instantiated.
-    // NOTE: Derived classes don't need to check fTarget. That is handled when the drawingManager
-    // calls isInstantiated.
+    // NOTE: Derived classes don't need to check fTargetView. That is handled when the
+    // drawingManager calls isInstantiated.
     virtual void handleInternalAllocationFailure() = 0;
 
     virtual bool onIsUsed(GrSurfaceProxy*) const = 0;
 
     bool isUsed(GrSurfaceProxy* proxy) const {
-        if (proxy == fTarget.get()) {
+        if (proxy == fTargetView.proxy()) {
             return true;
         }
 
@@ -178,7 +187,9 @@ private:
         }
     };
 
-    virtual void onPrepare(GrOpFlushState* flushState) = 0;
+    // Only the GrOpsTask currently overrides this virtual
+    virtual void onPrePrepare(GrRecordingContext*) {}
+    virtual void onPrepare(GrOpFlushState*) {} // Only the GrOpsTask overrides this virtual
     virtual bool onExecute(GrOpFlushState* flushState) = 0;
 
     const uint32_t         fUniqueID;

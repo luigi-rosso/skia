@@ -25,9 +25,20 @@ class GrShaderCaps;
 namespace GrQuadPerEdgeAA {
     using Saturate = GrTextureOp::Saturate;
 
+    enum class CoverageMode { kNone, kWithPosition, kWithColor };
     enum class Domain : bool { kNo = false, kYes = true };
     enum class ColorType { kNone, kByte, kHalf, kLast = kHalf };
     static const int kColorTypeCount = static_cast<int>(ColorType::kLast) + 1;
+
+    enum class IndexBufferOption {
+        kPictureFramed,    // geometrically AA'd   -> 8 verts/quad + an index buffer
+        kIndexedRects,     // non-AA'd but indexed -> 4 verts/quad + an index buffer
+        kTriStrips,        // non-AA'd             -> 4 verts/quad but no index buffer
+        kLast = kTriStrips
+    };
+    static const int kIndexBufferOptionCount = static_cast<int>(IndexBufferOption::kLast) + 1;
+
+    IndexBufferOption CalcIndexBufferOption(GrAAType aa, int numQuads);
 
     // Gets the minimum ColorType that can represent a color.
     ColorType MinColorType(SkPMColor4f, GrClampType, const GrCaps&);
@@ -38,10 +49,23 @@ namespace GrQuadPerEdgeAA {
     // GPAttributes maintains. If hasLocalCoords is false, then the local quad type can be ignored.
     struct VertexSpec {
     public:
+        VertexSpec()
+                : fDeviceQuadType(0)     // kAxisAligned
+                , fLocalQuadType(0)      // kAxisAligned
+                , fIndexBufferOption(0)  // kPictureFramed
+                , fHasLocalCoords(false)
+                , fColorType(0)          // kNone
+                , fHasDomain(false)
+                , fUsesCoverageAA(false)
+                , fCompatibleWithCoverageAsAlpha(false)
+                , fRequiresGeometryDomain(false) {}
+
         VertexSpec(GrQuad::Type deviceQuadType, ColorType colorType, GrQuad::Type localQuadType,
-                   bool hasLocalCoords, Domain domain, GrAAType aa, bool coverageAsAlpha)
+                   bool hasLocalCoords, Domain domain, GrAAType aa, bool coverageAsAlpha,
+                   IndexBufferOption indexBufferOption)
                 : fDeviceQuadType(static_cast<unsigned>(deviceQuadType))
                 , fLocalQuadType(static_cast<unsigned>(localQuadType))
+                , fIndexBufferOption(static_cast<unsigned>(indexBufferOption))
                 , fHasLocalCoords(hasLocalCoords)
                 , fColorType(static_cast<unsigned>(colorType))
                 , fHasDomain(static_cast<unsigned>(domain))
@@ -52,6 +76,9 @@ namespace GrQuadPerEdgeAA {
 
         GrQuad::Type deviceQuadType() const { return static_cast<GrQuad::Type>(fDeviceQuadType); }
         GrQuad::Type localQuadType() const { return static_cast<GrQuad::Type>(fLocalQuadType); }
+        IndexBufferOption indexBufferOption() const {
+            return static_cast<IndexBufferOption>(fIndexBufferOption);
+        }
         bool hasLocalCoords() const { return fHasLocalCoords; }
         ColorType colorType() const { return static_cast<ColorType>(fColorType); }
         bool hasVertexColors() const { return ColorType::kNone != this->colorType(); }
@@ -65,12 +92,31 @@ namespace GrQuadPerEdgeAA {
         int localDimensionality() const;
 
         int verticesPerQuad() const { return fUsesCoverageAA ? 8 : 4; }
+
+        CoverageMode coverageMode() const;
+        size_t vertexSize() const;
+
+        bool needsIndexBuffer() const { return this->indexBufferOption() !=
+                                               IndexBufferOption::kTriStrips; }
+
+        GrPrimitiveType primitiveType() const {
+            switch (this->indexBufferOption()) {
+                case IndexBufferOption::kPictureFramed: return GrPrimitiveType::kTriangles;
+                case IndexBufferOption::kIndexedRects:  return GrPrimitiveType::kTriangles;
+                case IndexBufferOption::kTriStrips:     return GrPrimitiveType::kTriangleStrip;
+            }
+
+            SkUNREACHABLE;
+        }
+
     private:
         static_assert(GrQuad::kTypeCount <= 4, "GrQuad::Type doesn't fit in 2 bits");
         static_assert(kColorTypeCount <= 4, "Color doesn't fit in 2 bits");
+        static_assert(kIndexBufferOptionCount <= 4, "IndexBufferOption doesn't fit in 2 bits");
 
         unsigned fDeviceQuadType: 2;
         unsigned fLocalQuadType: 2;
+        unsigned fIndexBufferOption: 2;
         unsigned fHasLocalCoords: 1;
         unsigned fColorType : 2;
         unsigned fHasDomain: 1;
@@ -84,8 +130,8 @@ namespace GrQuadPerEdgeAA {
     sk_sp<GrGeometryProcessor> MakeProcessor(const VertexSpec& spec);
 
     sk_sp<GrGeometryProcessor> MakeTexturedProcessor(
-            const VertexSpec& spec, const GrShaderCaps& caps, GrTextureType textureType,
-            const GrSamplerState& samplerState, const GrSwizzle& swizzle, uint32_t extraSamplerKey,
+            const VertexSpec& spec, const GrShaderCaps& caps, const GrBackendFormat&,
+            const GrSamplerState& samplerState, const GrSwizzle& swizzle,
             sk_sp<GrColorSpaceXform> textureColorSpaceXform, Saturate saturate);
 
     // Fill vertices with the vertex data needed to represent the given quad. The device position,
@@ -101,15 +147,26 @@ namespace GrQuadPerEdgeAA {
                      const SkPMColor4f& color, const GrQuad& localQuad, const SkRect& domain,
                      GrQuadAAFlags aa);
 
-    // The mesh will have its index data configured to meet the expectations of the Tessellate()
-    // function, but it the calling code must handle filling a vertex buffer via Tessellate() and
-    // then assigning it to the returned mesh.
-    //
-    // Returns false if the index data could not be allocated.
-    bool ConfigureMeshIndices(GrMeshDrawOp::Target* target, GrMesh* mesh, const VertexSpec& spec,
-                              int quadCount);
+    // This method will return the correct index buffer for the specified indexBufferOption.
+    // It will, correctly, return nullptr if the indexBufferOption is kTriStrips.
+    sk_sp<const GrBuffer> GetIndexBuffer(GrMeshDrawOp::Target*, IndexBufferOption);
 
-    static constexpr int kNumAAQuadsInIndexBuffer = 512;
+    // What is the maximum number of quads allowed for the specified indexBuffer option?
+    int QuadLimit(IndexBufferOption);
+
+    // This method will configure the vertex and index data of the provided 'mesh' to comply
+    // with the indexing method specified in the vertexSpec. It is up to the calling code
+    // to allocate and fill in the vertex data and acquire the correct indexBuffer if it is needed.
+    //
+    // @param runningQuadCount  the number of quads already stored in 'vertexBuffer' and
+    //                          'indexBuffer' e.g., different GrMeshes have already been placed in
+    //                          the buffers to allow dynamic state changes.
+    // @param quadCount         the number of quads that will be drawn by the provided 'mesh'.
+    //                          A subsequent ConfigureMesh call would the use
+    //                          'runningQuadCount' + 'quadCount' for its new 'runningQuadCount'.
+    void ConfigureMesh(GrMesh* mesh, const VertexSpec&, int runningQuadCount, int quadCount,
+                       int maxVerts, sk_sp<const GrBuffer> vertexBuffer,
+                       sk_sp<const GrBuffer> indexBuffer, int absVertBufferOffset);
 
 } // namespace GrQuadPerEdgeAA
 

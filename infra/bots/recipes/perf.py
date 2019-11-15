@@ -72,6 +72,10 @@ def nanobench_flags(api, bot):
     if 'Nexus7' in bot:
       args.append('--purgeBetweenBenches')  # Debugging skia:8929
 
+    if 'Android' in bot:
+      assert api.flavor.device_dirs.texttraces_dir
+      args.extend(['--texttraces', api.flavor.device_dirs.texttraces_dir])
+
   elif api.vars.builder_cfg.get('cpu_or_gpu') == 'GPU':
     args.append('--nocpu')
 
@@ -85,8 +89,10 @@ def nanobench_flags(api, bot):
         gl_prefix = 'gles'
       # iOS crashes with MSAA (skia:6399)
       # Nexus7 (Tegra3) does not support MSAA.
+      # MSAA is disabled on Pixel3a (https://b.corp.google.com/issues/143074513).
       if ('iOS'     in bot or
-          'Nexus7'  in bot):
+          'Nexus7'  in bot or
+          'Pixel3a' in bot):
         sample_count = ''
     elif 'Intel' in bot:
       # MSAA doesn't work well on Intel GPUs chromium:527565, chromium:983926
@@ -215,8 +221,7 @@ def nanobench_flags(api, bot):
   if 'AcerChromebook13_CB5_311-GPU-TegraK1' in bot:
     # skia:7551
     match.append('~^shapes_rrect_inner_rrect_50_500x500$')
-  if (bot ==
-      'Perf-Android-Clang-Pixel3a-GPU-Adreno615-arm64-Release-All-Android'):
+  if ('Perf-Android-Clang-Pixel3a-GPU-Adreno615-arm64-Release-All-Android' in bot):
     # skia:9413
     match.append('~^path_text$')
     match.append('~^path_text_clipped_uncached$')
@@ -313,6 +318,7 @@ def perf_steps(api):
       '~^path_text_clipped', # Bot times out; skia:7190
       '~shapes_rrect_inner_rrect_50_500x500', # skia:7551
       '~compositing_images',
+      '~bulkrect'
     ])
     if 'Debug' in api.vars.builder_name:
       args.extend(['--loops', '1'])
@@ -358,6 +364,8 @@ def RunSteps(api):
     try:
       if 'Chromecast' in api.vars.builder_name:
         api.flavor.install(resources=True, skps=True)
+      elif all(v in api.vars.builder_name for v in ['Android', 'CPU']):
+        api.flavor.install(skps=True, images=True, svgs=True, resources=True, texttraces=True)
       else:
         api.flavor.install(skps=True, images=True, svgs=True, resources=True)
       perf_steps(api)

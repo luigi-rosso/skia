@@ -38,7 +38,7 @@ public:
 
     void executeDrawable(std::unique_ptr<SkDrawable::GpuDrawHandler>) override;
 
-    void set(GrRenderTarget*, GrSurfaceOrigin,
+    bool set(GrRenderTarget*, GrSurfaceOrigin, const SkIRect& bounds,
              const GrOpsRenderPass::LoadAndStoreInfo&,
              const GrOpsRenderPass::StencilLoadAndStoreInfo&,
              const SkTArray<GrTextureProxy*, true>& sampledProxies);
@@ -51,7 +51,7 @@ public:
 #endif
 
 private:
-    void init(const GrOpsRenderPass::LoadAndStoreInfo&,
+    bool init(const GrOpsRenderPass::LoadAndStoreInfo&,
               const GrOpsRenderPass::StencilLoadAndStoreInfo&,
               const SkPMColor4f& clearColor);
 
@@ -70,18 +70,9 @@ private:
                       const GrGpuBuffer* vertexBuffer,
                       const GrGpuBuffer* instanceBuffer);
 
-    GrVkPipelineState* prepareDrawState(const GrPrimitiveProcessor&,
-                                        const GrPipeline&,
-                                        const GrPipeline::FixedDynamicState*,
-                                        const GrPipeline::DynamicStateArrays*,
-                                        GrPrimitiveType);
+    GrVkPipelineState* prepareDrawState(const GrProgramInfo&, const SkIRect& renderPassScissorRect);
 
-    void onDraw(const GrPrimitiveProcessor&,
-                const GrPipeline&,
-                const GrPipeline::FixedDynamicState*,
-                const GrPipeline::DynamicStateArrays*,
-                const GrMesh[],
-                int meshCount,
+    void onDraw(const GrProgramInfo&, const GrMesh[], int meshCount,
                 const SkRect& bounds) override;
 
     // GrMesh::SendToGpuImpl methods. These issue the actual Vulkan draw commands.

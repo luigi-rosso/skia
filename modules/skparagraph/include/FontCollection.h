@@ -29,7 +29,7 @@ public:
     void setDefaultFontManager(sk_sp<SkFontMgr> fontManager);
     void setDefaultFontManager(sk_sp<SkFontMgr> fontManager, const char defaultFamilyName[]);
 
-    sk_sp<SkFontMgr> geFallbackManager() const { return fDefaultFontManager; }
+    sk_sp<SkFontMgr> getFallbackManager() const { return fDefaultFontManager; }
 
     sk_sp<SkTypeface> matchTypeface(const char familyName[], SkFontStyle fontStyle, const SkString& locale);
     sk_sp<SkTypeface> matchDefaultTypeface(SkFontStyle fontStyle, const SkString& locale);
@@ -37,6 +37,7 @@ public:
     sk_sp<SkTypeface> defaultFallback();
 
     void disableFontFallback();
+    void enableFontFallback();
     bool fontFallbackEnabled() { return fEnableFontFallback; }
 
     ParagraphCache* getParagraphCache() { return &fParagraphCache; }

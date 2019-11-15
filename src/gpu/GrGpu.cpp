@@ -19,6 +19,7 @@
 #include "src/gpu/GrDataUtils.h"
 #include "src/gpu/GrGpuResourcePriv.h"
 #include "src/gpu/GrMesh.h"
+#include "src/gpu/GrNativeRect.h"
 #include "src/gpu/GrPathRendering.h"
 #include "src/gpu/GrPipeline.h"
 #include "src/gpu/GrRenderTargetPriv.h"
@@ -43,19 +44,19 @@ void GrGpu::disconnect(DisconnectType) {}
 
 ////////////////////////////////////////////////////////////////////////////////
 
-bool GrGpu::IsACopyNeededForRepeatWrapMode(const GrCaps* caps, GrTextureProxy* texProxy,
-                                           int width, int height,
+bool GrGpu::IsACopyNeededForRepeatWrapMode(const GrCaps* caps,
+                                           GrTextureProxy* texProxy,
+                                           SkISize dimensions,
                                            GrSamplerState::Filter filter,
                                            GrTextureProducer::CopyParams* copyParams,
                                            SkScalar scaleAdjust[2]) {
     if (!caps->npotTextureTileSupport() &&
-        (!SkIsPow2(width) || !SkIsPow2(height))) {
+        (!SkIsPow2(dimensions.width()) || !SkIsPow2(dimensions.height()))) {
         SkASSERT(scaleAdjust);
-        copyParams->fWidth = GrNextPow2(width);
-        copyParams->fHeight = GrNextPow2(height);
+        copyParams->fDimensions = {SkNextPow2(dimensions.width()), SkNextPow2(dimensions.height())};
         SkASSERT(scaleAdjust);
-        scaleAdjust[0] = ((SkScalar)copyParams->fWidth) / width;
-        scaleAdjust[1] = ((SkScalar)copyParams->fHeight) / height;
+        scaleAdjust[0] = ((SkScalar)copyParams->fDimensions.width()) / dimensions.width();
+        scaleAdjust[1] = ((SkScalar)copyParams->fDimensions.height()) / dimensions.height();
         switch (filter) {
         case GrSamplerState::Filter::kNearest:
             copyParams->fFilter = GrSamplerState::Filter::kNearest;
@@ -74,8 +75,7 @@ bool GrGpu::IsACopyNeededForRepeatWrapMode(const GrCaps* caps, GrTextureProxy* t
         // those capabilities are required) force a copy.
         if (texProxy->hasRestrictedSampling()) {
             copyParams->fFilter = GrSamplerState::Filter::kNearest;
-            copyParams->fWidth = texProxy->width();
-            copyParams->fHeight = texProxy->height();
+            copyParams->fDimensions = texProxy->dimensions();
             return true;
         }
     }
@@ -92,8 +92,7 @@ bool GrGpu::IsACopyNeededForMips(const GrCaps* caps, const GrTextureProxy* texPr
     // force a copy.
     if (willNeedMips && texProxy->mipMapped() == GrMipMapped::kNo) {
         copyParams->fFilter = GrSamplerState::Filter::kNearest;
-        copyParams->fWidth = texProxy->width();
-        copyParams->fHeight = texProxy->height();
+        copyParams->fDimensions = texProxy->dimensions();
         return true;
     }
 
@@ -580,8 +579,13 @@ bool GrGpu::regenerateMipMapLevels(GrTexture* texture) {
     SkASSERT(texture);
     SkASSERT(this->caps()->mipMapSupport());
     SkASSERT(texture->texturePriv().mipMapped() == GrMipMapped::kYes);
-    SkASSERT(texture->texturePriv().mipMapsAreDirty());
-    SkASSERT(!texture->asRenderTarget() || !texture->asRenderTarget()->needsResolve());
+    if (!texture->texturePriv().mipMapsAreDirty()) {
+        // This can happen when the proxy expects mipmaps to be dirty, but they are not dirty on the
+        // actual target. This may be caused by things that the drawingManager could not predict,
+        // i.e., ops that don't draw anything, aborting a draw for exceptional circumstances, etc.
+        // NOTE: This goes away once we quit tracking mipmap state on the actual texture.
+        return true;
+    }
     if (texture->readOnly()) {
         return false;
     }
@@ -597,10 +601,11 @@ void GrGpu::resetTextureBindings() {
     this->onResetTextureBindings();
 }
 
-void GrGpu::resolveRenderTarget(GrRenderTarget* target) {
+void GrGpu::resolveRenderTarget(GrRenderTarget* target, const SkIRect& resolveRect,
+                                GrSurfaceOrigin origin, ForExternalIO forExternalIO) {
     SkASSERT(target);
     this->handleDirtyContext();
-    this->onResolveRenderTarget(target);
+    this->onResolveRenderTarget(target, resolveRect, origin, forExternalIO);
 }
 
 void GrGpu::didWriteToSurface(GrSurface* surface, GrSurfaceOrigin origin, const SkIRect* bounds,
@@ -609,15 +614,6 @@ void GrGpu::didWriteToSurface(GrSurface* surface, GrSurfaceOrigin origin, const 
     SkASSERT(!surface->readOnly());
     // Mark any MIP chain and resolve buffer as dirty if and only if there is a non-empty bounds.
     if (nullptr == bounds || !bounds->isEmpty()) {
-        if (GrRenderTarget* target = surface->asRenderTarget()) {
-            SkIRect flippedBounds;
-            if (kBottomLeft_GrSurfaceOrigin == origin && bounds) {
-                flippedBounds = {bounds->fLeft, surface->height() - bounds->fBottom,
-                                 bounds->fRight, surface->height() - bounds->fTop};
-                bounds = &flippedBounds;
-            }
-            target->flagAsNeedingResolve(bounds);
-        }
         GrTexture* texture = surface->asTexture();
         if (texture && 1 == mipLevels) {
             texture->texturePriv().markMipMapsDirty();
@@ -705,49 +701,40 @@ void GrGpu::Stats::dumpKeyValuePairs(SkTArray<SkString>* keys, SkTArray<double>*
 #endif // GR_GPU_STATS
 #endif // GR_TEST_UTILS
 
+bool GrGpu::MipMapsAreCorrect(SkISize dimensions, const BackendTextureData* data, int numLevels) {
+    if (numLevels != 1 &&
+        numLevels != SkMipMap::ComputeLevelCount(dimensions.width(), dimensions.height()) + 1) {
+        return false;
+    }
 
-bool GrGpu::MipMapsAreCorrect(int baseWidth, int baseHeight, GrMipMapped mipMapped,
-                              const SkPixmap srcData[], int numMipLevels) {
-    if (!srcData) {
+    if (!data || data->type() != BackendTextureData::Type::kPixmaps) {
         return true;
     }
 
-    if (baseWidth != srcData[0].width() || baseHeight != srcData[0].height()) {
+    if (data->pixmap(0).dimensions() != dimensions) {
         return false;
     }
 
-    if (mipMapped == GrMipMapped::kYes) {
-        if (numMipLevels != SkMipMap::ComputeLevelCount(baseWidth, baseHeight) + 1) {
+    SkColorType colorType = data->pixmap(0).colorType();
+    for (int i = 1; i < numLevels; ++i) {
+        dimensions = {SkTMax(1, dimensions.width() /2),
+                      SkTMax(1, dimensions.height()/2)};
+        if (dimensions != data->pixmap(i).dimensions()) {
             return false;
         }
-
-        SkColorType colorType = srcData[0].colorType();
-
-        int currentWidth = baseWidth;
-        int currentHeight = baseHeight;
-        for (int i = 1; i < numMipLevels; ++i) {
-            currentWidth = SkTMax(1, currentWidth / 2);
-            currentHeight = SkTMax(1, currentHeight / 2);
-
-            if (srcData[i].colorType() != colorType) { // all levels must have same colorType
-                return false;
-            }
-
-            if (srcData[i].width() != currentWidth || srcData[i].height() != currentHeight) {
-                return false;
-            }
+        if (colorType != data->pixmap(i).colorType()) {
+            return false;
         }
-    } else if (numMipLevels != 1) {
-        return false;
     }
-
     return true;
 }
 
-GrBackendTexture GrGpu::createBackendTexture(int w, int h, const GrBackendFormat& format,
-                                             GrMipMapped mipMapped, GrRenderable renderable,
-                                             const SkPixmap srcData[], int numMipLevels,
-                                             const SkColor4f* color, GrProtected isProtected) {
+GrBackendTexture GrGpu::createBackendTexture(SkISize dimensions,
+                                             const GrBackendFormat& format,
+                                             GrRenderable renderable,
+                                             const BackendTextureData* data,
+                                             int numMipLevels,
+                                             GrProtected isProtected) {
     const GrCaps* caps = this->caps();
 
     if (!format.isValid()) {
@@ -759,19 +746,26 @@ GrBackendTexture GrGpu::createBackendTexture(int w, int h, const GrBackendFormat
         return {};
     }
 
-    if (w < 1 || w > caps->maxTextureSize() || h < 1 || h > caps->maxTextureSize()) {
+    if (data && data->type() == BackendTextureData::Type::kPixmaps) {
+        auto ct = SkColorTypeToGrColorType(data->pixmap(0).colorType());
+        if (!caps->areColorTypeAndFormatCompatible(ct, format)) {
+            return {};
+        }
+    }
+
+    if (dimensions.isEmpty() || dimensions.width()  > caps->maxTextureSize() ||
+                                dimensions.height() > caps->maxTextureSize()) {
         return {};
     }
 
-    // TODO: maybe just ignore the mipMapped parameter in this case
-    if (mipMapped == GrMipMapped::kYes && !this->caps()->mipMapSupport()) {
+    if (numMipLevels > 1 && !this->caps()->mipMapSupport()) {
         return {};
     }
 
-    if (!MipMapsAreCorrect(w, h, mipMapped, srcData, numMipLevels)) {
+    if (!MipMapsAreCorrect(dimensions, data, numMipLevels)) {
         return {};
     }
 
-    return this->onCreateBackendTexture(w, h, format, mipMapped, renderable,
-                                        srcData, numMipLevels, color, isProtected);
+    return this->onCreateBackendTexture(dimensions, format, renderable, data, numMipLevels,
+                                        isProtected);
 }

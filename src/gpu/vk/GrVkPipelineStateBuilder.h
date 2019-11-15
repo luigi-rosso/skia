@@ -38,13 +38,7 @@ public:
      */
     class Desc : public GrProgramDesc {
     public:
-        static bool Build(Desc*,
-                          GrRenderTarget*,
-                          const GrPrimitiveProcessor&,
-                          const GrPipeline&,
-                          const GrStencilSettings&,
-                          GrPrimitiveType primitiveType,
-                          GrVkGpu* gpu);
+        static bool Build(Desc*, GrRenderTarget*, const GrProgramInfo&, const GrCaps&);
 
         size_t shaderKeyLength() const { return fShaderKeyLength; }
 
@@ -63,12 +57,8 @@ public:
     * @return true if generation was successful.
     */
     static GrVkPipelineState* CreatePipelineState(GrVkGpu*,
-                                                  GrRenderTarget*, GrSurfaceOrigin,
-                                                  const GrPrimitiveProcessor&,
-                                                  const GrTextureProxy* const primProcProxies[],
-                                                  const GrPipeline&,
-                                                  const GrStencilSettings&,
-                                                  GrPrimitiveType,
+                                                  GrRenderTarget*,
+                                                  const GrProgramInfo&,
                                                   Desc*,
                                                   VkRenderPass compatibleRenderPass);
 
@@ -80,16 +70,9 @@ public:
     void finalizeFragmentSecondaryColor(GrShaderVar& outputColor) override;
 
 private:
-    GrVkPipelineStateBuilder(GrVkGpu*, GrRenderTarget*, GrSurfaceOrigin,
-                             const GrPipeline&,
-                             const GrPrimitiveProcessor&,
-                             const GrTextureProxy* const primProcProxies[],
-                             GrProgramDesc*);
+    GrVkPipelineStateBuilder(GrVkGpu*, GrRenderTarget*, const GrProgramInfo&, GrProgramDesc*);
 
-    GrVkPipelineState* finalize(const GrStencilSettings&,
-                                GrPrimitiveType primitiveType,
-                                VkRenderPass compatibleRenderPass,
-                                Desc*);
+    GrVkPipelineState* finalize(VkRenderPass compatibleRenderPass, Desc*);
 
     // returns number of shader stages
     int loadShadersFromCache(SkReader32* cached, VkShaderModule outShaderModules[],

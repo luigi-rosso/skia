@@ -12,15 +12,15 @@
 
 class GrTextureResolveRenderTask final : public GrRenderTask {
 public:
-    GrTextureResolveRenderTask() : GrRenderTask(nullptr) {}
+    GrTextureResolveRenderTask() : GrRenderTask() {}
     ~GrTextureResolveRenderTask() override;
 
-    void addProxy(sk_sp<GrSurfaceProxy>, GrSurfaceProxy::ResolveFlags, const GrCaps&);
+    void addProxy(GrSurfaceProxyView proxyView, GrSurfaceProxy::ResolveFlags, const GrCaps&);
 
 private:
-    void onPrepare(GrOpFlushState*) override {}
     bool onIsUsed(GrSurfaceProxy* proxy) const override {
-        SkASSERT(proxy != fTarget.get());  // This case should be handled by GrRenderTask.
+        // This case should be handled by GrRenderTask.
+        SkASSERT(proxy != fTargetView.proxy());
         return false;
     }
     void handleInternalAllocationFailure() override {
@@ -28,7 +28,7 @@ private:
     }
     void gatherProxyIntervals(GrResourceAllocator*) const override;
 
-    ExpectedOutcome onMakeClosed(const GrCaps&) override {
+    ExpectedOutcome onMakeClosed(const GrCaps&, SkIRect*) override {
         return ExpectedOutcome::kTargetUnchanged;
     }
 
@@ -39,10 +39,11 @@ private:
 #endif
 
     struct Resolve {
-        Resolve(sk_sp<GrSurfaceProxy> proxy, GrSurfaceProxy::ResolveFlags flags)
-                : fProxy(std::move(proxy)), fFlags(flags) {}
-        sk_sp<GrSurfaceProxy> fProxy;
+        Resolve(GrSurfaceProxyView proxyView, GrSurfaceProxy::ResolveFlags flags)
+                : fProxyView(std::move(proxyView)), fFlags(flags) {}
+        GrSurfaceProxyView fProxyView;
         GrSurfaceProxy::ResolveFlags fFlags;
+        SkIRect fMSAAResolveRect;
     };
 
     SkSTArray<4, Resolve> fResolves;

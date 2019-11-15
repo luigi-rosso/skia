@@ -11,7 +11,7 @@
 #include "src/gpu/vk/GrVkCommandBuffer.h"
 #include "src/gpu/vk/GrVkGpu.h"
 
-GrVkCommandPool* GrVkCommandPool::Create(const GrVkGpu* gpu) {
+GrVkCommandPool* GrVkCommandPool::Create(GrVkGpu* gpu) {
     VkCommandPoolCreateFlags cmdPoolCreateFlags =
             VK_COMMAND_POOL_CREATE_TRANSIENT_BIT |
             VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -25,10 +25,12 @@ GrVkCommandPool* GrVkCommandPool::Create(const GrVkGpu* gpu) {
         cmdPoolCreateFlags,                          // CmdPoolCreateFlags
         gpu->queueIndex(),                           // queueFamilyIndex
     };
+    VkResult result;
     VkCommandPool pool;
-    GR_VK_CALL_ERRCHECK(
-            gpu->vkInterface(),
-            CreateCommandPool(gpu->device(), &cmdPoolInfo, nullptr, &pool));
+    GR_VK_CALL_RESULT(gpu, result, CreateCommandPool(gpu->device(), &cmdPoolInfo, nullptr, &pool));
+    if (result != VK_SUCCESS) {
+        return nullptr;
+    }
     return new GrVkCommandPool(gpu, pool);
 }
 
@@ -63,7 +65,12 @@ void GrVkCommandPool::reset(GrVkGpu* gpu) {
     SkASSERT(!fOpen);
     fOpen = true;
     fPrimaryCommandBuffer->recycleSecondaryCommandBuffers(gpu);
-    GR_VK_CALL_ERRCHECK(gpu->vkInterface(), ResetCommandPool(gpu->device(), fCommandPool, 0));
+    // We can't use the normal result macro calls here because we may call reset on a different
+    // thread and we can't be modifying the lost state on the GrVkGpu. We just call
+    // vkResetCommandPool and assume the "next" vulkan call will catch the lost device.
+    SkDEBUGCODE(VkResult result = )GR_VK_CALL(gpu->vkInterface(),
+                                              ResetCommandPool(gpu->device(), fCommandPool, 0));
+    SkASSERT(result == VK_SUCCESS || result == VK_ERROR_DEVICE_LOST);
 }
 
 void GrVkCommandPool::releaseResources(GrVkGpu* gpu) {

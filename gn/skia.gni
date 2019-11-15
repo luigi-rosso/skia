@@ -33,8 +33,6 @@ declare_args() {
   skia_generate_workarounds = false
   skia_include_multiframe_procs = false
   skia_lex = false
-  skia_llvm_lib = "LLVM"
-  skia_llvm_path = ""
   skia_pdf_subset_harfbuzz = false  # TODO: set skia_pdf_subset_harfbuzz to skia_use_harfbuzz.
   skia_qt_path = getenv("QT_PATH")
   skia_skqp_global_error_tolerance = 0
@@ -49,7 +47,9 @@ declare_args() {
   skia_use_fontconfig = is_linux
   skia_use_fonthost_mac = is_mac
   skia_use_freetype = is_android || is_fuchsia || is_linux
+  skia_use_gl = !is_fuchsia
   skia_use_harfbuzz = true
+  skia_use_gl = !is_fuchsia
   skia_use_icu = !is_fuchsia && !is_ios
   skia_use_libheif = is_skia_dev_build
   skia_use_libjpeg_turbo = true

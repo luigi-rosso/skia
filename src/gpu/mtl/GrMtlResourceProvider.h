@@ -24,19 +24,15 @@ class GrMtlResourceProvider {
 public:
     GrMtlResourceProvider(GrMtlGpu* gpu);
 
-    GrMtlPipelineState* findOrCreateCompatiblePipelineState(
-        GrRenderTarget*, GrSurfaceOrigin,
-        const GrPipeline&,
-        const GrPrimitiveProcessor&,
-        const GrTextureProxy* const primProcProxies[],
-        GrPrimitiveType);
+    GrMtlPipelineState* findOrCreateCompatiblePipelineState(GrRenderTarget*,
+                                                            const GrProgramInfo&);
 
     // Finds or creates a compatible MTLDepthStencilState based on the GrStencilSettings.
     GrMtlDepthStencil* findOrCreateCompatibleDepthStencilState(const GrStencilSettings&,
                                                                GrSurfaceOrigin);
 
     // Finds or creates a compatible MTLSamplerState based on the GrSamplerState.
-    GrMtlSampler* findOrCreateCompatibleSampler(const GrSamplerState&, uint32_t maxMipLevel);
+    GrMtlSampler* findOrCreateCompatibleSampler(const GrSamplerState&);
 
     id<MTLBuffer> getDynamicBuffer(size_t size, size_t* offset);
     void addBufferCompletionHandler(GrMtlCommandBuffer* cmdBuffer);
@@ -55,11 +51,7 @@ private:
         ~PipelineStateCache();
 
         void release();
-        GrMtlPipelineState* refPipelineState(GrRenderTarget*, GrSurfaceOrigin,
-                                             const GrPrimitiveProcessor&,
-                                             const GrTextureProxy* const primProcProxies[],
-                                             const GrPipeline&,
-                                             GrPrimitiveType);
+        GrMtlPipelineState* refPipelineState(GrRenderTarget*, const GrProgramInfo&);
 
     private:
         struct Entry;

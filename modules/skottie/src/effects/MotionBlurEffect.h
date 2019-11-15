@@ -34,6 +34,8 @@ private:
 
     void renderToRaster8888Pow2Samples(SkCanvas* canvas, const RenderContext* ctx) const;
 
+    SkRect seekToSample(size_t sample_idx, const SkMatrix& ctm) const;
+
     MotionBlurEffect(sk_sp<sksg::Animator> animator,
                      sk_sp<sksg::RenderNode> child,
                      size_t sample_count, float phase, float dt);
@@ -43,7 +45,8 @@ private:
     const float                 fPhase,
                                 fDT;
 
-    float fT = 0;
+    float  fT                  = 0;
+    size_t fVisibleSampleCount = 0;
 
     using INHERITED = sksg::CustomRenderNode;
 };
