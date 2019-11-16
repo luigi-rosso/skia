@@ -458,6 +458,12 @@ void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDevicePropertie
     if (kImagination_VkVendor == properties.vendorID) {
         fShaderCaps->fAtan2ImplementedAsAtanYOverX = true;
     }
+
+    if (kQualcomm_VkVendor == properties.vendorID) {
+        // The sample mask round rect op draws nothing on Adreno for the srcmode gm.
+        // http://skbug.com/8921
+        fShaderCaps->fCanOnlyUseSampleMaskWithStencil = true;
+    }
 }
 
 void GrVkCaps::initGrCaps(const GrVkInterface* vkInterface,
@@ -472,6 +478,10 @@ void GrVkCaps::initGrCaps(const GrVkInterface* vkInterface,
     // we ever find that need.
     static const uint32_t kMaxVertexAttributes = 64;
     fMaxVertexAttributes = SkTMin(properties.limits.maxVertexInputAttributes, kMaxVertexAttributes);
+
+    if (properties.limits.standardSampleLocations) {
+        fSampleLocationsSupport = true;
+    }
 
     if (extensions.hasExtension(VK_EXT_SAMPLE_LOCATIONS_EXTENSION_NAME, 1)) {
         // We "disable" multisample by colocating all samples at pixel center.
@@ -548,7 +558,7 @@ void GrVkCaps::initShaderCaps(const VkPhysicalDeviceProperties& properties,
     // to be true with Vulkan as well.
     shaderCaps->fPreferFlatInterpolation = kQualcomm_VkVendor != properties.vendorID;
 
-    // GrShaderCaps
+    shaderCaps->fSampleMaskSupport = true;
 
     shaderCaps->fShaderDerivativeSupport = true;
 

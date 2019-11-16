@@ -142,10 +142,13 @@ sk_sp<SkSurface> MakeOnScreenGLSurface(sk_sp<GrContext> grContext, int width, in
     info.fFBOID = (GrGLuint) buffer;
     SkColorType colorType;
 
+    GrGLint stencil;
+    glGetIntegerv(GL_STENCIL_BITS, &stencil);
+
     info.fFormat = GL_RGBA8;
     colorType = kRGBA_8888_SkColorType;
 
-    GrBackendRenderTarget target(width, height, 0, 8, info);
+    GrBackendRenderTarget target(width, height, 0, stencil, info);
 
     sk_sp<SkSurface> surface(SkSurface::MakeFromBackendRenderTarget(grContext.get(), target,
                                                                     kBottomLeft_GrSurfaceOrigin,
@@ -1130,7 +1133,11 @@ EMSCRIPTEN_BINDINGS(Skia) {
             // Emscripten does not like default args nor SkIRect* much
             return SkImageFilters::ColorFilter(cf, input);
         }))
-        .class_function("MakeCompose", &SkImageFilters::Compose);
+        .class_function("MakeCompose", &SkImageFilters::Compose)
+        .class_function("MakeMatrixTransform", optional_override([](SimpleMatrix sm, SkFilterQuality fq,
+                                                                   sk_sp<SkImageFilter> input)->sk_sp<SkImageFilter> {
+            return SkImageFilters::MatrixTransform(toSkMatrix(sm), fq, input);
+        }));
 
     class_<SkMaskFilter>("SkMaskFilter")
         .smart_ptr<sk_sp<SkMaskFilter>>("sk_sp<SkMaskFilter>")
