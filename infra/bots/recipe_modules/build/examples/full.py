@@ -58,6 +58,11 @@ TEST_BUILDERS = [
   'Build-Debian9-GCC-x86_64-Release-ANGLE',
   'Build-Debian9-GCC-x86_64-Release-NoGPU',
   'Build-Debian9-GCC-x86_64-Release-Shared',
+  'Build-Debian10-GCC-loongson3a-Release-Docker',
+  'Build-Debian10-GCC-x86-Debug-Docker',
+  'Build-Debian10-GCC-x86_64-Debug-Docker',
+  'Build-Debian10-GCC-x86_64-Release-NoGPU_Docker',
+  'Build-Debian10-GCC-x86_64-Release-Shared_Docker',
   'Build-Mac-Clang-arm-Debug-iOS',
   'Build-Mac-Clang-arm64-Debug-Android_Vulkan',
   'Build-Mac-Clang-arm64-Debug-iOS',
@@ -65,6 +70,7 @@ TEST_BUILDERS = [
   'Build-Mac-Clang-x86_64-Debug-CommandBuffer',
   'Build-Mac-Clang-x86_64-Debug-Metal',
   'Build-Mac-Clang-x86_64-Release-MoltenVK_Vulkan',
+  'Build-Ubuntu18-GCC-x86_64-Release-Docker',
   'Build-Win-Clang-arm64-Release-Android',
   'Build-Win-Clang-x86-Debug-Exceptions',
   'Build-Win-Clang-x86_64-Debug-OpenCL',
@@ -92,3 +98,9 @@ def GenTests(api):
     if 'Win' in buildername and not 'LenovoYogaC630' in buildername:
       test += api.platform('win', 64)
     yield test
+
+  yield (
+      api.test('unknown-docker-image') +
+      api.properties(**defaultProps('Build-Unix-GCC-x86_64-Release-Docker')) +
+      api.expect_exception('Exception')
+  )
