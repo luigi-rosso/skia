@@ -8,6 +8,7 @@
 #ifndef GrMeshDrawOp_DEFINED
 #define GrMeshDrawOp_DEFINED
 
+#include "src/core/SkArenaAlloc.h"
 #include "src/gpu/GrAppliedClip.h"
 #include "src/gpu/GrGeometryProcessor.h"
 #include "src/gpu/GrMesh.h"
@@ -89,15 +90,17 @@ protected:
 private:
     void onPrePrepare(GrRecordingContext* context,
                       const GrSurfaceProxyView* dstView,
-                      const GrAppliedClip* clip) final {
-        this->onPrePrepareDraws(context, dstView, clip);
+                      GrAppliedClip* clip,
+                      const GrXferProcessor::DstProxyView& dstProxyView) final {
+        this->onPrePrepareDraws(context, dstView, clip, dstProxyView);
     }
     void onPrepare(GrOpFlushState* state) final;
 
     // Only the GrTextureOp currently overrides this virtual
     virtual void onPrePrepareDraws(GrRecordingContext*,
                                    const GrSurfaceProxyView*,
-                                   const GrAppliedClip*) {}
+                                   GrAppliedClip*,
+                                   const GrXferProcessor::DstProxyView&) {}
 
     virtual void onPrepareDraws(Target*) = 0;
     typedef GrDrawOp INHERITED;
@@ -186,7 +189,7 @@ public:
 
     virtual GrRenderTargetProxy* proxy() const = 0;
 
-    virtual const GrAppliedClip* appliedClip() = 0;
+    virtual const GrAppliedClip* appliedClip() const = 0;
     virtual GrAppliedClip detachAppliedClip() = 0;
 
     virtual const GrXferProcessor::DstProxyView& dstProxyView() const = 0;
@@ -200,7 +203,7 @@ public:
     // This should be called during onPrepare of a GrOp. The caller should add any proxies to the
     // array it will use that it did not access during a call to visitProxies. This is usually the
     // case for atlases.
-    virtual SkTArray<GrTextureProxy*, true>* sampledProxyArray() = 0;
+    virtual SkTArray<GrSurfaceProxy*, true>* sampledProxyArray() = 0;
 
     virtual const GrCaps& caps() const = 0;
 

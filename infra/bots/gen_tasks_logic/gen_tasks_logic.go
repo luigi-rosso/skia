@@ -207,13 +207,12 @@ type Config struct {
 	Project string `json:"project"`
 
 	// Service accounts.
-	ServiceAccountAndroidFrameworkCompile string `json:"service_account_android_framework_compile"`
-	ServiceAccountCompile                 string `json:"service_account_compile"`
-	ServiceAccountHousekeeper             string `json:"service_account_housekeeper"`
-	ServiceAccountRecreateSKPs            string `json:"service_account_recreate_skps"`
-	ServiceAccountUploadBinary            string `json:"service_account_upload_binary"`
-	ServiceAccountUploadGM                string `json:"service_account_upload_gm"`
-	ServiceAccountUploadNano              string `json:"service_account_upload_nano"`
+	ServiceAccountCompile      string `json:"service_account_compile"`
+	ServiceAccountHousekeeper  string `json:"service_account_housekeeper"`
+	ServiceAccountRecreateSKPs string `json:"service_account_recreate_skps"`
+	ServiceAccountUploadBinary string `json:"service_account_upload_binary"`
+	ServiceAccountUploadGM     string `json:"service_account_upload_gm"`
+	ServiceAccountUploadNano   string `json:"service_account_upload_nano"`
 
 	// Optional override function which derives Swarming bot dimensions
 	// from parts of task names.
@@ -463,7 +462,7 @@ func (b *builder) deriveCompileTaskName(jobName string, parts map[string]string)
 				"Skpbench", "AbandonGpuContext", "PreAbandonGpuContext", "Valgrind",
 				"ReleaseAndAbandonGpuContext", "CCPR", "FSAA", "FAAA", "FDAA", "NativeFonts", "GDI",
 				"NoGPUThreads", "ProcDump", "DDL1", "DDL3", "T8888", "DDLTotal", "DDLRecord", "9x9",
-				"BonusConfigs", "SkottieTracing", "SkottieWASM", "NonNVPR", "Mskp"}
+				"BonusConfigs", "SkottieTracing", "SkottieWASM", "NonNVPR", "Mskp", "Docker"}
 			keep := make([]string, 0, len(ec))
 			for _, part := range ec {
 				if !In(part, ignore) {
@@ -488,6 +487,10 @@ func (b *builder) deriveCompileTaskName(jobName string, parts map[string]string)
 			task_os = "Mac"
 		} else if strings.Contains(task_os, "Win") {
 			task_os = "Win"
+		} else if parts["compiler"] == "GCC" {
+			// GCC compiles are now on a Docker container. We use the same OS and
+			// version to compile as to test.
+			ec = append(ec, "Docker")
 		} else if strings.Contains(task_os, "Ubuntu") || strings.Contains(task_os, "Debian") {
 			task_os = "Debian9"
 		} else if strings.Contains(task_os, "Mac") {
@@ -542,7 +545,7 @@ func (b *builder) defaultSwarmDimensions(parts map[string]string) []string {
 	d := map[string]string{
 		"pool": b.cfg.Pool,
 	}
-	if strings.Contains(parts["extra_config"], "Docker") && parts["role"] == "Build" {
+	if strings.Contains(parts["extra_config"], "Docker") && (parts["role"] == "Build" || (parts["cpu_or_gpu"] == "CPU" && parts["model"] == "GCE")) {
 		return b.dockerGceDimensions()
 	}
 	if os, ok := parts["os"]; ok {
@@ -557,7 +560,7 @@ func (b *builder) defaultSwarmDimensions(parts map[string]string) []string {
 			"Mac10.15":   "Mac-10.15.1",
 			"Ubuntu18":   "Ubuntu-18.04",
 			"Win":        DEFAULT_OS_WIN,
-			"Win10":      "Windows-10-18362",
+			"Win10":      "Windows-10-18363",
 			"Win2016":    DEFAULT_OS_WIN,
 			"Win7":       "Windows-7-SP1",
 			"Win8":       "Windows-8.1-SP0",
@@ -687,14 +690,14 @@ func (b *builder) defaultSwarmDimensions(parts map[string]string) []string {
 					// At some point this might use the device ID, but for now it's like Chromebooks.
 					"Adreno630":     "Adreno630",
 					"GT610":         "10de:104a-23.21.13.9101",
-					"GTX660":        "10de:11c0-25.21.14.1634",
-					"GTX960":        "10de:1401-25.21.14.1634",
+					"GTX660":        "10de:11c0-26.21.14.4120",
+					"GTX960":        "10de:1401-26.21.14.4120",
 					"IntelHD4400":   "8086:0a16-20.19.15.4963",
-					"IntelIris540":  "8086:1926-25.20.100.6519",
+					"IntelIris540":  "8086:1926-26.20.100.7463",
 					"IntelIris6100": "8086:162b-20.19.15.4963",
-					"IntelIris655":  "8086:3ea5-25.20.100.6519",
-					"RadeonHD7770":  "1002:683d-24.20.13001.1010",
-					"RadeonR9M470X": "1002:6646-24.20.13001.1010",
+					"IntelIris655":  "8086:3ea5-26.20.100.7463",
+					"RadeonHD7770":  "1002:683d-26.20.13031.18002",
+					"RadeonR9M470X": "1002:6646-26.20.13031.18002",
 					"QuadroP400":    "10de:1cb3-25.21.14.1678",
 				}[parts["cpu_or_gpu_value"]]
 				if !ok {
@@ -1015,12 +1018,6 @@ func (b *builder) compile(name string, parts map[string]string) string {
 		if strings.Contains(name, "Clang") {
 			task.CipdPackages = append(task.CipdPackages, b.MustGetCipdPackageFromAsset("clang_linux"))
 		}
-		if parts["target_arch"] == "mips64el" || parts["target_arch"] == "loongson3a" {
-			if parts["compiler"] != "GCC" {
-				glog.Fatalf("mips64el toolchain is GCC, but compiler is %q in %q", parts["compiler"], name)
-			}
-			task.CipdPackages = append(task.CipdPackages, b.MustGetCipdPackageFromAsset("mips64el_toolchain_linux"))
-		}
 		if strings.Contains(name, "SwiftShader") {
 			task.CipdPackages = append(task.CipdPackages, b.MustGetCipdPackageFromAsset("cmake_linux"))
 		}
@@ -1091,6 +1088,7 @@ func (b *builder) checkGeneratedFiles(name string) string {
 	task := b.kitchenTask(name, "check_generated_files", "swarm_recipe.isolate", b.cfg.ServiceAccountCompile, b.linuxGceDimensions(MACHINE_TYPE_LARGE), EXTRA_PROPS, OUTPUT_NONE)
 	b.usesGit(task, name)
 	b.usesGo(task, name)
+	task.CipdPackages = append(task.CipdPackages, b.MustGetCipdPackageFromAsset("clang_linux"))
 	b.MustAddTask(name, task)
 	return name
 }
@@ -1108,7 +1106,7 @@ func (b *builder) housekeeper(name string) string {
 // the name of the last task in the generated chain of tasks, which the Job
 // should add as a dependency.
 func (b *builder) androidFrameworkCompile(name string) string {
-	task := b.kitchenTask(name, "android_compile", "compile_android_framework.isolate", b.cfg.ServiceAccountAndroidFrameworkCompile, b.linuxGceDimensions(MACHINE_TYPE_SMALL), EXTRA_PROPS, OUTPUT_NONE)
+	task := b.kitchenTask(name, "android_compile", "compile_android_framework.isolate", "skia-android-framework-compile@skia-swarming-bots.iam.gserviceaccount.com", b.linuxGceDimensions(MACHINE_TYPE_SMALL), EXTRA_PROPS, OUTPUT_NONE)
 	timeout(task, 2*time.Hour)
 	b.usesGit(task, name)
 	b.MustAddTask(name, task)
@@ -1119,8 +1117,9 @@ func (b *builder) androidFrameworkCompile(name string) string {
 // the name of the last task in the generated chain of tasks, which the Job
 // should add as a dependency.
 func (b *builder) g3FrameworkCompile(name string) string {
-	task := b.kitchenTask(name, "g3_compile", "compile_g3_framework.isolate", b.cfg.ServiceAccountCompile, b.linuxGceDimensions(MACHINE_TYPE_SMALL), EXTRA_PROPS, OUTPUT_NONE)
+	task := b.kitchenTask(name, "g3_compile", "compile_g3_framework.isolate", "skia-g3-framework-compile@skia-swarming-bots.iam.gserviceaccount.com", b.linuxGceDimensions(MACHINE_TYPE_SMALL), EXTRA_PROPS, OUTPUT_NONE)
 	timeout(task, 3*time.Hour)
+	b.usesGit(task, name)
 	b.MustAddTask(name, task)
 	return name
 }

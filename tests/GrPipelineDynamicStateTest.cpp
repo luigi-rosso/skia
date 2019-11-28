@@ -93,7 +93,7 @@ constexpr GrPrimitiveProcessor::Attribute GrPipelineDynamicStateTestProcessor::k
 
 class GLSLPipelineDynamicStateTestProcessor : public GrGLSLGeometryProcessor {
     void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor&,
-                 FPCoordTransformIter&& transformIter) final {}
+                 const CoordTransformRange&) final {}
 
     void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) final {
         const GrPipelineDynamicStateTestProcessor& mp =
@@ -163,7 +163,8 @@ private:
 
         GrProgramInfo programInfo(flushState->proxy()->numSamples(),
                                   flushState->proxy()->numStencilSamples(),
-                                  flushState->drawOpArgs().origin(),
+                                  flushState->proxy()->backendFormat(),
+                                  flushState->view()->origin(),
                                   &pipeline,
                                   geomProc,
                                   nullptr,

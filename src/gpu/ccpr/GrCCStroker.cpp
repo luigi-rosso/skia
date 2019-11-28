@@ -89,7 +89,7 @@ private:
 
     class Impl : public GrGLSLGeometryProcessor {
         void setData(const GrGLSLProgramDataManager&, const GrPrimitiveProcessor&,
-                     FPCoordTransformIter&&) override {}
+                     const CoordTransformRange&) override {}
         void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override;
     };
 
@@ -182,7 +182,7 @@ private:
 
     class Impl : public GrGLSLGeometryProcessor {
         void setData(const GrGLSLProgramDataManager&, const GrPrimitiveProcessor&,
-                     FPCoordTransformIter&&) override {}
+                     const CoordTransformRange&) override {}
         void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override;
     };
 
@@ -781,7 +781,8 @@ void GrCCStroker::flushBufferedMeshesAsStrokes(const GrPrimitiveProcessor& proce
 
     GrProgramInfo programInfo(flushState->proxy()->numSamples(),
                               flushState->proxy()->numStencilSamples(),
-                              flushState->drawOpArgs().origin(),
+                              flushState->proxy()->backendFormat(),
+                              flushState->view()->origin(),
                               &pipeline,
                               &processor,
                               nullptr,

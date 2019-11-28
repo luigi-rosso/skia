@@ -1,88 +1,70 @@
 [
   {
-    "cmd": [],
-    "name": "Docker setup"
-  },
-  {
     "cmd": [
       "vpython",
       "-u",
-      "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
+      "RECIPE_MODULE[recipe_engine::file]\\resources\\fileutil.py",
       "--json-output",
       "/path/to/tmp/json",
-      "ensure-directory",
-      "--mode",
-      "0777",
-      "[START_DIR]/cache/work/skia/out/Build-Ubuntu18-GCC-x86_64-Release-Docker/Release"
+      "copy",
+      "[START_DIR]\\cache\\work\\skia\\infra\\bots\\assets\\clang_win\\VERSION",
+      "/path/to/tmp/"
     ],
     "infra_step": true,
-    "name": "Docker setup.mkdirs out_dir",
+    "name": "Get clang_win VERSION",
     "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
+      "@@@STEP_LOG_LINE@VERSION@42@@@",
+      "@@@STEP_LOG_END@VERSION@@@"
     ]
   },
   {
     "cmd": [
-      "chmod",
-      "777",
-      "[START_DIR]/cache/work/skia/out/Build-Ubuntu18-GCC-x86_64-Release-Docker/Release"
+      "python",
+      "-u",
+      "[START_DIR]\\cache\\work\\skia\\bin\\fetch-gn"
     ],
-    "infra_step": true,
-    "name": "Docker setup.chmod 777 [START_DIR]/cache/work/skia/out/Build-Ubuntu18-GCC-x86_64-Release-Docker/Release",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "chmod",
-      "755",
-      "[START_DIR]/cache/work"
-    ],
-    "infra_step": true,
-    "name": "Docker setup.chmod 755 [START_DIR]/cache/work",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "chmod",
-      "0755",
-      "RECIPE_MODULE[skia::build]/resources/docker-compile.sh"
-    ],
-    "infra_step": true,
-    "name": "Docker setup.chmod 0755 RECIPE_MODULE[skia::build]/resources/docker-compile.sh",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "docker",
-      "run",
-      "--shm-size=2gb",
-      "--rm",
-      "--mount",
-      "type=bind,source=[START_DIR]/cache/work,target=/SRC",
-      "--mount",
-      "type=bind,source=[START_DIR]/cache/work/skia/out/Build-Ubuntu18-GCC-x86_64-Release-Docker/Release,target=/OUT",
-      "gcr.io/skia-public/gcc-ubuntu18@sha256:3439bba135be1593de385f89b59e503ab28ef637ba634e2ecec43559dd928c69",
-      "/SRC/../RECIPE_MODULE[skia::build]/resources/docker-compile.sh",
-      "cc=\"gcc\" cxx=\"g++\" extra_cflags=[\"-DDUMMY_docker_image=gcr.io/skia-public/gcc-ubuntu18@sha256:3439bba135be1593de385f89b59e503ab28ef637ba634e2ecec43559dd928c69\"] extra_ldflags=[] is_debug=false target_cpu=\"x86_64\" werror=true"
-    ],
+    "cwd": "[START_DIR]\\cache\\work\\skia",
     "env": {
-      "DOCKER_CONFIG": "/home/chrome-bot/.docker"
+      "CHROME_HEADLESS": "1",
+      "PATH": "<PATH>;RECIPE_REPO[depot_tools]"
     },
-    "name": "Run build script in Docker"
+    "infra_step": true,
+    "name": "fetch-gn"
+  },
+  {
+    "cmd": [
+      "[START_DIR]\\cache\\work\\skia\\bin\\gn",
+      "gen",
+      "[START_DIR]\\cache\\work\\skia\\out\\Build-Win-Clang-x86_64-Release-Shared\\Release_x64",
+      "--args=cc=\"clang\" clang_win=\"[START_DIR]\\clang_win\" cxx=\"clang++\" extra_cflags=[\"-DDUMMY_clang_win_version=42\"] is_component_build=true is_debug=false target_cpu=\"x86_64\" werror=true win_sdk=\"[START_DIR]\\win_toolchain/win_sdk\" win_vc=\"[START_DIR]\\win_toolchain/VC\""
+    ],
+    "cwd": "[START_DIR]\\cache\\work\\skia",
+    "env": {
+      "CHROME_HEADLESS": "1",
+      "PATH": "<PATH>;RECIPE_REPO[depot_tools]"
+    },
+    "name": "gn gen"
+  },
+  {
+    "cmd": [
+      "ninja",
+      "-C",
+      "[START_DIR]\\cache\\work\\skia\\out\\Build-Win-Clang-x86_64-Release-Shared\\Release_x64"
+    ],
+    "cwd": "[START_DIR]\\cache\\work\\skia",
+    "env": {
+      "CHROME_HEADLESS": "1",
+      "PATH": "<PATH>;RECIPE_REPO[depot_tools]"
+    },
+    "name": "ninja"
   },
   {
     "cmd": [
       "python",
       "-u",
       "import errno\nimport glob\nimport os\nimport shutil\nimport sys\n\nsrc = sys.argv[1]\ndst = sys.argv[2]\nbuild_products = ['dm', 'dm.exe', 'dm.app', 'nanobench.app', 'get_images_from_skps', 'get_images_from_skps.exe', 'hello-opencl', 'hello-opencl.exe', 'nanobench', 'nanobench.exe', 'skpbench', 'skpbench.exe', '*.so', '*.dll', '*.dylib', 'skia_launcher', 'skottie_tool', 'lib/*.so', 'run_testlab', 'skqp-universal-debug.apk', 'whitelist_devices.json']\n\ntry:\n  os.makedirs(dst)\nexcept OSError as e:\n  if e.errno != errno.EEXIST:\n    raise\n\nfor pattern in build_products:\n  path = os.path.join(src, pattern)\n  for f in glob.glob(path):\n    dst_path = os.path.join(dst, os.path.relpath(f, src))\n    if not os.path.isdir(os.path.dirname(dst_path)):\n      os.makedirs(os.path.dirname(dst_path))\n    print 'Copying build product %s to %s' % (f, dst_path)\n    shutil.move(f, dst_path)\n",
-      "[START_DIR]/cache/work/skia/out/Build-Ubuntu18-GCC-x86_64-Release-Docker/Release",
-      "[START_DIR]/[SWARM_OUT_DIR]/out/Release"
+      "[START_DIR]\\cache\\work\\skia\\out\\Build-Win-Clang-x86_64-Release-Shared\\Release_x64",
+      "[START_DIR]\\[SWARM_OUT_DIR]\\out\\Release_x64"
     ],
     "infra_step": true,
     "name": "copy build products",

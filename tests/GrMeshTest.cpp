@@ -370,7 +370,7 @@ private:
 
 class GLSLMeshTestProcessor : public GrGLSLGeometryProcessor {
     void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor&,
-                 FPCoordTransformIter&& transformIter) final {}
+                 const CoordTransformRange& transformIter) final {}
 
     void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) final {
         const GrMeshTestProcessor& mp = args.fGP.cast<GrMeshTestProcessor>();
@@ -424,7 +424,8 @@ void DrawMeshHelper::drawMesh(const GrMesh& mesh, GrPrimitiveType primitiveType)
 
     GrProgramInfo programInfo(fState->proxy()->numSamples(),
                               fState->proxy()->numStencilSamples(),
-                              fState->drawOpArgs().origin(),
+                              fState->proxy()->backendFormat(),
+                              fState->view()->origin(),
                               &pipeline,
                               mtp,
                               nullptr, nullptr, 0, primitiveType);

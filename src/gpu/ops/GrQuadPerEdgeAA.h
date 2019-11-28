@@ -14,6 +14,7 @@
 #include "src/gpu/GrColor.h"
 #include "src/gpu/GrGeometryProcessor.h"
 #include "src/gpu/GrSamplerState.h"
+#include "src/gpu/GrVertexWriter.h"
 #include "src/gpu/geometry/GrQuad.h"
 #include "src/gpu/geometry/GrQuadUtils.h"
 #include "src/gpu/ops/GrMeshDrawOp.h"
@@ -134,13 +135,17 @@ namespace GrQuadPerEdgeAA {
     // MakeProcessor and/or MakeTexturedProcessor.
     class Tessellator {
     public:
-        explicit Tessellator(const VertexSpec& spec);
+        explicit Tessellator(const VertexSpec& spec, char* vertices);
 
-        // Calculates (as needed) inset and outset geometry for anti-aliasing, and writes all
-        // necessary position and vertex attributes required by this Tessellator's VertexSpec.
-        // After appending, this will return the pointer to the next vertex in the VBO.
-        void* append(void* vertices, const GrQuad& deviceQuad, const GrQuad& localQuad,
+        // Calculates (as needed) inset and outset geometry for anti-aliasing, and appends all
+        // necessary position and vertex attributes required by this Tessellator's VertexSpec into
+        // the 'vertices' the Tessellator was called with. The insetting and outsetting may
+        // damage the provided GrQuads (as this is intended to work with GrQuadBuffer::Iter).
+        // 'localQuad' can be null if the VertexSpec does not use local coords.
+        void append(GrQuad* deviceQuad, GrQuad* localQuad,
                     const SkPMColor4f& color, const SkRect& uvDomain, GrQuadAAFlags aaFlags);
+
+        SkDEBUGCODE(char* vertices() const { return (char*) fVertexWriter.fPtr; })
 
     private:
         // VertexSpec defines many unique ways to write vertex attributes, which can be handled
@@ -148,13 +153,14 @@ namespace GrQuadPerEdgeAA {
         // specs that appear in the wild far more frequently, so they use explicit WriteQuadProcs
         // that have no branches.
         typedef void (*WriteQuadProc)(GrVertexWriter* vertices, const VertexSpec& spec,
-                                      const GrQuad& deviceQuad, const GrQuad& localQuad,
+                                      const GrQuad* deviceQuad, const GrQuad* localQuad,
                                       const float coverage[4], const SkPMColor4f& color,
                                       const SkRect& geomDomain, const SkRect& texDomain);
         static WriteQuadProc GetWriteQuadProc(const VertexSpec& spec);
 
         GrQuadUtils::TessellationHelper fAAHelper;
         VertexSpec                      fVertexSpec;
+        GrVertexWriter                  fVertexWriter;
         WriteQuadProc                   fWriteProc;
     };
 
@@ -182,8 +188,8 @@ namespace GrQuadPerEdgeAA {
     // @param quadCount         the number of quads that will be drawn by the provided 'mesh'.
     //                          A subsequent ConfigureMesh call would the use
     //                          'runningQuadCount' + 'quadCount' for its new 'runningQuadCount'.
-    void ConfigureMesh(GrMesh* mesh, const VertexSpec&, int runningQuadCount, int quadCount,
-                       int maxVerts, sk_sp<const GrBuffer> vertexBuffer,
+    void ConfigureMesh(const GrCaps&, GrMesh*, const VertexSpec&, int runningQuadCount,
+                       int quadCount, int maxVerts, sk_sp<const GrBuffer> vertexBuffer,
                        sk_sp<const GrBuffer> indexBuffer, int absVertBufferOffset);
 
 } // namespace GrQuadPerEdgeAA
